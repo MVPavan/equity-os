@@ -89,6 +89,11 @@ NO_OUTCOME = "No row in this version reaches an achieved, missed or interim outc
 NO_STATEMENT = (
     "No guidance quote has been extracted in this report chain, so no commitment is tracked."
 )
+# The whole section ``build`` writes with no statement; only its retired block varies.
+NO_GUIDANCE_FORM = re.compile(
+    re.escape(f"## {CREDIBILITY}\n\n{COMPUTED} {NO_STATEMENT}\n\n{_RETIRED_HEADER}\n")
+    + rf"(?:{_NONE}\n|(?:{_RETIRED_LINE.pattern}\n)+)\n"
+)
 _Triple = tuple[str, str, str]
 _Span = tuple[date, date]
 

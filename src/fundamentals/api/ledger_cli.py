@@ -59,14 +59,15 @@ from fundamentals.api.config import load_config
 from fundamentals.api.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from fundamentals.api.watchlist_config import load_watchlist_config, stock_catalog, with_issuer_pdfs
 from fundamentals.contracts.evidence import RunMode
-from fundamentals.contracts.ledger import DecisionKind, PolicyValue, SubjectKind
+from fundamentals.contracts.ledger import DecisionKind, PolicyValue, SubjectKind, VersionDraft
 from fundamentals.contracts.memory import MemoryItemDraft, MemoryStatus
 from fundamentals.contracts.retention import OriginalExpiredError
 from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.ledger import store
-from fundamentals.ledger.evidence_bundle import panel_text
+from fundamentals.ledger.evidence_bundle import BundleLimits, panel_text
 from fundamentals.ledger.export import export_version, status_note, stock_entity, stock_versions
+from fundamentals.ledger.falsifier_status import NARRATIVE
 from fundamentals.ledger.importer import (
     ImportedVersion,
     import_thesis_successor,
@@ -136,6 +137,7 @@ _NOTE = "{stem}.status.md"
 _MEMORY_FILE = "memory.md"
 _NEEDS_OUT = "ledger export --stock needs --out <dir>"
 _NEEDS_STOCK = "--status-notes and --memory need --stock"
+_NEEDS_VERSION = "--panel-text needs a version id, not --stock"
 _UNSAFE = "{name!r} is not a safe filename component"
 _ESCAPES = "{path} is not under {out}"
 _EXISTS = "{path} already exists"
@@ -303,11 +305,11 @@ def _panel(args: argparse.Namespace) -> int:
             _OTHER_SUBJECT.format(bound=reviewer.binding.subject, subject=subject)
         )
     sources = decision_sources(args)
-    limits = load_narrate_config(args.narrate_config).limits
     login = load_login(PgRole.PANEL, secrets_dir(os.environ))
     with open_pool(PgSettings(), PgRole.PANEL, login=login) as pool:
         with pool.connection() as conn:
             row = conn.execute(_DATABASE).fetchone()
+            draft = store.read_version(conn.cursor(), args.version)
         assert row is not None
         if not rehearsal_allowed(responder.provider, row[0]):
             raise DecisionRefusedError(
@@ -318,11 +320,17 @@ def _panel(args: argparse.Namespace) -> int:
             subject_kind=SubjectKind.REPORT_VERSION,
             subject_id=args.version,
             reviewer=reviewer,
-            limits=limits,
+            limits=_panel_limits(draft, args.narrate_config),
             **sources,
         )
     sys.stdout.write(_DECISION.format(id=record.id) + "\n")
     return EXIT_OK
+
+
+def _panel_limits(draft: VersionDraft, config: Path) -> BundleLimits | None:
+    """A narrated version's bundle limits; a plain version's panel text reads no narrate config."""
+    plain = NARRATIVE.isdisjoint(s.section_key for s in draft.sections)
+    return None if plain else load_narrate_config(config).limits
 
 
 def _narrate(args: argparse.Namespace) -> int:
@@ -384,15 +392,16 @@ def _export(args: argparse.Namespace) -> int:
     """Write one version's narrative bytes as the runtime role, to ``--out`` or stdout, or with
     ``--stock`` the stock's files under ``--out``."""
     if args.stock is not None:
+        if args.panel_text:
+            raise ValueError(_NEEDS_VERSION)
         return _export_stock(args)
     if args.status_notes or args.memory:
         raise ValueError(_NEEDS_STOCK)
     with open_pool(PgSettings(), PgRole.RUNTIME) as pool, pool.connection() as conn:
         cursor = conn.cursor()
         if args.panel_text:
-            limits = load_narrate_config(args.narrate_config).limits
             draft = store.read_version(cursor, args.version_id)
-            body = panel_text(cursor, draft, limits).encode()
+            body = panel_text(cursor, draft, _panel_limits(draft, args.narrate_config)).encode()
         else:
             body = export_version(cursor, args.version_id)
     if args.out is None:

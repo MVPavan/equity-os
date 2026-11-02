@@ -1,7 +1,4 @@
-"""RESEARCH-3 S3 support: what the pilot-backed narrate tests share.
-
-Production names import through ``code``, so these files collect on pre-change source and each
-node fails before it pays for a pilot."""
+"""RESEARCH-3 S3 support: what the pilot-backed narrate tests share."""
 
 from __future__ import annotations
 
@@ -23,8 +20,7 @@ from fundamentals.ledger import lifecycle, panel, store
 from fundamentals.ledger.display import narrative
 from fundamentals.thesis.client import ModelResponse
 
-__all__ = ["FakeReviewer", "all_counts", "code_exists", "dictionary", "ingest", "mapping_set"]
-__all__ += ["pilot", "policy"]
+__all__ = ["FakeReviewer", "all_counts", "dictionary", "ingest", "mapping_set", "pilot", "policy"]
 CREDIBILITY, PROBE, IMPACT = "management_credibility", "risk_probe", "thesis_impact"
 LABEL = "{{e:inferred}} "
 THESES = (
@@ -39,12 +35,6 @@ def code() -> SimpleNamespace:
     from fundamentals.ledger import evidence_bundle, narrate, narrate_checks
 
     return SimpleNamespace(bundle=evidence_bundle, flow=narrate, checks=narrate_checks)
-
-
-@pytest.fixture(autouse=True)
-def code_exists() -> None:
-    """A missing production module fails the node before its pilot is built."""
-    code()
 
 
 class FakeClient:
@@ -63,7 +53,7 @@ class FakeClient:
 def limits(**over: int) -> Any:
     """Generous limits, ``over`` applied."""
     held = {"max_span_chars": 4_000, "max_total_bytes": 300_000}
-    held |= {"max_prompt_bytes": 131_072, "max_response_bytes": 40_000}
+    held |= {"max_prompt_bytes": 131_071, "max_response_bytes": 40_000}
     return code().bundle.BundleLimits(**(held | over))
 
 
@@ -76,6 +66,12 @@ def with_section(version: VersionDraft, key: str, text: str) -> VersionDraft:
     new = {"body": text}
     sections = [s.model_copy(update=new) if s.section_key == key else s for s in version.sections]
     return version.model_copy(update={"sections": tuple(sections)})
+
+
+def stored_as(patch: pytest.MonkeyPatch, version: int, changed: VersionDraft) -> None:
+    """``store.read_version`` answers ``changed`` for ``version``, no write."""
+    real = store.read_version
+    patch.setattr(store, "read_version", lambda c, i: changed if i == version else real(c, i))
 
 
 def draft(version: VersionDraft, **over: str) -> str:

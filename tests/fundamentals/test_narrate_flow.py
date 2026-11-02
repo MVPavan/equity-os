@@ -1,17 +1,15 @@
-"""RESEARCH-3 S3 Tasks 2-3: ``ledger narrate``'s paths on the pilot, through a fake client.
-
-Why: a narrated version reaches a panel that decides on it, so its numbers must stay N's.
-Production names import through ``code``; see ``narrate_support``."""
+"""RESEARCH-3 S3 Tasks 2-3: ``ledger narrate``'s paths on the pilot, through a fake client."""
 
 from __future__ import annotations
 
 import hashlib
 import re
+from typing import Any
 
 import narrate_support as ns
 import pytest
-from narrate_support import code_exists, dictionary, ingest, mapping_set, pilot, policy
-from prep2b_support import Pilot
+from narrate_support import dictionary, ingest, mapping_set, pilot, policy
+from prep2b_support import STOCK, Pilot
 from prep5_support import _rerun
 from test_ledger_panel_cli import _bound, _ledger, _line, _panel
 from test_narrate_checks import NO_GUIDANCE_BODY, NO_THESIS_BODY, UPDATES
@@ -27,7 +25,7 @@ from fundamentals.ledger.run_traces import RunDraftError
 from fundamentals.thesis.claude_client import ClaudeOpusClient
 from fundamentals.thesis.client import ModelResponse
 
-__all__ = ["code_exists", "dictionary", "ingest", "mapping_set", "pilot", "policy"]
+__all__ = ["dictionary", "ingest", "mapping_set", "pilot", "policy"]
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
 # The heading fields a same-input rerun may move (gate (f)).
@@ -51,18 +49,14 @@ def is_plain_and_matches(pilot: Pilot, version: int) -> bool:
 
 
 def thesis_free_quote(pilot: Pilot, held: VersionDraft) -> str:
-    """The longest quote the bound thesis does not repeat. The thesis stays in the bundle and the
-    prompt whatever a span limit withholds, so a quote it held says nothing about withholding."""
+    """The longest quote the bound thesis does not repeat, so that withholding it can be seen."""
     ((thesis,),) = pilot.query(ns.THESES)
     text = ns.reading(pilot, ns.plain_text, thesis)
     return max((quote for quote in ns.quotes(held) if quote not in text), key=len)
 
 
-def full_path(
-    pilot: Pilot, version: int, *skipped: str
-) -> tuple[int, ns.FakeClient, ns.FakeReviewer]:
-    """N to an approved N+1: N's sections, ``UPDATES`` but those of ``skipped`` applied, then the
-    five keys; every number, cutoff and pin N's; the panel reads the bundle; N is superseded."""
+def full_path(pilot: Pilot, version: int, *skipped: str) -> tuple[int, Any, Any]:
+    """N to an approved N+1, with N's numbers, and one bundle byte for byte from model to panel."""
     held = pilot.version(version)
     client = ns.FakeClient(ns.draft(held))
     new = ns.narrate(pilot, version, client)
@@ -82,21 +76,30 @@ def full_path(
     assert set(dict(pilot.validate(new).claim_states).values()) == {ClaimState.MATCH}
     bundle = ns.reading(pilot, ns.code().bundle.build_bundle, made, ns.limits())
     assert made.author == f"fundamentals-narrate:fake-model:bundle:{bundle.sha256}"
+    assert ns.reading(pilot, ns.code().bundle.build_bundle, held, ns.limits()).text == bundle.text
+    block, text = f"evidence-{bundle.sha256}", narrative(held.sections, held.claims).decode()
+    assert client.prompts[0].endswith(f"\n<{block}>\n{text}\n{bundle.text}</{block}>\n")
     reviewer = ns.decide(pilot, new)
-    assert bundle.text in reviewer.calls[0][0]
-    assert narrative(made.sections, made.claims).decode() in reviewer.calls[0][0]
+    assert (
+        reviewer.calls[0][0] == f"{narrative(made.sections, made.claims).decode()}\n{bundle.text}"
+    )
     assert status(pilot, new) is VersionStatus.APPROVED
     assert status(pilot, version) is VersionStatus.SUPERSEDED
     return new, client, reviewer
 
 
 def test_full_path_narrated_version_supersedes_its_head(pilot: Pilot) -> None:
-    """Spec §5's path. The code-built disclosures lead ``drivers``, so a reader knows the limits."""
+    """Spec §5's path; disclosures lead ``drivers``; unscored rows state no trend, through code."""
     version = ns.q2_draft(pilot)
     assert ns.decide(pilot, version).calls[0][0] == ns.reading(pilot, ns.plain_text, version)
     new = full_path(pilot, version)[0]
+    checks = ns.code().checks
     drivers = ns.body(pilot.version(new), "drivers")
-    assert drivers.index(ns.code().checks.D1) < drivers.index(ns.code().checks.D3)
+    assert drivers.index(checks.D1) < drivers.index(checks.D3)
+    rows = checks.trend_rows(ns.body(pilot.version(version), ns.CREDIBILITY))
+    assert rows and {row.trend for row in rows} == {checks.DeliveryTrend.NOT_ASSESSABLE}
+    notes = ns.body(pilot.version(new), "credibility_notes")
+    assert checks.D2 in notes and checks.trend_block(rows) in notes
 
 
 def test_a_no_guidance_version_narrates_through_the_panel(pilot: Pilot) -> None:
@@ -112,8 +115,7 @@ def test_a_no_guidance_version_narrates_through_the_panel(pilot: Pilot) -> None:
 
 
 def test_a_no_thesis_version_narrates_through_the_panel(pilot: Pilot) -> None:
-    """T1, V2: the imported thesis withdrawn, FY26_Q2 still runs; it says no assessment is possible
-    and gives no stance, and its section stays as it was."""
+    """T1, V2: with the thesis withdrawn it says no assessment is possible and gives no stance."""
     for (thesis,) in pilot.query(ns.THESES):
         _withdraw(pilot, thesis)
     version, held = ns.prepared(pilot)
@@ -128,8 +130,7 @@ def test_a_no_thesis_version_narrates_through_the_panel(pilot: Pilot) -> None:
 def test_a_recorded_response_binds_the_panel_text(
     pilot: Pilot, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """C-9, through the CLI: the operator can only bind the bytes the panel really reads, which
-    ``export --panel-text`` writes; a binding over the plain narrative refuses."""
+    """C-9, through the CLI: a binding hashes ``export --panel-text``'s bytes, not the plain's."""
     version, held = ns.prepared(pilot)
     answer = ModelResponse(text=ns.draft(held), duration_seconds=0)
     monkeypatch.setattr(ClaudeOpusClient, "generate", lambda _self, _prompt: answer)
@@ -143,14 +144,31 @@ def test_a_recorded_response_binds_the_panel_text(
     sha = hashlib.sha256(out.read_bytes()).hexdigest()
     before = ns.all_counts(pilot)
     assert _panel(pilot, new, _line(new, digest, plain)) != 0
+    with monkeypatch.context() as patch:  # Sol F6: a narrated version does need the config
+        patch.chdir(pilot.tmp_path)
+        assert _panel(pilot, new, _line(new, digest, sha)) != 0
     assert ns.all_counts(pilot) == before
     assert _panel(pilot, new, _line(new, digest, sha)) == 0
     assert status(pilot, new) is VersionStatus.APPROVED
+    stock_out = pilot.tmp_path / "stock"  # Sol F7: panel bytes belong to one version
+    stock = ["ledger", "export", "--stock", STOCK, "--panel-text", "--out", str(stock_out)]
+    assert main(stock) != 0 and not stock_out.exists()
+
+
+def test_a_plain_panel_needs_no_config(pilot: Pilot, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sol F6: with ``config/narrate.yaml`` absent, a plain version still reaches the panel."""
+    version = ns.q2_draft(pilot)
+    ns.submit(pilot, version)
+    digest, sha = _bound(pilot, version)
+    monkeypatch.chdir(pilot.tmp_path)
+    out = pilot.tmp_path / "plain-panel.txt"
+    exported = main(["ledger", "export", str(version), "--panel-text", "--out", str(out)])
+    assert (_panel(pilot, version, _line(version, digest, sha)), exported) == (0, 0)
+    assert hashlib.sha256(out.read_bytes()).hexdigest() == sha
 
 
 def test_an_excluded_span_reaches_no_model_input(pilot: Pilot) -> None:
-    """S2: an over-limit span is withheld from N's text in the prompt too, not only the bundle; the
-    panel still reads it in full. The generous prompt shows the quote was there to withhold."""
+    """S2: an over-limit span leaves N's text in the prompt too; the panel still reads it whole."""
     version, held = ns.prepared(pilot)
     quote = thesis_free_quote(pilot, held)
     generous = ns.FakeClient("not a draft")
@@ -163,11 +181,23 @@ def test_an_excluded_span_reaches_no_model_input(pilot: Pilot) -> None:
     assert quote in ns.reading(pilot, ns.code().bundle.panel_text, pilot.version(new), tight)
 
 
-def test_adversarial_inputs_keep_their_boundary(
-    pilot: Pilot, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The code column of AX-1 to AX-5: a poisoned quote stays inside the block named by the
-    bundle's own hash, and what the lexicon cannot judge reaches the panel verbatim."""
+def test_a_withheld_quote_in_thesis_refuses(pilot: Pilot, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sol F2: the exact thesis stays in the bundle, so a withheld quote it repeats refuses."""
+    version, held = ns.prepared(pilot)
+    ((thesis,),) = pilot.query(ns.THESES)
+    quote = ns.reading(pilot, ns.plain_text, thesis)[:80]
+    cited: Any = next(c for c in held.claims if c.citation.quote)
+    moved = cited.model_copy(
+        update={"citation": cited.citation.model_copy(update={"quote": quote})}
+    )
+    claims = tuple(moved if c.claim_key == cited.claim_key else c for c in held.claims)
+    ns.stored_as(monkeypatch, version, held.model_copy(update={"claims": claims}))
+    tight = ns.limits(max_span_chars=len(quote) - 1)
+    ns.refused(pilot, version, ns.FakeClient("not a draft"), "repeats a withheld", False, tight)
+
+
+def test_adversarial_inputs_hold_boundary(pilot: Pilot, monkeypatch: pytest.MonkeyPatch) -> None:
+    """AX-1 to AX-5's code column: poison stays in the hashed block; the panel judges the rest."""
     version, held = ns.prepared(pilot)
     seen, real = [], ns.code().flow.build_bundle
 
@@ -210,8 +240,7 @@ def _faithful(pilot: Pilot, new: int, old: int) -> None:
 
 
 def test_a_rejected_narrative_reruns_without_it(pilot: Pilot) -> None:
-    """P6, C-6: the panel names no claims, so a full successor refuses and the route is an ordinary
-    run, faithful to N with the narrative gone, narrated again only once approved."""
+    """P6, C-6: no full successor; an ordinary run, faithful to N, narrates again once approved."""
     current = ns.prepared(pilot)[0]
     for verdict in (Verdict.REQUEST_CHANGES, Verdict.REJECT):
         narrated = ns.narrate(pilot, current, ns.FakeClient(ns.draft(pilot.version(current))))
@@ -234,8 +263,7 @@ def test_a_rejected_narrative_reruns_without_it(pilot: Pilot) -> None:
 
 
 def test_rework_drops_the_narrative(pilot: Pilot) -> None:
-    """C-8: an approved head reruns, an in-review one reworks on a rejected claim; neither carries a
-    narrative its changed claims would invalidate, and each narrates again once approved."""
+    """C-8: neither a rerun nor a rework carries a narrative; each narrates again once approved."""
     new = full_path(pilot, ns.prepared(pilot)[0])[0]
     rerun = ns.rerun_draft(pilot)
     assert is_plain_and_matches(pilot, rerun)
@@ -250,23 +278,8 @@ def test_rework_drops_the_narrative(pilot: Pilot) -> None:
     assert ns.narrate(pilot, reworked, ns.FakeClient(ns.draft(pilot.version(reworked))))
 
 
-def test_the_c12_case(pilot: Pilot) -> None:
-    """Duty 1, mechanism only: unscored rows state no trend, say so through code, and a model
-    sentence claiming a direction refuses. The owner's question stays open."""
-    version, held = ns.prepared(pilot)
-    checks = ns.code().checks
-    verdict = ns.draft(held, credibility_notes=ns.LABEL + "Credibility is rising.")
-    ns.refused(pilot, version, ns.FakeClient(verdict), "rising", called=True)
-    new = ns.narrate(pilot, version, ns.FakeClient(ns.draft(held)))
-    rows = checks.trend_rows(ns.body(held, ns.CREDIBILITY))
-    assert rows and {row.trend for row in rows} == {checks.DeliveryTrend.NOT_ASSESSABLE}
-    notes = ns.body(pilot.version(new), "credibility_notes")
-    assert checks.D2 in notes and checks.trend_block(rows) in notes
-
-
 def test_bundle_spans_are_whole_or_absent_and_builds_are_byte_equal(pilot: Pilot) -> None:
-    """Spec §4: a quote is never truncated; one over the limit leaves the bundle, the citable list
-    and its claims' eligibility together; a cap one byte short refuses."""
+    """Spec §4: a quote is whole or leaves bundle and citable list together; a short cap refuses."""
     held = ns.prepared(pilot)[1]
     build = ns.code().bundle.build_bundle
     whole = ns.reading(pilot, build, held, ns.limits())
@@ -287,10 +300,24 @@ def test_bundle_spans_are_whole_or_absent_and_builds_are_byte_equal(pilot: Pilot
         ns.reading(pilot, build, held, ns.limits(max_total_bytes=len(whole.text.encode()) - 1))
 
 
+def _operand_line(row: tuple[Any, ...], claims: tuple[Any, ...]) -> str:
+    """An operand's expected line from its stored row: all fields, exactly the claims citing it."""
+    trace, name, role, ref, nested, state, value, low, high, digest, *key = row
+    record = f"trace {nested}" if nested else f"interpretation {ref}"
+    shown = value if value is not None else f"{low}..{high}"
+    line = f"- in trace {trace}: {name} {role} {record}, {state}, value {shown}"
+    if digest:
+        kind, currency, basis, *days = key
+        names = ("start", "end", "instant")
+        period = dict(zip(names, (d and d.isoformat() for d in days), strict=True))
+        line += f", {kind}, {currency}, {basis}, {period}"
+    field = "calculation_trace_id" if nested else "interpretation_id"
+    cited = [c.claim_key for c in claims if (nested or ref) == getattr(c.citation, field)]
+    return f"{line}; claims {', '.join(cited)}" if cited else line
+
+
 def test_bundle_shows_every_operand_and_only_the_claims_citing_it(pilot: Pilot) -> None:
-    """S9, T6: an operand with no claim (the headline bridge's associates share) is still whole
-    evidence, nested traces reach their leaves, and claims sharing a measurement key list only the
-    record each cites, so a model cannot borrow another claim's number."""
+    """S9, T6: every operand whole, nested ones too, listing only the claims citing its record."""
     held = ns.prepared(pilot)[1]
     traces = [
         c.citation.calculation_trace_id for c in held.claims if c.citation.calculation_trace_id
@@ -298,28 +325,27 @@ def test_bundle_shows_every_operand_and_only_the_claims_citing_it(pilot: Pilot) 
     rows = pilot.query(
         "WITH RECURSIVE t(id) AS (SELECT unnest(%s::bigint[]) UNION SELECT o.operand_trace_id "
         "FROM eqos.calculation_trace_operands o JOIN t ON o.calculation_trace_id = t.id "
-        "WHERE o.operand_trace_id IS NOT NULL) SELECT o.operand_name, o.temporal_role, "
-        "o.interpretation_id, o.operand_trace_id FROM eqos.calculation_trace_operands o "
-        "JOIN t ON o.calculation_trace_id = t.id",
+        "WHERE o.operand_trace_id IS NOT NULL) SELECT o.calculation_trace_id, o.operand_name, "
+        "o.temporal_role, o.interpretation_id, o.operand_trace_id, o.source_state, o.value, "
+        "o.lower, o.upper, i.key_digest, i.value_kind, i.currency, i.basis, i.period_start, "
+        "i.period_end, i.period_instant FROM eqos.calculation_trace_operands o "
+        "JOIN t ON o.calculation_trace_id = t.id "
+        "LEFT JOIN eqos.interpretations i ON i.id = o.interpretation_id "
+        "ORDER BY o.calculation_trace_id, o.ordinal",
         traces,
     )
-    assert {"share_of_associates"} <= {name for name, *_ in rows}
+    assert {"share_of_associates"} <= {row[1] for row in rows} and any(row[4] for row in rows)
     claims = {c.claim_key: c for c in held.claims}
     cited = {c.citation.interpretation_id for c in held.claims}
-    target = min(
-        ref
-        for name, _, ref, _ in rows
-        if ref and ref not in cited and name != "share_of_associates"
-    )
+    target = min(r[3] for r in rows if r[3] and r[3] not in cited and r[1] != "share_of_associates")
     # R1 and R5 share a measurement key and a record; R5 moves to a record no claim cites.
     first, second = "probe.R1.revenue_from_operations", "probe.R5.revenue_from_operations"
     moved = claims[second].citation.model_copy(update={"interpretation_id": target})
     claims[second] = claims[second].model_copy(update={"citation": moved})
     shifted = held.model_copy(update={"claims": tuple(claims.values())})
-    lines = ns.reading(pilot, ns.code().bundle.build_bundle, shifted, ns.limits()).text.splitlines()
-    for name, role, ref, trace in rows:
-        pattern = re.compile(rf"\b{ref or trace}\b")
-        assert any(name in s and role in s and pattern.search(s) for s in lines), name
+    text = ns.reading(pilot, ns.code().bundle.build_bundle, shifted, ns.limits()).text
+    lines = text.split("Trace operands:\n")[1].split("Citable spans")[0].splitlines()
+    assert lines == [_operand_line(row, shifted.claims) for row in rows]
     (share,) = (s for s in lines if "share_of_associates" in s)
     assert not any(key in share for key in claims)
     for own, other in ((first, second), (second, first)):
@@ -328,8 +354,7 @@ def test_bundle_shows_every_operand_and_only_the_claims_citing_it(pilot: Pilot) 
 
 
 def test_bundle_binds_the_thesis_n_names(pilot: Pilot) -> None:
-    """S8, T1: the exact thesis N is bound to, even with no ``thesis.*`` claim; the honest no-thesis
-    body says so; any other body, or a digest that disagrees, refuses."""
+    """S8, T1: the exact thesis N binds, even with no ``thesis.*`` claim; a bad binding refuses."""
     held = ns.prepared(pilot)[1]
     build = ns.code().bundle.build_bundle
     claims = tuple(c for c in held.claims if not c.claim_key.startswith("thesis."))

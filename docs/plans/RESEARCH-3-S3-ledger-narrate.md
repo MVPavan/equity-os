@@ -739,3 +739,13 @@ Each proceeds on the recommendation once Sol approves this plan (stack, "Autonom
   - Whether Opus can write useful `drivers` from this evidence, and whether Sol approves them (C-7): rehearsal text, then the panel.
   - The later-disclosure, first-seen and other-issuer fixtures' mechanics: the tests round, before red sealing.
   - r7 (Y6) Run for this plan: `claude --help`, `claude --version` and Task 0's probes (eight CLI invocations, Y5). No test, database or write command.
+
+## Post-review amendments (Sol code r1)
+
+Behaviour that changed from r7:
+
+- **F2.** Narrate and the panel text refuse before the model call when the bound thesis's rendering repeats an excluded quote. There is no redaction: the exact-thesis requirement stands.
+- **F3.** The U3 exemption needs the complete generated no-guidance section, varying only inside its retired-entry block. A section holding the no-statement sentence in any other form refuses, including with extra paragraphs, episode rows or the old U3 sentence.
+- **F6.** `ledger panel` and `ledger export --panel-text` load the narrate config only for a version with a narrative section; a plain version's path does not read the file.
+- **F7.** `ledger export --stock ... --panel-text` refuses before exporting anything.
+- **Stops.** Production stays at the re-based 800 lines and tests at 1,200.

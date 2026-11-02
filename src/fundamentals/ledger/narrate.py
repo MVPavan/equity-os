@@ -1,10 +1,4 @@
-"""``ledger narrate``: an approved head N becomes DRAFT N+1 with model notes (RESEARCH-3 S3).
-
-Read N, call the client outside any transaction, run every check, and only then lock, recheck and
-insert N's claims, N's sections with the frozen disclosure updates, and five narrative sections.
-Any failure leaves every table unchanged. The model writes placeholders, never numbers, and only
-the client's stdout is consumed.
-"""
+"""``ledger narrate``: approved head N to DRAFT N+1 with model notes; a failure writes nothing."""
 
 from __future__ import annotations
 
@@ -15,7 +9,7 @@ from typing import Any, LiteralString
 import yaml
 from psycopg import Cursor
 from psycopg_pool import ConnectionPool
-from pydantic import BaseModel, ConfigDict, NonNegativeInt, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field, NonNegativeInt, PositiveInt
 
 from fundamentals.contracts.evidence import RunMode
 from fundamentals.contracts.ledger import ClaimState, ReportSection, SubjectKind, VersionDraft
@@ -23,8 +17,8 @@ from fundamentals.contracts.ledger import VersionStatus as Status
 from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.ledger import narrate_checks as checks
 from fundamentals.ledger import store
-from fundamentals.ledger.credibility import COMPUTED, NO_STATEMENT
-from fundamentals.ledger.display import content_hash, narrative
+from fundamentals.ledger.credibility import COMPUTED, NO_GUIDANCE_FORM, NO_STATEMENT
+from fundamentals.ledger.display import DisplayError, content_hash, narrative
 from fundamentals.ledger.evidence_bundle import Bundle, BundleLimits, build_bundle
 from fundamentals.ledger.falsifier_status import (
     CREDIBILITY,
@@ -104,9 +98,18 @@ class _ClaudeFile(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    model: str
+    model: str = Field(pattern=r"\S")
     timeout_seconds: PositiveInt
     retries: NonNegativeInt
+
+
+class _NarrateFile(BaseModel):
+    """``config/narrate.yaml``'s shape."""
+
+    model_config = ConfigDict(frozen=True)
+
+    claude: _ClaudeFile
+    limits: BundleLimits
 
 
 class NarrateConfig(BaseModel):
@@ -120,18 +123,19 @@ class NarrateConfig(BaseModel):
 
 def load_narrate_config(path: Path) -> NarrateConfig:
     """The validated config from ``path``."""
-    held = yaml.safe_load(path.read_text(encoding="utf-8"))
-    client = _ClaudeFile.model_validate(held["claude"]).model_dump()
-    claude = ClaudeClientConfig(**client, extra_args=NARRATE_ISOLATION)
-    return NarrateConfig(claude=claude, limits=BundleLimits.model_validate(held["limits"]))
+    held = _NarrateFile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
+    claude = ClaudeClientConfig(**held.claude.model_dump(), extra_args=NARRATE_ISOLATION)
+    return NarrateConfig(claude=claude, limits=held.limits)
 
 
 def apply_disclosure_updates(bodies: Mapping[str, str]) -> dict[str, str]:
-    """``bodies`` with U1-U6 applied. A ``before`` not there exactly once refuses, except in the two
-    honest forms: no approved thesis (U2), no extracted guidance (U3)."""
+    """``bodies`` with U1-U6 applied; a missing ``before`` refuses, but in the honest forms."""
     updated = dict(bodies)
     exempt = {THESIS_IMPACT: updated.get(THESIS_IMPACT) == no_thesis_section(THESIS_IMPACT)}
-    exempt[CREDIBILITY] = updated.get(CREDIBILITY, "").count(f"{COMPUTED} {NO_STATEMENT}\n\n") == 1
+    credibility = updated.get(CREDIBILITY, "")
+    exempt[CREDIBILITY] = NO_GUIDANCE_FORM.fullmatch(credibility) is not None
+    if NO_STATEMENT in credibility and not exempt[CREDIBILITY]:
+        raise NarrateRefusedError(f"{CREDIBILITY}: not the whole no-guidance form")
     for key, before, after in DISCLOSURE_UPDATES:
         if exempt.get(key):
             continue
@@ -142,8 +146,7 @@ def apply_disclosure_updates(bodies: Mapping[str, str]) -> dict[str, str]:
 
 
 def drafting_prompt(draft: VersionDraft, bundle: Bundle, due: Mapping[str, tuple[str, ...]]) -> str:
-    """The rules, this version's duties, then N's text with excluded quotes withheld and the bundle,
-    in a block named by the bundle's hash, which no quote can hold."""
+    """The rules, the duties, then N's text, quotes withheld, and the bundle in a hashed block."""
     bodies = {s.section_key: s.body for s in draft.sections}
     duties = [_RULES]
     duties.append(
@@ -201,9 +204,7 @@ def narrate(
     catalog: SourceCatalog,
     snapshots: SnapshotStore,
 ) -> int:
-    """Write DRAFT N+1 of the approved head ``version_id`` and return its id. A refusal raises
-    ``NarrateRefusedError``, or ``OriginalExpiredError`` for an expired original, writing nothing.
-    """
+    """Write DRAFT N+1 of the approved head and return its id; whatever raises writes nothing."""
     try:
         with pool.connection() as conn, conn.cursor() as cursor:
             held = store.read_version(cursor, version_id)
@@ -215,6 +216,8 @@ def narrate(
                 raise NarrateRefusedError(f"version {version_id} already carries a narrative")
             digest = store.sealed_digest(cursor, version_id)
             kept = apply_disclosure_updates({s.section_key: s.body for s in held.sections})
+            if RISK_PROBE not in kept:
+                raise NarrateRefusedError(f"version {version_id} has no {RISK_PROBE} section")
             bundle = build_bundle(cursor, held, limits)
         due = checks.notes_due(kept[RISK_PROBE], kept[CREDIBILITY])
         prompt = drafting_prompt(held, bundle, due)
@@ -275,5 +278,5 @@ def narrate(
             if found:
                 raise NarrateRefusedError(f"the draft fails its check: {', '.join(found)}")
         return new_id
-    except (ValueError, ThesisClientError) as error:
+    except (DecisionRefusedError, DisplayError, ThesisClientError) as error:
         raise NarrateRefusedError(str(error)) from error

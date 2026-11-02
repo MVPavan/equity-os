@@ -1,10 +1,4 @@
-"""What ``ledger narrate`` checks and builds with no database (RESEARCH-3 S3 P2-P4).
-
-A delivery trend compares completed outcomes of consecutive fiscal years, endpoint by endpoint,
-from N's unrendered credibility rows, whose quotes are placeholders, so a quote cannot forge an
-outcome. Directions live only in those rows: the verdict lexicon refuses in model prose whatever a
-row says.
-"""
+"""What ``ledger narrate`` checks and builds with no database (RESEARCH-3 S3 P2-P4)."""
 
 from __future__ import annotations
 
@@ -17,7 +11,8 @@ from pydantic import BaseModel, ConfigDict
 from fundamentals.ledger.credibility import COMPUTED, Outcome
 from fundamentals.ledger.display import PLACEHOLDER
 from fundamentals.ledger.falsifier_status import NARRATIVE, NARRATIVE_ORDER
-from fundamentals.ledger.numeral_scan import CLASS_MARKER, LOCATION_MARKER
+from fundamentals.ledger.lifecycle import DecisionRefusedError
+from fundamentals.ledger.numeral_scan import CLASS_MARKER, LOCATION_MARKER, narrative_prose
 
 D1 = (
     "The sections above are the approved deterministic version this draft succeeds, with every "
@@ -113,7 +108,7 @@ def parse_draft(text: str) -> Mapping[str, str]:
     bare = {key: LOCATION_MARKER.sub("", CLASS_MARKER.sub("", b)) for key, b in bodies.items()}
     wrong |= {key for key, body in bare.items() if not body.strip()}
     if preamble.strip() or wrong:
-        raise ValueError(f"the draft is not the five keys with content: {sorted(wrong)}")
+        raise DecisionRefusedError(f"the draft is not the five keys with content: {sorted(wrong)}")
     return {key: bodies[key].strip() for key in NARRATIVE_ORDER}
 
 
@@ -182,12 +177,10 @@ def trend_block(rows: tuple[TrendRow, ...]) -> str:
 
 
 def verdict_words(section: str, text: str) -> tuple[str, ...]:
-    """The verdict words in model text: all of ``credibility_notes``, elsewhere only a sentence on
-    credibility, management or guidance."""
-    bare = LOCATION_MARKER.sub(" ", CLASS_MARKER.sub(" ", PLACEHOLDER.sub(" ", text)))
+    """The verdict words in model text; outside ``credibility_notes``, sentences on it only."""
     return tuple(
         found.group()
-        for sentence in _SENTENCE_END.split(bare)
+        for sentence in _SENTENCE_END.split(narrative_prose(text))
         if section == CREDIBILITY_NOTES or _ON_CREDIBILITY.search(sentence)
         for found in _VERDICT.finditer(sentence)
     )

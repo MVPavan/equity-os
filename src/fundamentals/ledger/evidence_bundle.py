@@ -1,9 +1,4 @@
-"""The evidence a narrated version's model and panel both read (RESEARCH-3 S3 P5, spec §4).
-
-Deterministic from a version's claims and its ``thesis_impact`` binding, so a rebuild proves both
-calls read the same bytes: every claim, every operand of every cited trace, each cited span whole
-or absent, and the exact thesis the version names.
-"""
+"""The evidence a narrated version's model and panel both read (RESEARCH-3 S3 P5, spec §4)."""
 
 from __future__ import annotations
 
@@ -26,7 +21,7 @@ from fundamentals.ledger.display import narrative, parse_style, render_claim
 from fundamentals.ledger.falsifier_status import NARRATIVE, THESIS_IMPACT, no_thesis_section
 from fundamentals.ledger.lifecycle import DecisionRefusedError
 
-ARGV_ITEM_CAP = 131_072  # Linux's limit on one argv item; the prompt is one
+ARGV_ITEM_CAP = 131_071  # Linux's limit on one argv item, less its NUL; the prompt is one
 _BOUND = re.compile(r"approved thesis version:(\d+) \(sealed digest ([0-9a-f]{64})\)")
 _REF, _UNIT = parse_style("ref"), parse_style("unit")
 
@@ -58,8 +53,7 @@ class Bundle(BaseModel):
 
 
 def build_bundle(cursor: Cursor[Any], draft: VersionDraft, limits: BundleLimits) -> Bundle:
-    """The version's evidence; an expired dependency, a thesis binding that does not hold or a
-    bundle over its cap refuses."""
+    """The version's evidence, deterministic from its claims and thesis binding, or a refusal."""
     quoted = {c.claim_key: c.citation for c in draft.claims if c.citation.quote is not None}
     excluded = {k for k, c in quoted.items() if len(c.quote or "") > limits.max_span_chars}
     spans = {
@@ -72,15 +66,17 @@ def build_bundle(cursor: Cursor[Any], draft: VersionDraft, limits: BundleLimits)
     lines += ["Trace operands:", *_trace_lines(cursor, draft.claims)]
     lines.append("Citable spans, each marker then its full text:")
     lines += [f"{{{{s:{capture}|{anchor}}}}}\n{q}" for (capture, anchor), q in spans.items()]
-    text = "\n".join((*lines, "Bound thesis:", _thesis(cursor, draft))) + "\n"
+    thesis = _thesis(cursor, draft)
+    if repeated := sorted(key for key in excluded if (quoted[key].quote or "") in thesis):
+        raise DecisionRefusedError(f"the bound thesis repeats a withheld quote: {repeated}")
+    text = "\n".join((*lines, "Bound thesis:", thesis)) + "\n"
     if len(text.encode()) > limits.max_total_bytes:
         raise DecisionRefusedError(f"the bundle is over max_total_bytes: {len(text.encode())}")
     return Bundle(text=text, citable=frozenset(spans), excluded=frozenset(excluded))
 
 
 def panel_text(cursor: Cursor[Any], draft: VersionDraft, limits: BundleLimits | None) -> str:
-    """What the panel reads: the narrative, plus for a narrated version the bundle sealed in its
-    author; missing limits or a rebuilt bundle that differs refuses."""
+    """What the panel reads: the narrative, and a narrated version's bundle sealed in its author."""
     text = narrative(draft.sections, draft.claims).decode()
     if NARRATIVE.isdisjoint(s.section_key for s in draft.sections):
         return text
@@ -109,8 +105,7 @@ def _flattened(traces: Iterable[StoredTrace]) -> dict[int, StoredTrace]:
 
 
 def _trace_lines(cursor: Cursor[Any], claims: tuple[NumericClaim, ...]) -> list[str]:
-    """Every operand of the cited traces and those they reach, with the keys of the claims citing
-    its exact record. R13's guard (operands, condition evidence, constructions) runs first."""
+    """Every operand the cited traces reach, with the claims citing it; R13's guard runs first."""
     citing: defaultdict[str, list[str]] = defaultdict(list)
     for claim in claims:
         citing[f"interpretation {claim.citation.interpretation_id}"].append(claim.claim_key)
@@ -148,8 +143,7 @@ def _trace_lines(cursor: Cursor[Any], claims: tuple[NumericClaim, ...]) -> list[
 
 
 def _thesis(cursor: Cursor[Any], draft: VersionDraft) -> str:
-    """The rendered thesis ``thesis_impact`` names, whose digest must hold, or a fixed line for
-    exactly the no-thesis section; any other body refuses."""
+    """The rendered thesis ``thesis_impact`` binds, or a fixed line for the no-thesis section."""
     body = next((s.body for s in draft.sections if s.section_key == THESIS_IMPACT), "")
     if body == no_thesis_section(THESIS_IMPACT):
         return "No approved thesis is bound to this version."

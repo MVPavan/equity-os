@@ -83,6 +83,12 @@ def scan_section(text: str, *, resolves: Callable[[str, str], bool]) -> tuple[Ve
     return tuple(state for state in VersionState if state in found)
 
 
+def narrative_prose(text: str) -> str:
+    """``text`` with its markers out and each paragraph's whitespace one space; paragraphs stay."""
+    bare = LOCATION_MARKER.sub(" ", CLASS_MARKER.sub(" ", PLACEHOLDER.sub(" ", text)))
+    return "\n\n".join(" ".join(part.split()) for part in _PARAGRAPH_BREAK.split(bare))
+
+
 def scan_narrative(text: str) -> tuple[str, ...]:
     """Why a narrative section's text may hold a number of its own; empty when clean."""
     reasons = [
@@ -91,7 +97,7 @@ def scan_narrative(text: str) -> tuple[str, ...]:
         if not _MAY_TOUCH.issuperset(text[max(found.start() - 1, 0) : found.start()])
         or not _MAY_TOUCH.issuperset(text[found.end() : found.end() + 1])
     ]
-    bare = LOCATION_MARKER.sub(" ", CLASS_MARKER.sub(" ", PLACEHOLDER.sub(" ", text)))
+    bare = narrative_prose(text)
     if "{{" in bare:
         reasons.append("a {{ marker is left unfilled")
     reasons += [f"digit: {t}" for t in _DIGIT_TOKEN.findall(_NARRATIVE_EXEMPT.sub(" ", bare))]

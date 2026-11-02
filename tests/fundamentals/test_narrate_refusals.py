@@ -1,7 +1,4 @@
-"""RESEARCH-3 S3 Task 3: what ``ledger narrate`` and the panel refuse on the pilot.
-
-Why: a refusal must leave every table unchanged, because a narrated version reaches a panel that
-decides on it. Production names import through ``code``; see ``narrate_support``."""
+"""RESEARCH-3 S3 Task 3: what ``ledger narrate`` and the panel refuse; a refusal writes nothing."""
 
 from __future__ import annotations
 
@@ -14,7 +11,7 @@ import narrate_support as ns
 import pytest
 import yaml
 from ledger_cited_support import _figure
-from narrate_support import code_exists, dictionary, ingest, mapping_set, pilot, policy
+from narrate_support import dictionary, ingest, mapping_set, pilot, policy
 from pg_evidence_schema_support import _insert, _interpretation, _occurrence
 from prep2b_support import Pilot
 from purge_support import VENDOR, entity, ref_of
@@ -33,7 +30,7 @@ from fundamentals.ledger.citations import resolve_location
 from fundamentals.ledger.display import content_hash
 from fundamentals.thesis.client import ModelResponse, ThesisClientError
 
-__all__ = ["code_exists", "dictionary", "ingest", "mapping_set", "pilot", "policy"]
+__all__ = ["dictionary", "ingest", "mapping_set", "pilot", "policy"]
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
 
@@ -52,8 +49,7 @@ def read_from(conn: Any, entity_id: int, capture: int, tag: str) -> int:
 
 
 def transcript_copy(pilot: Pilot, version: VersionDraft, entity_id: int) -> tuple[Any, Any]:
-    """A first-party capture registered now of N's transcript plus one byte, bound to ``entity_id``:
-    its id and a span that resolves. A new blob has no retrieval history, unlike every original."""
+    """A capture registered now of N's transcript plus a byte, bound to ``entity_id``; a span."""
     cited: Any = next(c.citation for c in version.claims if c.citation.quote)
     columns = "SELECT source_id, surface, request_key, capture_id FROM eqos.capture_refs"
     ((source, surface, *identity),) = pilot.query(f"{columns} WHERE id = %s", cited.capture_ref_id)
@@ -71,8 +67,7 @@ def resolves(pilot: Pilot, capture: int, span: str, cutoff: datetime) -> Any:
 
 
 def test_each_bad_draft_writes_nothing(pilot: Pilot) -> None:
-    """Spec §5's refusals, on one prepared N. A later disclosure and an uncited span of N's own
-    transcript both resolve at N's cutoff (C-5), so citable membership is what refuses them."""
+    """Spec §5's refusals; a later disclosure and an uncited span resolve, but are not citable."""
     version, held = ns.prepared(pilot)
     longest = max(ns.quotes(held), key=len)
     cited: Any = next(c for c in held.claims if c.citation.quote == longest)
@@ -115,6 +110,10 @@ def test_each_bad_draft_writes_nothing(pilot: Pilot) -> None:
         (ns.draft(held, risk_probe=ns.LABEL + "Edited."), ns.PROBE),
         (ns.draft(held, risk_notes="{{e:inferred}} No note."), "probe.R6"),
         (said("The target was achieved.", "credibility_notes"), "achiev"),
+        (said("Credibility is rising.", "credibility_notes"), "rising"),
+        (said("Stated in per\tcent terms."), "per cent"),
+        (said("Stated in basis\npoints."), "basis points"),
+        (said("It looks on\xa0track.", "credibility_notes"), "on track"),
         (ns.draft(held, risk_notes="{{e:inferred}}"), "risk_notes"),
         (located(own, anchor), anchor, tight),
         (said(f"Quoted {{{{c:{key}|quote}}}}."), key, tight),
@@ -124,11 +123,8 @@ def test_each_bad_draft_writes_nothing(pilot: Pilot) -> None:
         ns.refused(pilot, version, ns.FakeClient(text), cause, True, *kept)
 
 
-def test_a_first_seen_capture_after_the_cutoff_refuses(
-    pilot: Pilot, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """C-5: a capture handed in through a citable set still falls to ``resolve_location``'s own
-    first-seen boundary: it resolves at a later cutoff and not at N's."""
+def test_a_first_seen_capture_refuses(pilot: Pilot, monkeypatch: pytest.MonkeyPatch) -> None:
+    """C-5: a capture forced into the citable set still falls to its own first-seen boundary."""
     version, held = ns.prepared(pilot)
     capture, anchor = transcript_copy(pilot, held, pilot.entity_id)
     assert resolves(pilot, capture, anchor, datetime.now(UTC) + timedelta(days=1))
@@ -146,8 +142,7 @@ def test_a_first_seen_capture_after_the_cutoff_refuses(
 
 
 def test_an_expired_capture_reached_only_through_a_dependency_refuses(pilot: Pilot) -> None:
-    """V1: the cited trace's own interpretation is first-party; only its condition evidence rests
-    on the expired vendor capture, which is what R13 follows. Refused before the client runs."""
+    """V1: R13 follows condition evidence to an expired vendor capture, before the client runs."""
     version, held = ns.prepared(pilot)
     trace = next(
         c.citation.calculation_trace_id for c in held.claims if c.citation.calculation_trace_id
@@ -173,8 +168,7 @@ def test_an_expired_capture_reached_only_through_a_dependency_refuses(pilot: Pil
 
 
 def test_narrate_refuses_the_wrong_version(pilot: Pilot) -> None:
-    """Spec §4: only an approved head with no narrative is the one legal order, and a refusal comes
-    before the model call. One pilot walks every wrong state."""
+    """Spec §4: only an approved head with no narrative narrates; others refuse before the model."""
     client = ns.FakeClient()
     first = ns.q2_draft(pilot)
     ns.refused(pilot, first, client, "DRAFT")
@@ -193,8 +187,7 @@ def test_narrate_refuses_the_wrong_version(pilot: Pilot) -> None:
 
 
 def test_a_bundle_over_the_cap_refuses(pilot: Pilot, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A18, S4: each limit, a client failure and a changed disclosure write nothing; only what comes
-    after the model call has called it."""
+    """A18, S4: each limit, a client failure and a changed disclosure refuse and write nothing."""
     version, held = ns.prepared(pilot)
 
     class Failing(ns.FakeClient):
@@ -210,19 +203,31 @@ def test_a_bundle_over_the_cap_refuses(pilot: Pilot, monkeypatch: pytest.MonkeyP
         ns.refused(pilot, version, ns.FakeClient(text), cause, called, ns.limits(**{cause: 1}))
     ns.refused(pilot, version, Failing(), "the fake client failed")
     other = ns.body(held, "not_performed").replace("- an earnings-driver analysis", "- other words")
-    changed, real = ns.with_section(held, "not_performed", other), store.read_version
-    monkeypatch.setattr(
-        store, "read_version", lambda cur, id_: changed if id_ == version else real(cur, id_)
-    )
-    # This order, before the model call, is what the pure exemption test leans on.
-    ns.refused(pilot, version, ns.FakeClient(text), "not_performed")
+    kept = tuple(s for s in held.sections if s.section_key != ns.PROBE)  # Sol F9: no ``KeyError``
+    for changed, cause in (
+        (ns.with_section(held, "not_performed", other), "not_performed"),
+        (held.model_copy(update={"sections": kept}), ns.PROBE),
+    ):
+        with monkeypatch.context() as patch:
+            ns.stored_as(patch, version, changed)
+            # This order, before the model call, is what the pure exemption test leans on.
+            ns.refused(pilot, version, ns.FakeClient(text), cause)
 
 
-def test_a_failed_check_after_insert_rolls_back(
-    pilot: Pilot, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """S13: a passing run accepts ``MATCH_UNTRUSTED``, narrate does not (C-10), and whatever fails
-    after ``create_version`` leaves no row. The bad check is injected: no honest way there."""
+def test_an_unexpected_error_writes_nothing(pilot: Pilot, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sol F9: a bug is no ordinary refusal, and one raised after the insert still rolls it back."""
+    version, held = ns.prepared(pilot)
+
+    def broken(*_args: Any, **_kwargs: Any) -> Any:
+        raise UnicodeError("a bug")  # a ``ValueError``, as any stray one, and no refusal
+
+    monkeypatch.setattr(ns.code().flow, "check_version", broken)
+    with ns.writes_nothing(pilot, "a bug", UnicodeError):
+        ns.narrate(pilot, version, ns.FakeClient(ns.draft(held)))
+
+
+def test_a_failed_check_rolls_back(pilot: Pilot, monkeypatch: pytest.MonkeyPatch) -> None:
+    """S13, C-10: ``MATCH_UNTRUSTED`` refuses, and what fails after the insert leaves no row."""
     version, held = ns.prepared(pilot)
     real = ns.code().flow.check_version
 
@@ -263,8 +268,7 @@ def test_a_failed_check_after_insert_rolls_back(
 
 
 def test_the_panel_refuses_a_narrated_version(pilot: Pilot) -> None:
-    """S13: no limits, or a rebuilt bundle whose hash is not the author's, means the panel would
-    read other evidence than the model saw; the reviewer is never called."""
+    """S13: no limits or another bundle hash means other evidence: the reviewer is never called."""
     version, held = ns.prepared(pilot)
     new = ns.narrate(pilot, version, ns.FakeClient(ns.draft(held)))
     ns.submit(pilot, new)
@@ -278,8 +282,7 @@ def test_the_panel_refuses_a_narrated_version(pilot: Pilot) -> None:
 
 
 def test_a_stale_head_refuses_under_lock(pilot: Pilot) -> None:
-    """P1: the model call runs outside any transaction, so the head can move during it; narrate
-    rechecks under the lock and writes no second version."""
+    """P1: the head can move during the model call; the recheck under lock writes no second one."""
     version, held = ns.prepared(pilot)
 
     class Racing(ns.FakeClient):
