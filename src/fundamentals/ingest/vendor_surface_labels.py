@@ -33,9 +33,11 @@ UNIT_KINDS: Mapping[str, frozenset[ValueKind]] = {
     "count": frozenset({ValueKind.COUNT}),
 }
 # A multi-year statistic is not a period value, though its unit passes.
-# A field means one only if its id carries the same words.
+# Dictionary v3 has no aggregate field, so such a label never maps.
 MULTI_YEAR_OR_AVERAGE = re.compile(
-    r"\b(?:avg|averages?|cagr)\b|\d\s*-?\s*y(?:rs?|ears?)?\b", re.IGNORECASE
+    r"\b(?:avg|averages?|cagr|compounded|multi[- ]?years?)\b"
+    r"|(?:\d|\b(?:one|two|three|four|five|six|seven|eight|nine|ten))\s*-?\s*y(?:rs?|ears?)?\b",
+    re.IGNORECASE,
 )
 
 
@@ -72,9 +74,7 @@ def accept(
         return None, MapReason.MODEL_UNMAPPED
     if reply.field not in fields:
         return None, MapReason.NOT_IN_DICTIONARY
-    if MULTI_YEAR_OR_AVERAGE.search(sample.label) and not MULTI_YEAR_OR_AVERAGE.search(
-        reply.field.replace("_", " ")
-    ):
+    if MULTI_YEAR_OR_AVERAGE.search(sample.label):
         # Migration 0045 fixes the reason set; the dictionary has no field for this measure.
         return None, MapReason.NOT_IN_DICTIONARY
     kinds = (
