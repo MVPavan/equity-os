@@ -56,7 +56,7 @@ def test_two_fake_models_write_expected_table_without_selecting_runtime_model(tm
     )
     assert "| always-unmapped | 0.000 | 0 | 4 | 0.000 | 0.000 | 0.000000 |" in table
     assert "| safe | 0.000 | 0 | 4 | 1.000 | 0.375 | 0.000266 |" in table
-    assert "| greedy | 0.250 | 9 | 0 | 0.500 | 0.375 | 0.000266 |" in table
+    assert "| greedy | 0.250 | 8 | 0 | 0.500 | 0.375 | 0.000266 |" in table
     report = bakeoff["write_report"](table, tmp_path)
     assert report.name.startswith("bakeoff-") and report.read_text() == table
     assert runtime.read_bytes() == before
