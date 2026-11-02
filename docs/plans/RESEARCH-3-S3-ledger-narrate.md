@@ -3,8 +3,8 @@
 **Origin:** `docs/specs/2026-10-27-research-3-thesis-analysis.md` §4, §5 "S3" (approved r4, gpt-6.1-sol `APPROVE`), with §0,
 §1, §2, §3, §6 and the owner rulings. Bead `eqos-bnx`, slice 3 → S3. S2 closed live on 2026-11-02 at `f1bf13d7`. Format and
 lessons: `docs/plans/RESEARCH-3-S2-management-credibility.md`, `docs/plans/RESEARCH-3-S1-risk-probe.md`.
-**Status:** draft r4 (2026-11-02), for Sol's fresh closing review. Not approved. The r1-r3 review loop reached three rounds, so the orchestrator applied Sol's three r3 fixes as specified (agent-stack step 5).
-**Revision:** r4 applies Sol's r3 review (at `984c6947`), marked "r4 (V<n>)": R13's guard is kept on the trace read (V1), the no-thesis fixture is reachable (V2), and gate (e)'s verdict check skips the code-built prefix (V3). r3 fixes Sol's r2 review (at `f78cc260`), marked "r3 (T<n>)": the no-thesis path can now pass (T1, P8); D2 appears only
+**Status:** draft r5 (2026-11-02), for Sol's re-review of the closing findings. Not approved. The r1-r3 review loop reached three rounds, so the orchestrator applied Sol's three r3 fixes as specified (agent-stack step 5), then its two closing findings.
+**Revision:** r5 fixes Sol's fresh closing review (at `7d71da87`), marked "r5 (W<n>)": the proven isolation args are a code constant no config can change (W1, Task 0), and a version with no extracted guidance can narrate (W2, P8). r4 applies Sol's r3 review (at `984c6947`), marked "r4 (V<n>)": R13's guard is kept on the trace read (V1), the no-thesis fixture is reachable (V2), and gate (e)'s verdict check skips the code-built prefix (V3). r3 fixes Sol's r2 review (at `f78cc260`), marked "r3 (T<n>)": the no-thesis path can now pass (T1, P8); D2 appears only
 when no comparable assessment exists (T2); recovery pins are read, not open (T3). It takes three cuts: an unconditional verdict guard
 (T4, P4), production checks reused in gate (e) (T5), and existing trace and interpretation records reused (T6, Task 2). Sizes are
 re-estimated (File map). r2 fixed Sol's r1 review (at `65ddc607`), marked "r2 (S<n>)".
@@ -240,7 +240,7 @@ spec §4 assigns that residue to the panel. Lexical acceptance or matched number
   below, in `narrate.py`. Each `before` must occur exactly once in N's section, else narrate refuses before the model call, so changed
   template text fails closed. r3 (T1): the one exemption. A version with no approved thesis has no U2 sentence: its `thesis_impact` body
   is exactly `no_thesis_section(THESIS_IMPACT)`, the headed form `derived` writes (`falsifier_status.py:215-218`). For that exact body,
-  U2 is skipped and the section stays byte-identical; U1 and U3–U6 stay strict, and any other body missing U2's `before` refuses. All
+  U2 is skipped and the section stays byte-identical; U1 and U3–U6 stay strict, and any other body missing U2's `before` refuses. r5 (W2): the second exemption. A version with no extracted guidance has no U3 sentence, because its `management_credibility` holds the no-statement paragraph instead (`credibility.py:526-528`). For that exact form, with `NO_STATEMENT` present once, U3 is skipped and the section stays byte-identical; any other body missing U3's `before` refuses. The prompt says credibility cannot be assessed, and `trend_block` holds no rows and D2 alone. All
   edited sections are in `DERIVED | DISCLOSED`, which `plan` drops at `rework.py:243` and a run rebuilds,
   so no updated text reaches a deterministic M. `read_record` parses only record lines (`credibility.py:345-346`), so a later quarter's
   run reads N+1 as it reads N. N's own rows are untouched.
@@ -303,7 +303,7 @@ Considered and cut, for the owner's size rule:
 | `src/fundamentals/ledger/panel.py` | modify | `review(limits=)`; `_gate` uses `panel_text` | +8 |
 | `src/fundamentals/thesis/settings.py`, `thesis/claude_client.py` | modify | `extra_args: tuple[str, ...] = ()`, appended in `build_command` | +2 |
 | `src/fundamentals/api/ledger_cli.py` | modify | `narrate` action; `export --panel-text`; `_panel` loads limits | +45 |
-| `config/narrate.yaml` | create | Model id, the args Task 0 proved, timeout, retries, limits (OD-1) | ≈ 14 |
+| `config/narrate.yaml` | create | Model id, timeout, retries, limits (OD-1). r5 (W1): no args | ≈ 14 |
 | `tests/fundamentals/test_narrate_checks.py` | create | Pure: scan table, parse, trend and its assembled block, verdict lexicon, notes due, R6 shapes, argv and config load | ≈ 240 |
 | `tests/fundamentals/test_narrate_flow.py` | create | Pilot: full path, bound and no-thesis, with disclosure updates; refusal table with zero deltas; post-insert rollback; bundle; prompt boundary; limits; panel; rework; recovery | ≈ 455 |
 
@@ -315,6 +315,7 @@ and **695 test lines** (r2: 650) against 300–400, well above it. These are est
 | T4: no attribution or permission logic; the trend's own rule stays | −20 |
 | T6: no bespoke query or row model; the operand rendering and exact claim association stay | −20 |
 | T1: `no_thesis_section`, the U2 exemption, the no-assessment instruction | +8 |
+| r5 (W1, W2): the isolation constant and refusal, the U3 exemption, its instruction | +8 |
 | T2: the block that selects D2 | +2 |
 
 | Tests, r3 against r2 | Lines |
@@ -401,14 +402,14 @@ The event and log field names are inferred from the CLI's documented flags and a
 differential and the others must still suffice, or it counts as not established. `strace` is not installed on this machine (checked
 2026-11-02), so syscall tracing is not assumed; if it is available when this runs, its `openat` and `execve` list is added.
 
-Pass: every channel shows nothing loaded or callable, and the control shows the channels work. The proven args go to `config/narrate.yaml`,
+Pass: every channel shows nothing loaded or callable, and the control shows the channels work. The proven args go to `NARRATE_ISOLATION` (r5, W1),
 the evidence paths and result to the bead, and Task 3's argv test pins them. **Not established: S3 stops and the client design is revised
 through a plan revision and a fresh Sol round. There is no fallback to activate.** The same applies if the proof needs something the
 client cannot do, such as a working directory (`_default_run` passes none).
 
 Dependencies: Sol's approval of this plan. Everything else depends on this task.
 
-Risks: an upgrade of the CLI can change these flags' meaning. Rehearsal and live run the argv test's config unchanged, and the version
+Risks: an upgrade of the CLI can change these flags' meaning. Rehearsal and live run the argv test's constant unchanged, and the version
 in the evidence is recorded and rechecked at Task 4's start.
 
 ### Task 1: Scan and pure checks
@@ -509,7 +510,7 @@ Interfaces:
 - Consumes: Tasks 0, 1, 2; `_head`, `_READ_COMMITTED` (`run_draft`); `check_version`, `version_status`, `_LOCK`, `_NOW`, `DecisionRefusedError` (`lifecycle`); `store.create_version`, `sealed_digest`; `content_hash`, `narrative`; `ThesisModelClient`, `ThesisClientError`; `ClaudeOpusClient`.
 - Produces:
   - `class NarrateRefusedError(DecisionRefusedError)`, carried by `LEDGER_FAILURES` (`ledger_cli.py:132-143`) as a `ValueError`.
-  - `NarrateConfig` (frozen): r2 (S16) `claude: ClaudeClientConfig`, `limits: BundleLimits`. Validated at load: a model id set, `use_api` false, P7's limits.
+  - `NarrateConfig` (frozen): r2 (S16) `claude: ClaudeClientConfig`, `limits: BundleLimits`. Validated at load: a model id set, `use_api` false, P7's limits. r5 (W1): Task 0's proven args are the constant `NARRATE_ISOLATION` in `narrate.py`, set by `load_narrate_config`; a file that carries `extra_args` refuses, so `--narrate-config` cannot change the invocation Task 0 proved.
   - `load_narrate_config(path: Path) -> NarrateConfig`. The composition root builds `ClaudeOpusClient(config.claude)`; no factory.
   - `drafting_prompt(draft: VersionDraft, bundle: Bundle, due: …, thesis: …) -> str`, public so the tests exercise the real builder (S2, S3).
   - `narrate(pool: ConnectionPool, version_id: int, *, client: ThesisModelClient, limits: BundleLimits, catalog: SourceCatalog, snapshots: SnapshotStore) -> int`.
@@ -527,6 +528,7 @@ Approach:
 
 Verification: `uv run pytest tests/fundamentals/test_narrate_flow.py tests/fundamentals/test_ledger_panel.py tests/fundamentals/test_ledger_panel_cli.py tests/fundamentals/test_prep5_rework.py -n 0` (compose postgres plus retained originals). Named tests in `test_narrate_flow.py`:
 - `test_full_path_narrated_version_supersedes_its_head`: `run` → submit → panel `APPROVE` → narrate with a fake client → N+1 sections are N's, with U1–U6 applied and every other byte identical, plus five keys in order; N unchanged; every claim's `model_dump` equal; `version_record` of N+1 equal to N's; cutoff, pins and predecessor as P1; `AS_KNOWN` all `MATCH` → submit → panel with a fake reviewer that records `subject_text`, which holds the bundle → `APPROVED`, N `SUPERSEDED`.
+- r5 (W2) `test_a_no_guidance_version_narrates_through_the_panel`: the same helper on a pilot whose run extracts no guidance quote. N's section is asserted to be the exact no-statement form; U3 is skipped and the section is byte-identical; the prompt holds the cannot-be-assessed instruction; submit; panel `APPROVE` supersedes N. A copy of the draft (no write) missing U3's `before` in any other form refuses, with the client never called. r5 (W1) `test_a_config_cannot_change_the_invocation`: a `--narrate-config` file carrying `extra_args`, whether omitting, changing or adding to them, refuses before the client is built, and the loaded config's args equal `NARRATE_ISOLATION`.
 - r3 (T1) `test_a_no_thesis_version_narrates_through_the_panel`: the same path through a shared helper. r4 (V2): on the normal imported pilot, whose approved bootstrap thesis versions the owner decision path then withdraws (`_withdraw`, `test_prep2b_run_draft.py:373`) before FY26_Q2 runs, which keeps the bootstrap period and imported quote bindings with no approved thesis. N's section is asserted to be the exact no-thesis form first. N+1's `thesis_impact` is byte-identical to N's; U1 and U3–U6 applied; the prompt holds the no-assessment constant and not the stance instruction; the bundle says no thesis; `check` all `MATCH`; submit; panel `APPROVE` supersedes N. A copy of the draft (no write) whose `thesis_impact` holds `NO_THESIS` in another form refuses in the disclosure step, with the client never called.
 - `test_a_recorded_response_binds_the_panel_text`: a binding over `export --panel-text` bytes decides; one over plain `export` bytes refuses.
 - `test_each_bad_draft_writes_nothing` (r3: a table looped over one pilot; spec §5's list, every table's count unchanged through `all_counts`, the refusal naming its cause): number word; `amount:123`; numbered item; each of `-{{c:…|}}`, `{{c:…|}}x`, `amount:{{c:…|}}`; digit in a style field; unknown claim key; a location in another issuer's document; a same-issuer later disclosure, real retrospective capture (C-5, non-membership); a capture outside the package; an eligible location that is not citable; an extra key; a deterministic key; a due note missing; a verdict word; r2 (S14) an empty body; r2 (S2, S13) a `{{s:…}}` marker on an excluded span; a `|quote` and a `|ref` placeholder on an excluded claim.
@@ -581,7 +583,7 @@ r2 (S11): `panel` by verdict, frozen and verified separately, because only an ap
 Recovery `run` (P6, r2 S12: rehearsal **and** live): +1, +11, the quarter's claims; traces +0 (S2 F-8). A refused `--full-successor`: all 0.
 
 Approach:
-0. r2 (S1): **Recheck Task 0.** `claude --version` equals the evidence's, and `config/narrate.yaml`'s args are unchanged. A different version repeats Task 0 before rehearsal.
+0. r2 (S1): **Recheck Task 0.** `claude --version` equals the evidence's, and `NARRATE_ISOLATION` is unchanged. A different version repeats Task 0 before rehearsal.
 1. **Rehearsal, all four quarters, on a restored copy.** `db backup` → `db restore --database eqos_test_s3_runs`, roots as `cp -a` copies under `$OUT/roots/`; `OUT=scratchpad/research3-s3/task4/$ENV`, preflighted as S2 Task 4. The real client runs, because the argv, flags and prompt size are what the rehearsal must prove. r2 (S12): six to eight model calls, with the `REJECT` drill. The rehearsal panel uses a `rehearsal` verdict file and an orchestrator-written response, whose binding hashes `export --panel-text`.
    - **Rejected-narrative drill, on FY26_Q2** (P6): narrate, gates, submit; a rehearsal `REQUEST_CHANGES` with no claims; `run --full-successor` refuses, all 0; an ordinary `run` writes M; gate (f) passes on M; check, submit, rehearsal `APPROVE`; narrate M; gates; rehearsal `APPROVE`. Attempt paths `<Q>-r<n>`. r2 (S12): the rehearsal also runs a `REJECT` on FY26_Q3's first narrated version, through the same route, with its own frozen delta row. The remaining quarters continue from these.
    - r2 (S12): **Gate (f) mutation drill.** The gate's comparison runs on the drill's real M and N dumps, then on a copy with each deliberate mutation: a section byte, a claim's value, the source cutoff, the manifest digest, the thesis version, the thesis digest, a pin, and each allowed heading field with its neighbouring text changed. Every mutation must fail, each naming what moved. A gate that passes one is fixed before live.
