@@ -3,7 +3,10 @@
 **Origin:** `docs/specs/2026-10-27-research-3-thesis-analysis.md` §5 "S2" (approved r4,
 gpt-6.1-sol `APPROVE`), with §0, §1, §3, §6 and the owner rulings. Bead `eqos-bnx`, slice 3 → S2.
 S1 closed live on 2026-11-01. Format and lessons: `docs/plans/RESEARCH-3-S1-risk-probe.md`.
-**Revision:** r4 (2026-11-01) fixes Sol's closing review (at `85521918`), marked "r4 (F<n>)": one prepare step before
+**Revision:** r5 (2026-11-02) fixes Sol's fresh closing review (at `4b0ca528`), marked "r5 (C<n>)": exact digits in
+the claim's scale (C1, P4), several target years stay `MULTI_YEAR` (C2, P3), a change of fiscal calendar refuses (C3, P7),
+and a bounded promise against an open one is a revision (C4, P5).
+r4 (2026-11-01) fixes Sol's closing review (at `85521918`), marked "r4 (F<n>)": one prepare step before
 the first write (F1, P12), target-year windows (F2, P7), links resolved through the pool (F3, P13), a reviewed
 `reading` on each entry (F4, P14), all admitted XBRLs searched (F5), one reference contract (F6), a frozen
 correction delta (F7), and the approving round's three simplifications.
@@ -129,13 +132,16 @@ claim must route to a fact, trace or threshold). `test_report_export_gaps.py:42`
   removed first. Then the first match wins:
   1. `CAGR`, `a year`, `per year`, `every year`, `each year`, `per annum`, `annually`, or a count of
      years (`<number or two to five>[- ]years?`) → `MULTI_YEAR`;
-  2. one distinct explicit fiscal label → that year; several → `MULTI_YEAR`;
-  3. `this year` or `current year` → reference fiscal year; `next year` → reference + 1. Each is
-     `AMBIGUOUS` when the filing time is missing or falls in a later fiscal year than `stated_end`'s;
-  4. otherwise `AMBIGUOUS`.
+  2. r5 (C2): several distinct explicit fiscal labels, or both a current-year phrase (`this year`,
+     `current year`) and `next year` → `MULTI_YEAR`, since one year's window would score half the
+     promise (spec Classification, OD-5);
+  3. no relative phrase: one explicit fiscal label → that year, none → `AMBIGUOUS`;
+  4. one relative phrase: a current-year phrase → reference fiscal year; `next year` → reference + 1. Each is
+     `AMBIGUOUS` when the filing time is missing or falls in a later fiscal year than `stated_end`'s. An
+     explicit label beside it that names another year → `MULTI_YEAR`; naming the same year → that year.
 
   So an undated "20% year on year" is `AMBIGUOUS`, "20% year on year in FY27" is `FY27`, "20% year on
-  year this year" follows rule 3, and "year on year for the next three years" is `MULTI_YEAR`. A new
+  year this year" follows rule 4, and "year on year for the next three years" is `MULTI_YEAR`. A new
   entry whose declared `window` differs refuses, which covers the anchor-only year (A4).
 - **P4, one comparison, including interim (r2, R5; r3).** A statement's binding bound is `L` for `HIGHER`,
   `U` for `LOWER`. **Exact:** the trace's `Fraction` (`CalculationResult.exact`;
@@ -154,7 +160,8 @@ claim must route to a fact, trace or threshold). `test_report_export_gaps.py:42`
   - **Validation.** `_trace` reads `exact_value` too. For a claim with `EXACT_DIGITS` it resolves to
     `truncate_value(Fraction(exact_value), claim.precision)`, otherwise exactly as today, so every existing
     claim keeps its path. `check_claim` is unchanged: a claim typing the stored 9.50, or six-place digits
-    without the qualifier, is `VALUE_MISMATCH`. P7's only actual is a percentage, so no claim scale applies.
+    without the qualifier, is `VALUE_MISMATCH`. r5 (C1): the exact fraction is divided by the claim's scale before the cut, as every other path resolves
+    in the claim's scale, so 10,000,000 INR supports one crore and not 10,000,000 crore. P7's only actual is a percentage (no scale).
   - **Rendering.** `render_claim` is unchanged: `{{c:<key>|unit}}` prints `9.495000%`. Beside it the row
     writes one of two fixed, digit-free phrases, chosen by `exact == Fraction(claim.value)`: `ACTUAL_WHOLE` "(all
     computed digits)" or `ACTUAL_CUT` "(first six decimal places, cut and not rounded; more digits follow)",
@@ -172,6 +179,8 @@ claim must route to a fact, trace or threshold). `test_report_export_gaps.py:42`
   `UNRESOLVED` ("direction not registered"). A `plus` on a `LOWER` metric renders `UNRESOLVED` ("open
   bound in the wrong direction") in the revision event **and** at endpoint assessment, ended or interim:
   `assess` decides that beside endpoint comparability, so `compare` never treats a floor as a maximum.
+  r5 (C4): with equal binding bounds, a move from a bounded promise to an open one is `REVISED` ("range
+  widened") and the reverse `REVISED` ("range narrowed"); `REAFFIRMED` needs both open or both equally wide.
 - **P6, both reasons.** Outcome step 1 names every reason that holds ("window not established; no
   filed measure"). Otherwise the row would hide the second gap.
 - **P7, one real registry entry (r2, Sol note).** `ACTUALS` holds `(revenue_growth, consolidated)`: the
@@ -182,6 +191,10 @@ claim must route to a fact, trace or threshold). `test_report_export_gaps.py:42`
   period end before that start is `NOT_STARTED`: `UNRESOLVED` ("not due: target year not started") with no
   interim actual. Inside it is `OPEN`: the numerator runs from the target's start to the period end, so it lies
   in the target year, and the comparator is the same months a year earlier. On or after its end is `ENDED`.
+  r5 (C3): every window uses one fiscal calendar for the whole chain. A record line's quarter label and period
+  end fix the year-end month it was sealed under, so the line's grammar needs no new field: `prepare` refuses, before
+  the first write, when any statement of either head fixes a month other than the run's. A real change of calendar is
+  rare and ambiguous for an open promise, so it stops the chain rather than being reinterpreted.
   It makes the `cred.*` path real and testable on the retained pilot. Apar emits no such metric, so its
   report has no `cred.*` claim. Tests of scope and direction inject a registry.
 - **P8, adverse cases are pure tests**, as S1's P8. Outcomes and events are pure functions of claims

@@ -565,7 +565,7 @@ def _trace(
     if row is None or row["value"] is None or times is None:
         return None
     value = (
-        truncate_value(Fraction(row["exact_value"]), claim.precision)
+        truncate_value(Fraction(row["exact_value"]) / (claim.scale or 1), claim.precision)
         if EXACT_DIGITS in claim.qualifiers
         else _claim_scaled(row["value"], claim)
     )

@@ -50,6 +50,7 @@ ACTUAL_WHOLE = "(all computed digits)"
 ACTUAL_CUT = "(first six decimal places, cut and not rounded; more digits follow)"
 REASON_DESCRIPTIVE = "the quote is read as descriptive, not a promise"
 REASON_WRONG_WAY = "open bound in the wrong direction"
+_WIDENED, _NARROWED = "range widened", "range narrowed"
 _NONE = "- none"
 COMPUTED, OBSERVED, INFERRED = "{{e:computed}}", "{{e:observed}}", "{{e:inferred}}"
 _RETIRED_HEADER = f"{COMPUTED} Retired entries:"
@@ -247,7 +248,8 @@ def revision(before: Statement, after: Statement, better: Better | None) -> Even
         return Event(kind=EventKind.REVISED, reason="basis changed")
     old, new = before.claim, after.claim
     (old_low, old_high), (new_low, new_high) = _bounds(old), _bounds(new)
-    opened = "plus" in old.qualifiers or "plus" in new.qualifiers
+    old_open, new_open = "plus" in old.qualifiers, "plus" in new.qualifiers
+    opened = old_open or new_open
     if opened and better is Better.LOWER:
         return Event(kind=EventKind.UNRESOLVED, reason=REASON_WRONG_WAY)
     if opened and better is None and (old_low != old_high or new_low != new_high):
@@ -255,11 +257,12 @@ def revision(before: Statement, after: Statement, better: Better | None) -> Even
     was, now = (old_low, new_low) if opened else (old_low + old_high, new_low + new_high)
     if now != was:
         return Event(kind=EventKind.REVISED_UP if now > was else EventKind.REVISED_DOWN)
+    if old_open != new_open:
+        return Event(kind=EventKind.REVISED, reason=_WIDENED if new_open else _NARROWED)
     width, wider = old_high - old_low, new_high - new_low
     if opened or width == wider:
         return Event(kind=EventKind.REAFFIRMED)
-    reason = "range widened" if wider > width else "range narrowed"
-    return Event(kind=EventKind.REVISED, reason=reason)
+    return Event(kind=EventKind.REVISED, reason=_WIDENED if wider > width else _NARROWED)
 
 
 def compare(statement: Statement, exact: Fraction, better: Better) -> bool:
@@ -385,6 +388,11 @@ def _episode(claim: NumericClaim, entry: TargetEntry | None, targets: Targets) -
     return f"{head}.{entry.window}.{targets.root(entry).id}"
 
 
+def _sealed_month(held: Recorded) -> int:
+    """The fiscal-year-end month a record line's quarter label and period end fix."""
+    return (held.stated_end.month + (4 - int(held.stated[-1])) * 3 - 1) % 12 + 1
+
+
 def prepare(
     stated_claims: Sequence[NumericClaim],
     record: Record,
@@ -398,6 +406,12 @@ def prepare(
     actual_blobs: frozenset[str],
 ) -> Prepared:
     """Join the pool to the mapping and check all of it, writing nothing."""
+    for held in (*record.statements, *same_period.statements):
+        if (sealed := _sealed_month(held)) != month:
+            raise RunDraftError(
+                f"credibility statement stated {held.stated}: sealed on a fiscal year ending in "
+                f"month {sealed}, this run's {month}; a calendar change cannot carry promises"
+            )
     end = date.fromisoformat(str(period_end))
     pool = {_triple(s.claims[0]): (s.claims[0], s.stated, s.stated_end) for s in record.statements}
     for claim in stated_claims:

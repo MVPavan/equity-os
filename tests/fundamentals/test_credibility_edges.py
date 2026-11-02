@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -10,10 +11,13 @@ from typing import Any
 import pytest
 import yaml
 from credibility_support import (
+    built,
     chain,
     claim,
     cred_module,
+    direction,
     entry,
+    finish,
     gt_module,
     outcomes,
     prepared,
@@ -23,7 +27,10 @@ from credibility_support import (
     write_targets,
 )
 from evidence_support import ingest, policy
+from ledger_cited_support import OPERAND, Cited, cited
+from pg_evidence_schema_support import _insert, _trace
 from prep2b_support import Pilot
+from test_credibility import stated
 from test_credibility_binding import (
     FY24,
     FY25,
@@ -39,11 +46,16 @@ from test_credibility_binding import (
 from test_prep2b_run_draft import dictionary, mapping_set, pilot
 
 from fundamentals.api import run_comparatives
+from fundamentals.contracts.evidence import RunMode
+from fundamentals.contracts.ledger import Citation, CitationKind, ClaimState
 from fundamentals.contracts.role import FactRole
 from fundamentals.extract.xbrl_parser import FactSelectionError
+from fundamentals.ledger.claim_check import check_claim
+from fundamentals.ledger.display import EXACT_DIGITS
 from fundamentals.ledger.run_traces import RunDraftError
+from fundamentals.pg.settings import PgRole
 
-__all__ = ["dictionary", "ingest", "mapping_set", "pilot", "policy"]
+__all__ = ["cited", "dictionary", "ingest", "mapping_set", "pilot", "policy"]
 
 
 def _bound_open_window(root: Path, measures: Any) -> Any:
@@ -195,3 +207,156 @@ def test_a_comparator_no_comparison_could_use_is_still_searched(
         assert want in line and SCORED_KEY not in keys
     else:
         assert outcomes(line) == [want] and SCORED_KEY in keys
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+@pytest.mark.parametrize(
+    ("value", "state"),
+    [("1", ClaimState.MATCH), ("10000000", ClaimState.VALUE_MISMATCH)],
+    ids=["one-crore", "the-rupee-figure-called-crore"],
+)
+def test_exact_digits_are_read_in_the_claims_scale(
+    cited: Cited, value: str, state: ClaimState
+) -> None:
+    """P4, r5 (C1): a trace of 10,000,000 INR supports one crore; the same digits in crore inflate
+    it ten-million-fold, and the exact-digit path shares the validator with every currency claim."""
+    figure = dict.fromkeys(("value", "lower", "upper"), Decimal(10_000_000))
+    exact = dict.fromkeys(("exact_value", "exact_lower", "exact_upper"), "10000000")
+    digest = {"key_digest": cited.cell_key.digest()}
+    with cited.pools[PgRole.RUNTIME].connection() as conn, conn.transaction():
+        trace = _insert(conn, "calculation_traces", _trace("f" * 64) | figure | exact | digest)
+        operand = {"calculation_trace_id": trace, "interpretation_id": cited.ids["selected"]}
+        _insert(conn, "calculation_trace_operands", OPERAND | operand)
+    update = {
+        "citation": Citation(kind=CitationKind.CALCULATION, calculation_trace_id=trace),
+        "qualifiers": (EXACT_DIGITS,),
+        "value": Decimal(value),
+        "precision": 6,
+    }
+    held = cited.first_party_trace().model_copy(update=update)
+    at = datetime.now(UTC)
+    assert (
+        check_claim(held, cited.resolve(held), mode=RunMode.AS_KNOWN, cutoff=at, imported=False)
+        is state
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "want"),
+    [
+        ("growth of 10% this year and next year", "MULTI_YEAR"),
+        ("growth of 10% next year and the current year", "MULTI_YEAR"),
+        ("growth of 10% in FY26 and next year", "MULTI_YEAR"),
+        ("growth of 10% in FY27 next year", "FY27"),
+        ("growth of 10% this year, FY26", "FY26"),
+    ],
+)
+def test_a_quote_naming_two_years_is_not_a_single_year_target(text: str, want: str) -> None:
+    """P3, r5 (C2): one window scored for a promise over two would report it achieved on half."""
+    filed = datetime(2026, 2, 4, tzinfo=UTC)  # during FY26
+    assert gt_module().derive_window(text, filed, date(2025, 12, 31), 3) == want
+
+
+def test_two_relative_years_refuse_a_single_year_mapping_and_stay_unresolved(
+    tmp_path: Path,
+) -> None:
+    """P3, OD-5, r5 (C2): the two-year quote cannot be mapped to a year, and as ``MULTI_YEAR`` no
+    actual reaches a verdict."""
+    held = claim(quote="growth of 10% this year and next year")
+    filed = {held.citation.source_sha256: datetime(2026, 2, 4, tzinfo=UTC)}
+    with pytest.raises(RunDraftError, match="window FY27 where its words give MULTI_YEAR"):
+        prepared((held,), write_targets(tmp_path, entry("A", held, "FY27")), "FY26_Q3", filed=filed)
+    mapping = write_targets(tmp_path, entry("A", held, "MULTI_YEAR"))
+    section = built((held,), mapping, "FY26_Q3", filed=filed, measures=registry())
+    unresolved(row(section.body, "revenue_growth.consolidated.MULTI_YEAR"), "not single-year")
+
+
+def _prepare(
+    held: Any, record: Any, same: Any, mapping: Any, period: str, end: date, month: int
+) -> Any:
+    """``prepare`` of one quarter under the fiscal-year-end ``month``."""
+    return cred_module().prepare(
+        held,
+        record,
+        same,
+        mapping,
+        period=period,
+        period_end=end,
+        month=month,
+        filed_at={},
+        actual_blobs=frozenset(),
+    )
+
+
+@pytest.mark.parametrize("same_period", [False, True], ids=["carried", "same-period"])
+def test_a_later_fiscal_calendar_cannot_reinterpret_a_sealed_promise(
+    tmp_path: Path, same_period: bool
+) -> None:
+    """P7, r5 (C3): FY26 sealed on a March year would become an open December year, its annual
+    result no longer governing and other year-to-date months sought, with every pin unchanged."""
+    cred, held = cred_module(), claim()
+    mapping = write_targets(tmp_path, entry("A", held))
+    head = built((held,), mapping, "FY26_Q2")
+    sealed, none = cred.read_record(head.body, head.claims), cred.Record()
+    pair = (none, sealed) if same_period else (sealed, none)
+    args = ((held,), *pair, mapping, "FY26_Q3", date(2025, 12, 31))
+    with pytest.raises(RunDraftError, match="stated FY26_Q2: .*month 3, this run's 12"):
+        _prepare(*args, 12)
+    assert _prepare(*args, 3).month == 3
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_an_effective_fiscal_setting_change_refuses_the_next_run_with_every_table_unchanged(
+    pilot: Pilot,
+) -> None:
+    """P7, P12, r5 (C3): a setting valid from the next quarter must not reread what the sealed head
+    promised. It refuses before the first write, under the month the real resolver supplies."""
+    result = pilot.run("FY26_Q2")
+    pilot.approve(result.draft_version_id)
+    pilot.registered("FY26_Q3")
+    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn:
+        inserted = conn.execute(
+            "INSERT INTO eqos.settings_records "
+            "(entity_id, setting_key, value_text, evidence_input_id, valid_from) "
+            "SELECT entity_id, setting_key, '12', evidence_input_id, %s FROM eqos.settings_records "
+            "WHERE entity_id = %s AND setting_key = 'FISCAL_YEAR_END_MONTH' LIMIT 1",
+            (date(2025, 10, 1), pilot.entity_id),
+        )
+        assert inserted.rowcount == 1
+    before = all_counts(pilot)
+    with pytest.raises(RunDraftError, match="stated FY26_Q2: .*month 3, this run's 12"):
+        pilot.run("FY26_Q3")
+    assert all_counts(pilot) == before
+
+
+def test_a_december_year_chain_carries_under_its_own_calendar(tmp_path: Path) -> None:
+    """P7, r5 (C3): the refusal is a change of calendar, not a preference for March."""
+    cred, held = cred_module(), claim()
+    mapping = write_targets(tmp_path, entry("A", held))
+    none = cred.Record()
+    first = finish(_prepare((held,), none, none, mapping, "FY26_Q1", date(2026, 3, 31), 12))
+    sealed = cred.read_record(first.body, first.claims)
+    carried = _prepare((), sealed, none, mapping, "FY26_Q2", date(2026, 6, 30), 12)
+    assert carried.windows == {("revenue_growth", "consolidated", "FY26"): cred.WindowState.OPEN}
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "reason"),
+    [
+        ("20+", "20-22", "range narrowed"),
+        ("20-22", "20+", "range widened"),
+        ("20", "20+", "range widened"),
+        ("20+", "20", "range narrowed"),
+    ],
+)
+def test_moving_between_a_bounded_and_an_open_promise_is_a_revision(
+    before: str, after: str, reason: str
+) -> None:
+    """P5, r5 (C4): equal floors do not make "20%-plus" and "20-22%" one promise. Up and down name
+    the floor's move, so this has no direction, only the range's change."""
+    revision, higher = cred_module().revision, direction("HIGHER")
+    event = revision(stated(before), stated(after), higher)
+    assert (event.kind.value, event.reason) == ("REVISED", reason)
+    assert revision(stated(before), stated(before), higher).kind.value == "REAFFIRMED"

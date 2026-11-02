@@ -213,12 +213,15 @@ def derive_window(text: str, filed_at: datetime | None, stated_end: date, month:
     if _RECURRING.search(words):
         return WINDOW_MULTI_YEAR
     labels = {found.group(1) for found in _LABEL.finditer(words)}
-    if labels:
-        return f"FY{labels.pop()}" if len(labels) == 1 else WINDOW_MULTI_YEAR
-    ahead = 1 if _NEXT_YEAR.search(words) else 0 if _THIS_YEAR.search(words) else None
-    if ahead is None or filed_at is None:
+    relative = [ahead for ahead, says in enumerate((_THIS_YEAR, _NEXT_YEAR)) if says.search(words)]
+    if len(labels) > 1 or len(relative) > 1:
+        return WINDOW_MULTI_YEAR
+    if not relative:
+        return f"FY{labels.pop()}" if labels else WINDOW_AMBIGUOUS
+    if filed_at is None:
         return WINDOW_AMBIGUOUS
     reference = fiscal_year(filed_at.astimezone(NSE_WALL_ZONE).date(), month)
     if reference > fiscal_year(stated_end, month):
         return WINDOW_AMBIGUOUS
-    return f"FY{(reference + ahead) % 100:02d}"
+    year = f"{(reference + relative[0]) % 100:02d}"
+    return WINDOW_MULTI_YEAR if labels - {year} else f"FY{year}"
