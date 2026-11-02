@@ -406,3 +406,8 @@ Format per entry:
 - Owner cap (2026-10-29): at most 8 workers in total across everything running at once (the
   machine is shared; 16 throttled other work). The gate uses 8; concurrent worker lanes use
   `-n 4` each, or `-n 8` only when running alone.
+
+## A drill verdict does not measure the real panel  (2026-11-02)
+- Observed: RESEARCH-3 S3's rehearsal passed with orchestrator-written verdicts on every draft. The first real panel rounds on ordinary drafts came in the live run, and all three FY26_Q2 drafts were rejected, permanently on the ledger.
+- Why it matters: a rehearsal proves the route, not that the output passes its reviewer. Rejections cost permanent versions and panel rounds.
+- Apply: when model output must pass a model reviewer before a permanent write, run real review rounds on a restored copy first, and state any stop rule before seeing the results.

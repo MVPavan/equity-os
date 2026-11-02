@@ -1,14 +1,18 @@
 {
   "now": {
-    "title": "RESEARCH-3 S3 ledger narrate: live stopped after FY26_Q2 drafts were rejected, prompt trial next",
-    "detail": "Sol rejected all three live FY26_Q2 drafts for reasoning faults; every number matched and every deterministic gate passed. FY26_Q2 stands on approved deterministic v29 with no narrative; the other quarters are untouched. Sol reviewed a prompt revision. Next: full gate, then a trial on a test database where all four drafts must get Sol's approval. Without four approvals, S3 stops and goes to the owner unfinished."
+    "title": "RESEARCH-3 S3 stopped: waiting for the owner's decision",
+    "detail": "The prompt trial needed four Sol approvals on a test database. Two drafts were approved; the third, FY26_Q4, was refused for a bare year in its text, which under the approved rule stops the trial. FY26_Q2 stands on approved deterministic v29 with no narrative. FY26_Q3, FY26_Q4 and FY27_Q1 are unchanged at their approved S2 versions. No live writes until the owner decides."
   },
   "next": [
-    "RESEARCH-3 S3 gate and prompt trial; live resumes only on four approvals, then RESEARCH-4",
+    "Owner: S3 stopped; let the trial resume with the normal wording-refusal retry, or close S3 as it stands?",
     "eqos-pds3: check whether approved thesis versions were drafted by the unisolated client",
     "Owner: materiality extended to a third slice (may overturn); keep macro charts monthly and drop index widgets? (recommended yes)"
   ],
   "log": [
+    {
+      "date": "2026-11-02",
+      "text": "RESEARCH-3 S3 prompt trial stopped: Sol approved FY26_Q2 and FY26_Q3 trial drafts with no findings, then FY26_Q4's draft was refused for a bare year. Stop rule held: no retry, live unchanged, backup taken. Goes to the owner."
+    },
     {
       "date": "2026-11-02",
       "text": "RESEARCH-3 S3 live FY26_Q2: Sol rejected drafts v24, v26 and v28; recoveries v25, v27 and v29 approved, v29 is the head with no narrative. Rehearsal draft verdicts had been orchestrator-written, so this was the first real test of the panel pass rate. Prompt revised with Sol's wording; a four-of-four trial decides whether live resumes."
