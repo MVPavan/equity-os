@@ -86,11 +86,14 @@ def _directions(body: str) -> set[str]:
 
 def test_the_scan_refuses_what_smuggles_a_number_and_allows_the_rest() -> None:
     """Spec §4: smuggled numbers refuse, naming what they found; exemptions and whole words hold."""
-    for word in ("forty", "FORTY", "doubled", "percent", "bps"):
+    for word in ("forty", "FORTY", "doubled", "percent", "bps", "twofold", "tenfold", "multifold"):
         assert any(word in reason for reason in scan_narrative(f"{LABEL}it was {word}")), word
     refused = {
         "no one said so": "one",
         "a many-fold rise": "-fold",
+        "a two-fold rise": "-fold",
+        "it was Ⅷ": "Ⅷ",
+        "in FY١٢٣٤": "١٢٣٤",
         "amount:123": "123",
         "\n1. a numbered item": "1",
         "a footnote[^1]": "1",
@@ -106,6 +109,7 @@ def test_the_scan_refuses_what_smuggles_a_number_and_allows_the_rest() -> None:
         assert any(token in reason for reason in scan_narrative(LABEL + text)), text
     for text in ("on 2026-03-31", "in FY26_Q2", "in Q3", "({{c:k|}})", "{{c:k|unit}}, so", "tone"):
         assert scan_narrative(LABEL + text) == (), text
+    assert scan_narrative(LABEL + "unfold the scaffold") == ()
 
 
 @GAPS

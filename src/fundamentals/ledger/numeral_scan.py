@@ -54,9 +54,11 @@ NUMBER_WORDS = (
     "ninety hundred thousand lakh crore million billion dozen twice thrice double doubled triple "
     "tripled halve halved percent bps"
 ).split() + ["per cent", "basis point", "basis points"]
-_NARRATIVE_EXEMPT = re.compile(f"{_DATES}|{_PERIODS}")
-_DIGIT_TOKEN = re.compile(r"\S*\d\S*")
-_LEXICON = re.compile(rf"\b(?:{'|'.join(NUMBER_WORDS)})\b|-fold\b", re.IGNORECASE)
+_NARRATIVE_EXEMPT = re.compile(f"{_DATES}|{_PERIODS}", re.ASCII)
+_WORDS = "|".join(NUMBER_WORDS)
+_LEXICON = re.compile(rf"\b(?:(?:{_WORDS})(?:fold)?|(?:many|multi)fold)\b|-fold\b", re.IGNORECASE)
+# One pass: removing one kind first could complete a marker of another around hidden text.
+_MARKER = re.compile("|".join(m.pattern for m in (PLACEHOLDER, CLASS_MARKER, LOCATION_MARKER)))
 _MAY_TOUCH = frozenset(" \t\r\n(),.;")
 
 
@@ -85,8 +87,7 @@ def scan_section(text: str, *, resolves: Callable[[str, str], bool]) -> tuple[Ve
 
 def narrative_prose(text: str) -> str:
     """``text`` with its markers out and each paragraph's whitespace one space; paragraphs stay."""
-    bare = LOCATION_MARKER.sub(" ", CLASS_MARKER.sub(" ", PLACEHOLDER.sub(" ", text)))
-    return "\n\n".join(" ".join(part.split()) for part in _PARAGRAPH_BREAK.split(bare))
+    return "\n\n".join(" ".join(p.split()) for p in _PARAGRAPH_BREAK.split(_MARKER.sub(" ", text)))
 
 
 def scan_narrative(text: str) -> tuple[str, ...]:
@@ -97,9 +98,11 @@ def scan_narrative(text: str) -> tuple[str, ...]:
         if not _MAY_TOUCH.issuperset(text[max(found.start() - 1, 0) : found.start()])
         or not _MAY_TOUCH.issuperset(text[found.end() : found.end() + 1])
     ]
+    reasons += [f"class marker: {c}" for c in CLASS_MARKER.findall(text) if c not in _CLASSES]
     bare = narrative_prose(text)
     if "{{" in bare:
         reasons.append("a {{ marker is left unfilled")
-    reasons += [f"digit: {t}" for t in _DIGIT_TOKEN.findall(_NARRATIVE_EXEMPT.sub(" ", bare))]
+    tokens = _NARRATIVE_EXEMPT.sub(" ", bare).split()
+    reasons += [f"digit: {t}" for t in tokens if any(c.isnumeric() for c in t)]
     reasons += [f"number word: {found.group()}" for found in _LEXICON.finditer(bare)]
     return tuple(reasons)

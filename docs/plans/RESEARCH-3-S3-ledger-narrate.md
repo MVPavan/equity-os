@@ -749,3 +749,10 @@ Behaviour that changed from r7:
 - **F6.** `ledger panel` and `ledger export --panel-text` load the narrate config only for a version with a narrative section; a plain version's path does not read the file.
 - **F7.** `ledger export --stock ... --panel-text` refuses before exporting anything.
 - **Stops.** Production stays at the re-based 800 lines and tests at 1,200.
+
+Sol's closing review of `8e3d4eee` (`REQUEST_CHANGES`, three P2 holes in the narrative number gate):
+
+- **Fold quantities.** The number words and `many`/`multi` plus `fold` refuse alongside `-fold`, so `twofold` and `tenfold` refuse while `unfold` and `scaffold` pass. The gate does not refuse every word ending in "fold".
+- **Non-ASCII digits.** After dates and periods come out, a token holding any `str.isnumeric()` character refuses, covering superscripts, circled numbers, `½` and `Ⅷ`. Only ASCII digits form a permitted date or period, so `FY١٢٣٤` refuses.
+- **Class markers.** A class marker outside the registered epistemic classes refuses, including in a heading. Markers come out in one pass, so a location marker wrapped around a class marker, `{{s:{{e:inferred}}|123}}`, stays visible and refuses.
+- **Stops.** For these fixes only, production is re-based to 810 lines and tests to 1,210.
