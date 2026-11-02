@@ -1,8 +1,8 @@
 # Rule H: Apar's guidance mapping (RESEARCH-3 S2; docs/plans/RESEARCH-3-S2-management-credibility.md Task 3).
 # Entry quotes, blobs and anchors are copied by script from the S1 export; id, window_text, window,
 # reading, definition and same_as were written after reading each quote's retained transcript page.
-# PROVISIONAL: readings, windows and links are planning inputs until Sol's phase-end review freezes
-# them (plan "Freeze before rehearsal"). Append-only from the first live version: a correction is a
+# Frozen by gpt-6.1-sol APPROVE, freeze review, 2026-11-02 (plan "Frozen expectations"). Append-only
+# from the first live version: a correction is a
 # new entry with `supersedes`, never an edit.
 entries:
 - id: conductor-ebitda-FY26_Q2

@@ -1,14 +1,18 @@
 {
   "now": {
-    "title": "RESEARCH-3 S1 risk probe closed live; S2 next",
-    "detail": "All four Apar quarters regenerated with the risk probe and approved by Sol: FY26_Q2 v15, FY26_Q3 v16, FY26_Q4 v18, FY27_Q1 v19. Sol sent v14 and v17 back for missing disclosures; both were fixed in code and re-sealed. This is an S1 demonstration only: A-04/B-02 remain unmet and the core research release stays NO."
+    "title": "RESEARCH-3 S2 management credibility: mapping frozen, rehearsal next",
+    "detail": "Code passes gate 6 at 347443fc (5,509 tests, rails OK). Sol approved all eight Apar guidance entries on 2026-11-02 and the expectations are frozen in the plan. Next: full four-quarter rehearsal on a restored copy of live, then live regeneration with a Sol panel per quarter. Nothing written live for S2 yet."
   },
   "next": [
-    "RESEARCH-3 S2 (management credibility), then S3, then RESEARCH-4",
-    "Owner: keep macro charts (132/week) and index widgets (89/week)?",
+    "RESEARCH-3 S2 rehearsal, then live regeneration of four Apar quarters; then S3, RESEARCH-4",
+    "Owner: keep macro charts on a monthly schedule and drop index widgets? (recommended yes to both)",
     "eqos-aa6.28 capture error messages; eqos-dna.3; DOCS-1 follow-ups msq.3-.7"
   ],
   "log": [
+    {
+      "date": "2026-11-02",
+      "text": "RESEARCH-3 S2 code closed through Sol's closing review (gate 6 ROUTE PASS at 347443fc); freeze review APPROVE on all eight guidance entries, expectations committed to the plan."
+    },
     {
       "date": "2026-11-01",
       "text": "eqos-aa6.29 closed (cc93aac5): multi-year and average labels stay unmapped. No live label proposals existed. Follow-up eqos-aa6.30 on TTM labels."

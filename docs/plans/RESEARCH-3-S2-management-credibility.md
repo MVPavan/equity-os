@@ -16,7 +16,7 @@ role changes; it records the rulings on C-13, the estimate and the deferred veri
 r2 fixed the 14 findings of Sol's r1 review (at `09112a32`) and carried its rulings on C-4, C-8, C-12, the
 provisional mapping predictions and the `Interim` simplification, marked "r2 (R<n>)". One mechanism answers
 R1, R2, R4 and R8: a sealed record line per statement (P2). **No finding needs a migration.**
-**Status:** approved r4 (2026-11-01) — approver gpt-6.1-sol, `APPROVE` on the re-review of the closing critical review's fixes (plan rounds r1–r3, closing review, re-review). The owner may overturn the S2 panel scope and C-15.
+**Status:** approved r5 (2026-11-02) — approver gpt-6.1-sol, `APPROVE` on the freeze review (2026-11-02), which confirmed `347443fc`; r4 approved 2026-11-01 (plan rounds r1–r3, closing review, re-review). The owner may overturn the S2 panel scope and C-15.
 **Goal:** every Apar run draft carries a `management_credibility` section after `risk_probe`. Each
 commitment episode shows its first and latest quote, its mapping entry and digest, its revision
 events, and a code-computed outcome against both statements, or a stated reason why none exists.
@@ -639,6 +639,32 @@ Approach:
   and recomputed deltas to this plan as **frozen expectations**, naming Sol's verdict and date. Task 4 does
   not start before that commit. An observed rehearsal delta or row that differs is a deviation; it never
   replaces a frozen value. Changing one needs a recorded reason and a fresh Sol round.
+- **Frozen expectations (gpt-6.1-sol `APPROVE`, freeze review, 2026-11-02, at `347443fc`).** These replace the
+  provisional table and deltas. All eight entries of `config/guidance_targets/aparinds.yaml` stand unchanged, and the
+  Task 3 table's readings, windows, links and definitions are frozen as written. Sol's rulings, by PDF page: FY27_Q1 margin
+  is a weak but real `COMMITMENT` (p8, management restates current guidance); both `REVISED_UP` events describe movement
+  between stated ranges, never an achieved outcome or better credibility.
+
+  | Entry id | Event |
+  |---|---|
+  | `conductor-ebitda-FY26_Q2` | `OPENED` |
+  | `cables-growth-FY26_Q2` | `OPENED` |
+  | `cables-growth-FY26_Q3` | `DESCRIBED` |
+  | `cables-margin-FY26_Q3` | `OPENED` |
+  | `conductor-ebitda-FY26_Q4` | `REVISED_UP` |
+  | `conductor-volume-FY26_Q4` | `OPENED` |
+  | `cables-growth-FY26_Q4` | `OPENED` |
+  | `cables-margin-FY27_Q1` | `REVISED_UP` |
+
+  `.latest` moves: conductor EBITDA only in FY26_Q4, cables margin only in FY27_Q1. Every outcome is `UNRESOLVED`, with
+  these reasons: the four `AMBIGUOUS` commitment episodes `window not established; no filed measure`; `cables-growth-FY26_Q4`
+  `window not single-year; no filed measure`; `cables-growth-FY26_Q3` `the quote is read as descriptive, not a promise`.
+  `E` stays 2, 4, 6, 6, and `numeric_claims` per `run` stays +91, +86, +101, +91.
+  **Claim-key reconciliation (Sol ruling).** For each quarter gate (d) records the restored `$S1` version, its complete
+  claim-key set, equality of every corresponding full `model_dump()`, and the exact added episode keys. The set
+  difference must hold only those additions and the total must equal the frozen delta; an inclusion-only check does
+  not suffice. The pilot fixture's 84 (80 + 4) agrees on the +4 but its base difference of 7 is **unexplained**, not
+  resolved. It needs no separate explanation before the freeze. Any rehearsal mismatch stops progression.
 - **Permanence.** The file becomes append-only at the first live version: a later correction is a
   `supersedes` entry and a permanent correction line. Sol's entry review must close first.
 
@@ -753,7 +779,7 @@ and is then created `mkdir -m 700`; for each quarter no output exists and `$LOC/
 `$INTAKE` are readable. Any failure stops before any write. Attempt `<n>` of a recovery uses
 `<Q>-r<n>` on every path.
 
-**Expected counts delta per write, stated before running (provisional until the freeze, Task 3).** `E` is
+**Expected counts delta per write, stated before running (frozen 2026-11-02, Task 3).** `E` is
 the quarter's episodes from the Task 3 table. Each episode adds `max(2, its statements)` claims; Apar's
 maximum is two statements, so `2E`.
 
@@ -980,7 +1006,7 @@ in the report, and test (o) asserts each constant.
   - Follow-up bead to file: sealed binding for a year-specific rule (C-8).
   - S3's duty to deliver the trend and thesis-consequence requirement → C-12, bead note at close.
 - **Unverified.** r4: the readings, links and windows rest on one reading of the retained pages named in the Task 3
-  table, not on Sol's review; they, `E` and the deltas are provisional until the freeze (Task 3). That `_quote` and the
+  table, not on Sol's review; they, `E` and the deltas were provisional until the freeze (Task 3), which Sol approved on 2026-11-02. That `_quote` and the
   rework gate write nothing, on which P12's guarantee rests, is read from the code, and F1's test proves it. The empty citation-exception list in gate (d) is
   inferred from the code, not observed. r3 (ruling): deferring it to the rehearsal is accepted, provided a
   deviation stops progression and any exception gets the review gate (d) specifies. The synthetic fixture's
