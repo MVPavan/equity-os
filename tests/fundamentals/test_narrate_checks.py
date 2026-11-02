@@ -107,9 +107,9 @@ def test_the_scan_refuses_what_smuggles_a_number_and_allows_the_rest() -> None:
     )
     for text, token in refused.items():
         assert any(token in reason for reason in scan_narrative(LABEL + text)), text
-    for text in ("on 2026-03-31", "in FY26_Q2", "in Q3", "({{c:k|}})", "{{c:k|unit}}, so", "tone"):
+    for text in ("on 2026-03-31", "in FY26_Q2", "in Q3", "({{c:k|}})", "{{c:k|unit}}, so", "{{c:k|}}?"):
         assert scan_narrative(LABEL + text) == (), text
-    assert scan_narrative(LABEL + "unfold the scaffold") == ()
+    assert scan_narrative(LABEL + "tone: unfold the scaffold") == ()
 
 
 @GAPS

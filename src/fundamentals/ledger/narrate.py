@@ -69,7 +69,7 @@ words and by placeholder, never by its id. Cite a location only by a marker list
 citable spans, copied exactly. Never name a claim marked withheld.
 Refused outright: any digit outside a date or a period label; these words in any case, even in
 ordinary English ("no one"): {", ".join(NUMBER_WORDS)}; any word ending in -fold; a placeholder
-touching anything but whitespace or ( ) , . ; on either side; and in credibility_notes, or any
+touching anything but whitespace or ( ) , . ; ? on either side; and in credibility_notes, or any
 sentence elsewhere on credibility, management or guidance: {", ".join(checks.VERDICT_WORDS)}.
 drivers: what the cited claims show moved, against which comparison; neither state nor suggest a
 cause. risk_notes: an interpretation of each flagged row and what stays open. credibility_notes:
@@ -82,9 +82,10 @@ _STANCE = (
     "thesis_narrative: as {{e:opinion}}, one stance on the thesis with its supporting claims: "
     "unchanged, strengthened, weakened, reversed or uncertain.\n"
 )
-REWORD_REMINDER = """Before answering, reread your notes and reword anything refused. The usual
-slips: "one" and "two" in plain English, so write "a" or "each" and "both"; and a question ending
-on a placeholder, because a ? touching one is refused, so put words between them.
+REWORD_REMINDER = """Before answering, check every sentence of your notes against the refused list
+and rephrase any that fails, without changing its meaning. Never say how many things there are: not
+"Three things stay open", "the two", "Two falsifiers weakened" or "one of", in any capitalisation.
+List the things and leave the count out.
 """
 _NO_THESIS = (
     "thesis_narrative: no thesis is approved, so say no assessment is possible and give no stance. "

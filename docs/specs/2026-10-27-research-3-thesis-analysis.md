@@ -363,7 +363,7 @@ land. The other three metrics are unregistered (`UNRESOLVED`, no filed measure).
       - cardinals zero to nineteen, the tens, hundred, thousand, lakh, crore, million, billion;
       - dozen, twice, thrice, double(d), triple(d), halve(d), "-fold";
       - percent, per cent, bps, basis point(s).
-    - A placeholder may touch only whitespace or `( ) , . ;` on either side. Anything else next
+    - A placeholder may touch only whitespace or `( ) , . ; ?` on either side. Anything else next
       to it blocks — a sign, digit, `%`, currency symbol, `×`/`x`, letter, `=` or `:`; that
       covers `-{{c:…|}}`, `{{c:…|}}x` and `amount:{{c:…|}}`.
   - **Coverage statement.** Deterministic coverage is: digits; the number-word lexicon; ids and

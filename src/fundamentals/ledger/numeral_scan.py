@@ -59,7 +59,7 @@ _WORDS = "|".join(NUMBER_WORDS)
 _LEXICON = re.compile(rf"\b(?:(?:{_WORDS})(?:fold)?|(?:many|multi)fold)\b|-fold\b", re.IGNORECASE)
 # One pass: removing one kind first could complete a marker of another around hidden text.
 _MARKER = re.compile("|".join(m.pattern for m in (PLACEHOLDER, CLASS_MARKER, LOCATION_MARKER)))
-_MAY_TOUCH = frozenset(" \t\r\n(),.;")
+_MAY_TOUCH = frozenset(" \t\r\n(),.;?")
 
 
 def scan_section(text: str, *, resolves: Callable[[str, str], bool]) -> tuple[VersionState, ...]:
