@@ -82,6 +82,10 @@ _STANCE = (
     "thesis_narrative: as {{e:opinion}}, one stance on the thesis with its supporting claims: "
     "unchanged, strengthened, weakened, reversed or uncertain.\n"
 )
+REWORD_REMINDER = """Before answering, reread your notes and reword anything refused. The usual
+slips: "one" and "two" in plain English, so write "a" or "each" and "both"; and a question ending
+on a placeholder, because a ? touching one is refused, so put words between them.
+"""
 _NO_THESIS = (
     "thesis_narrative: no thesis is approved, so say no assessment is possible and give no stance. "
     "credibility_notes: say the thesis consequence cannot be assessed.\n"
@@ -146,7 +150,7 @@ def apply_disclosure_updates(bodies: Mapping[str, str]) -> dict[str, str]:
 
 
 def drafting_prompt(draft: VersionDraft, bundle: Bundle, due: Mapping[str, tuple[str, ...]]) -> str:
-    """The rules, the duties, then N's text, quotes withheld, and the bundle in a hashed block."""
+    """The rules, the duties, N's text, quotes withheld, the hashed bundle block, a reminder."""
     bodies = {s.section_key: s.body for s in draft.sections}
     duties = [_RULES]
     duties.append(
@@ -165,7 +169,7 @@ def drafting_prompt(draft: VersionDraft, bundle: Bundle, due: Mapping[str, tuple
     ]
     text = narrative(draft.sections, claims).decode()
     block = f"evidence-{bundle.sha256}"
-    return f"{''.join(duties)}\n<{block}>\n{text}\n{bundle.text}</{block}>\n"
+    return f"{''.join(duties)}\n<{block}>\n{text}\n{bundle.text}</{block}>\n{REWORD_REMINDER}"
 
 
 def _require_approved_head(cursor: Cursor[Any], version: int, entity_id: int, period: str) -> None:

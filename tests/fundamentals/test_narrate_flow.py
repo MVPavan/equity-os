@@ -78,7 +78,8 @@ def full_path(pilot: Pilot, version: int, *skipped: str) -> tuple[int, Any, Any]
     assert made.author == f"fundamentals-narrate:fake-model:bundle:{bundle.sha256}"
     assert ns.reading(pilot, ns.code().bundle.build_bundle, held, ns.limits()).text == bundle.text
     block, text = f"evidence-{bundle.sha256}", narrative(held.sections, held.claims).decode()
-    assert client.prompts[0].endswith(f"\n<{block}>\n{text}\n{bundle.text}</{block}>\n")
+    tail = f"\n<{block}>\n{text}\n{bundle.text}</{block}>\n{ns.code().flow.REWORD_REMINDER}"
+    assert client.prompts[0].endswith(tail)
     reviewer = ns.decide(pilot, new)
     assert (
         reviewer.calls[0][0] == f"{narrative(made.sections, made.claims).decode()}\n{bundle.text}"
