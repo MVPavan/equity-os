@@ -1,14 +1,18 @@
 {
   "now": {
-    "title": "RESEARCH-3 S3 ledger narrate: plan approved, tests next",
-    "detail": "Sol approved the plan on 2026-11-02. Task 0 first failed: the approved args still sent project memory to the drafting model. One setting removed it and the claim was narrowed. Next: red tests, then code, gate, rehearsal and live. Your email stays model-visible as an accepted limit for this private demonstration."
+    "title": "RESEARCH-3 S3 ledger narrate: code approved, rehearsal next",
+    "detail": "Sol approved the code on 2026-11-02 after two rounds of fixes, the second found by a fresh closing review, then approved the frozen values and Task 4 scripts on their third round. Next: gate result, rehearsal on a restored copy, then live per quarter. Nothing has been written live for S3. Word checks cannot judge support, so the panel still has to reject unsupported prose."
   },
   "next": [
-    "RESEARCH-3 S3 tests and code, then RESEARCH-4",
+    "RESEARCH-3 S3 rehearsal and live, then RESEARCH-4",
     "eqos-pds3: check whether approved thesis versions were drafted by the unisolated client",
     "Owner: materiality extended to a third slice (may overturn); keep macro charts monthly and drop index widgets? (recommended yes)"
   ],
   "log": [
+    {
+      "date": "2026-11-02",
+      "text": "RESEARCH-3 S3 code approved by Sol (10 findings, then 3 number-gate holes from the closing review, all fixed); frozen expectations and Task 4 scripts approved on the third round and committed. Gate 3 failed one untouched test on an environmental check (eqos-bs1b); gate 4 rerun."
+    },
     {
       "date": "2026-11-02",
       "text": "RESEARCH-3 S3 plan approved r7 after Task 0: request capture showed project memory in the drafting request; fixed with one setting, claim narrowed. Filed eqos-pds3 on the thesis client."

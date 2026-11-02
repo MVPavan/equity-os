@@ -49,7 +49,7 @@ Checked at `f1bf13d7`; r2's new citations at `65ddc607`, r3's at `f78cc260` (no 
 | C-4 | §4: location capture "one of N's admitted captures (`allowed_captures`)" | `allowed_captures` needs the run's `Prior` and originals (`run_draft.py:713`); N does not store them. | One test: (capture, anchor) is a citable location of the bundle and `resolve_location` passes (`citations.py:355-377`). Every citable location is a span N cites, and N passed `_check_sources` (`run_draft.py:685-704`) at its write, so admission and timing follow. r2 (Sol ruling): `_check_sources` checks membership and timing, **not issuer identity**; that is proven only by `resolve_location`'s own issuer check (`citations.py:373-375`), which stays independent. All four location refusals in §5 stay as tests. |
 | C-5 | §4: "first seen at or before N's derivation cutoff" excludes a later disclosure | On a retrospective run the derivation cutoff is the run's own time (v22: 2026-11-02; source cutoff 2026-06-04), and all Apar captures were first seen by September 2026. The test alone would pass a later quarter's transcript. | Citable-location membership is what refuses it on Apar. r2 (S13): **two separate tests.** The real retrospective capture proves non-membership. A capture first seen strictly after N's cutoff, handed in through a citable set, proves the first-seen boundary. Certain from `resolve_location` and the v22 heading. |
 | C-6 | §4: after a panel rejection, the next write is "rework or full successor" | The panel never names claims (`panel.py:156-158`), so `rejected` is empty, `plan` returns `None` (`rework.py:215-219`), and `--full-successor` refuses (`run_draft.py:287-289`). The only route is an ordinary `run`. | Code; Sol: the correct route. P6 and gate (f). This also confirms why S2's (d2) cannot pass: it demands the full-successor heading (`scratchpad/research3-s2/cred_gate.py:164`). |
-| C-7 | §4 expects `drivers` to explain results | Citable spans are only N's guidance quotes, four to eight short fragments per head. No transcript commentary on causes reaches the model, and no segment line exists. | r2 (S5, Sol: partial fulfilment only): **an explicitly narrower demonstration scope.** `drivers` states what the admitted claims show moved. Causes render `NOT_ASSESSED` (D3). Causal-driver coverage stays open in acceptance, tracking and the close report (Duty 3). Widening it is new evidence scope, not S3; follow-up bead. |
+| C-7 | §4 expects `drivers` to explain results | Citable spans are only N's guidance quotes, two to eight short fragments per head (measured in the freeze). No transcript commentary on causes reaches the model, and no segment line exists. | r2 (S5, Sol: partial fulfilment only): **an explicitly narrower demonstration scope.** `drivers` states what the admitted claims show moved. Causes render `NOT_ASSESSED` (D3). Causal-driver coverage stays open in acceptance, tracking and the close report (Duty 3). Widening it is new evidence scope, not S3; follow-up bead. |
 | C-8 | §5: "Rework from an approved narrated version" | An approved head has no rejected claims (`rework.py:143-146`), so a `run` on it is an ordinary rerun. Selective rework needs a narrated head under `REQUEST_CHANGES --claim`, which only follows `SUBMIT` (`lifecycle.py:67-70`). | Test both: an ordinary `run` from an approved narrated head, and a selective rework of an `IN_REVIEW` narrated version after an owner `decide --claim`. Each drops the narrative, stays `AS_KNOWN`, and narrates again once approved. |
 | C-9 | §4: `panel.py:194-196` "gains" the bundle | `RecordedReviewer` binds the SHA-256 of the exact subject text (`recorded_reviewer.py:80`), and `ledger export` writes the narrative only (`ledger_cli.py:354-359`). Appending the bundle makes the hash the operator can compute wrong. | P5: the panel text is narrative plus bundle, only for a narrated version; a new `ledger export --panel-text` writes those exact bytes, so the binding proves Sol received them. Every earlier version's text is unchanged. r2 (S13): negative tests for the digest and limits. The binding establishes byte identity, not semantic correctness. |
 | C-10 | §4: "Every claim is `MATCH`" | The run and panel paths accept `MATCH_UNTRUSTED` (`lifecycle.py:104`). | Spec, strictly, at narrate only; `PASSING` is not reused. All four heads are all `MATCH`, so this costs Apar nothing. r2 (S13): a named refusal test. |
@@ -80,7 +80,7 @@ narrative keys to that exclusion is the whole change; narrative sections own no 
 **F-5. The client exists, with two gaps.** `ThesisModelClient`, `ClaudeOpusClient` and the watchdog give injection, an explicit
 timeout and one bounded retry (`thesis/client.py:34-49`, `thesis/subprocess_runner.py:80-133`, `thesis/settings.py:41-42`).
 - The prompt is a single argv item (`claude_client.py:60-63`), and Linux caps one at 131,072 bytes. Largest prompt estimated
-  at about 75 KB (v22 narrative 35 KB, thesis 16 KB, bundle about 20 KB, rules). A larger one fails at launch as a refusal
+  at about 75 KB (v22 narrative 35 KB, thesis 16 KB, bundle about 20 KB, rules; the freeze measured larger values, recorded under Frozen expectations). A larger one fails at launch as a refusal
   (`subprocess_runner.py:111-112`).
 - `build_command` cannot restrict the CLI. `claude -p` from the checkout would by default have file tools and read project
   instructions. `claude --help` (2.1.314) lists `--tools`, `--setting-sources`, `--strict-mcp-config`, `--disable-slash-commands`,
@@ -582,7 +582,7 @@ Interfaces:
 
 **Freeze before rehearsal (S2 lesson).** A read-only scratch dump computes, for v20–v23: the bundle's SHA-256 and bytes, the code-built D1 to D4 text and trend rows, U1–U6 applied, the bound thesis, the notes due and each R6 shape, any excluded span. Sol's phase-end review judges them. The orchestrator commits them here as frozen expectations, naming Sol's verdict and date. Task 4 does not start before that commit. A rehearsal value that differs is a deviation; it never replaces a frozen one. **Model prose is not frozen and cannot be:** each call differs, so rehearsal text is never expected to equal live text, and every live panel reads its own.
 
-**Expected counts delta (provisional until the freeze).**
+**Expected counts delta (confirmed by the freeze).**
 
 | Quarter | `narrate` (`report_versions`, `report_sections`, `numeric_claims`) |
 |---|---|
@@ -756,3 +756,110 @@ Sol's closing review of `8e3d4eee` (`REQUEST_CHANGES`, three P2 holes in the nar
 - **Non-ASCII digits.** After dates and periods come out, a token holding any `str.isnumeric()` character refuses, covering superscripts, circled numbers, `½` and `Ⅷ`. Only ASCII digits form a permitted date or period, so `FY١٢٣٤` refuses.
 - **Class markers.** A class marker outside the registered epistemic classes refuses, including in a heading. Markers come out in one pass, so a location marker wrapped around a class marker, `{{s:{{e:inferred}}|123}}`, stays visible and refuses.
 - **Stops.** For these fixes only, production is re-based to 810 lines and tests to 1,210.
+
+## Frozen expectations
+
+Read-only freeze at `80c4213f`. Approved by GPT-6.1 Sol on 2026-11-02: `VERDICT: APPROVE` on the third review round of these values and the Task 4 tooling.
+
+Limits read from `config/narrate.yaml`: span 4000, bundle 100000, prompt 131071, response 60000.
+
+**Oracle digests.** The SHA-256 of `cat frozen.json updated-sections.json` for each quarter's frozen record. `s3q.sh init` and `narr_gate.py` find these rows in the committed plan before using an oracle; a mismatch stops them.
+
+| Quarter | Oracle SHA-256 |
+|---|---|
+| FY26_Q2 | `c67f0b7abc40b62f2b3b3ba65d57343d311ac5603de7fdbc90f71f103312ae72` |
+| FY26_Q3 | `8311e29addc4011b84afffdf9ad7d4bbd8eb1e7373111b36b723c7068cb7e0fc` |
+| FY26_Q4 | `7ef54495c00c73f3f65be81bb4780455e7e17f3de4028037cf9104c83c0dabe9` |
+| FY27_Q1 | `e31295bcec0cbec4695fe096c2c0ca0a3dde3a0d7c51326ea52ea70541224935` |
+
+**Measured values, replacing the plan's two estimates.** The bundles are 44,124 to 49,209 bytes, not about 20 KB; complete prompts are 75,319 to 87,324 bytes, not about 75 KB at the largest. Citable spans per head are 2, 4, 7 and 8, so FY26_Q2 has two spans, below the estimated four to eight. Interpretation (Sol): the filed claims support an account of what moved and not causal drivers. No cap changes and no evidence is widened: the sizes fit the limits above, and the agreed narrower scope and semantic rejection criterion stand.
+
+| Quarter | Head | Sealed digest | Sections | Claims | Claim dumps SHA-256 | Bundle SHA-256 | Bundle bytes | Citable spans | Excluded | F2 fires | Prompt bytes |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| FY26_Q2 | v20 `APPROVED` | `8d33a2b5cf4acc1a03400348b9c6e579d8f844b0c31e355d19c30de627b8bbd7` | 11 to 16 | 91 | `0157922993fa7462ad35eb350102bdc2b6c923c04b0d4ec2205468635a63a0af` | `26eafa048e456a7d6a75f73f61bb601eb666916ead674763ef7444e6d0809542` | 47025 | 2 | 0 | no | 76742 |
+| FY26_Q3 | v21 `APPROVED` | `34ab8e70a6d7858945ddb6d2370322070e1d2b58f5f2f3f5e87254681083b3fb` | 11 to 16 | 86 | `a170c1c6e3dc2d85297d29f4b135a1f34227aac8990f863545d997f4925206bd` | `fec6c23297d5ae7b033e3be8c975f967d2ecdac6e042960d9c3a4b6f8c7df69f` | 44124 | 4 | 0 | no | 75319 |
+| FY26_Q4 | v22 `APPROVED` | `7af7ff0ef131b9174c6eb3afd3e689d6969d048e981a867757da0a2971a6138f` | 11 to 16 | 101 | `55be41577b8b0e899351b83692873dfafd6fe3f52fcf10e4998494243d0e13c1` | `5d3d24b818ba93d3995e8fec05d472b87e10ae0e954159e1012d737299adff8b` | 49209 | 7 | 0 | no | 87324 |
+| FY27_Q1 | v23 `APPROVED` | `349d3bf9a7bb41f6d9ea649bd24bbafe671f7ee9390ca0d6f985e1271cd3d45b` | 11 to 16 | 91 | `15f8e14b269158e27751d6e32bd3fc1bbe9baa08fef9d387b38772596bd54897` | `96e235542bea24c7b04216142fd37c296383d890d904eaa7a2f445a589ae8d56` | 45673 | 8 | 0 | no | 80633 |
+
+Bound thesis on every head: version 13, digest `3a4ac8ef1297c39c19862e5a9a83b792a73263a76f7db259e6d345084e25608f`.
+
+**Expected counts delta on `narrate` (confirmed from the real claim counts).**
+
+| Quarter | `report_versions` | `report_sections` | `numeric_claims` |
+|---|---|---|---|
+| FY26_Q2 | +1 | +16 | +91 |
+| FY26_Q3 | +1 | +16 | +86 |
+| FY26_Q4 | +1 | +16 | +101 |
+| FY27_Q1 | +1 | +16 | +91 |
+
+**U1-U6.** Each applied exactly once on every head; the plan's table and production's `DISCLOSURE_UPDATES` give the same result. Changed sections on each head: `management_credibility`, `not_performed`, `open_questions`, `thesis_impact`; every other section is byte-identical.
+
+| Quarter | Section | Before SHA-256 | After SHA-256 |
+|---|---|---|---|
+| FY26_Q2 | `management_credibility` | `4714b23263dd6cd6d3a63d6b79f1f95daa24a74a45252623da77e3817fb0c153` | `5c999f98e3f3b5167e67655e89ca89904416b3a07c2560e1cd6a4d55fd7ef2e2` |
+| FY26_Q2 | `not_performed` | `34f8287d25cf8625e973e710e2663ea828f76eb5e6d75dae52f78d875ac335b8` | `837fc186da2707878fce6aa14fa6737e9449ee2b79cce826ce7ec138346c7bae` |
+| FY26_Q2 | `open_questions` | `1e3c6f8c0c62673e950e3c6725412cd80db5f87521100ee49f28c30d43bc915d` | `7a1aedc02524be0b2f32d0331bf36128c4f850abacb6fe810be65c89f73eeb98` |
+| FY26_Q2 | `thesis_impact` | `f9b34214a9599971b2958139c981cc96900e57f2c07c6119bd524bf2ea0eae97` | `a4758ea2187c06624f5376848ab8936b4415e81f6c1ee522871324c5dd9353d6` |
+| FY26_Q3 | `management_credibility` | `032ff0aad25f839651c0bb64fcb2b112878c84dcf397e1e8b6c601b28075fdbe` | `93c9f33e9360c3dbfd3727e04f469929f0f08c6694c03391f73ba8ef6a44ad27` |
+| FY26_Q3 | `not_performed` | `34f8287d25cf8625e973e710e2663ea828f76eb5e6d75dae52f78d875ac335b8` | `837fc186da2707878fce6aa14fa6737e9449ee2b79cce826ce7ec138346c7bae` |
+| FY26_Q3 | `open_questions` | `b9b3efd0c470e8ab89f3611248403eb35096f6274ae43f27f312049575f02256` | `703ece9d33ee7610f4a42f89e7b37dacbab5efc4a4d3cc22b008826d54770cc2` |
+| FY26_Q3 | `thesis_impact` | `7cfdd588bb32788ce3ea234860b7fb14895069be92e8eaa2e6e12226ecf4dda8` | `de645ef3ab955e1a3f7c65aa0f0eec1e3dc714ec6535d1cd4179afc647f9c554` |
+| FY26_Q4 | `management_credibility` | `df1182711d63b86d7b1761b17eeb1fc290ccc05bfa9b31555e5b66dbaf479568` | `972ed3ae70149efaf16f235bf14755857663c9a7efdbd3468e97e3622ea69bfc` |
+| FY26_Q4 | `not_performed` | `34f8287d25cf8625e973e710e2663ea828f76eb5e6d75dae52f78d875ac335b8` | `837fc186da2707878fce6aa14fa6737e9449ee2b79cce826ce7ec138346c7bae` |
+| FY26_Q4 | `open_questions` | `a9e30cfc5dfcfef8ba0feda0a193c54e35f389c6dccc8056d6b44f7801292166` | `e577a0eed12af89509c7147da013863a7504b327d7b197f0c7381ce73c70bb1f` |
+| FY26_Q4 | `thesis_impact` | `ab84384e70e786412333843455884acb7c061c50be7c27352e1034269d8e9f43` | `3f6a674cb13560470dd019fb0bf339a2459faf649a40b63fd8bd369b2fddc459` |
+| FY27_Q1 | `management_credibility` | `ea0045325904fa1014973d6811b8b48113851dfb628a029d24ab71041fb47710` | `8677c2983306ffb0d769b2e113f2b074a559939a0180552a2f9ba6d9e3f22425` |
+| FY27_Q1 | `not_performed` | `34f8287d25cf8625e973e710e2663ea828f76eb5e6d75dae52f78d875ac335b8` | `837fc186da2707878fce6aa14fa6737e9449ee2b79cce826ce7ec138346c7bae` |
+| FY27_Q1 | `open_questions` | `a70a706bc5aa797fe7deec4631d10c18f50dafc06408e3a0279a9e26484b9700` | `088cc9cd05f3c29f8d52fe36fee77875eeec797453476c4b4783e229c42e8f92` |
+| FY27_Q1 | `thesis_impact` | `167ad333bb185167ef1bf1cf579e68e46e2da20f9ea892de817288455261951f` | `d6e470eb337de9e58e3ebb7bdb6b1bb56d1333dd3da72fccc9376a246ea9ef58` |
+
+**Notes due and R6.**
+
+| Quarter | `risk_notes` | `credibility_notes` | R6 shape |
+|---|---|---|---|
+| FY26_Q2 | `probe.R4`, `probe.R6` | none | T (`R6_TREND`), rules T |
+| FY26_Q3 | `probe.R4` | none | none due |
+| FY26_Q4 | `probe.R1`, `probe.R2`, `probe.R3`, `probe.R4`, `probe.R6` | `episode.conductor_ebitda_per_mt.consolidated.AMBIGUOUS.conductor-ebitda-FY26_Q2` | T (`R6_TREND`), rules L, T |
+| FY27_Q1 | `probe.R4` | `episode.conductor_ebitda_per_mt.consolidated.AMBIGUOUS.conductor-ebitda-FY26_Q2`, `episode.cables_ebitda_margin.consolidated.AMBIGUOUS.cables-margin-FY26_Q3` | none due |
+
+**Code-built text.** At the top of `drivers` on every head, each with `{{e:computed}}`:
+
+> The sections above are the approved deterministic version this draft succeeds, with every claim unchanged; only the sentences that describe these notes were updated. The notes below were drafted by a model from the evidence bundle alone, which holds this version's claims and the quotes they cite, not the whole transcript: a cause management gave outside those quotes is absent, and absence here does not show that no cause exists. The model computes nothing: every number in these notes is a placeholder filled from a checked claim.
+>
+> Causes: NOT_ASSESSED. The evidence holds no management explanation of causes, so this section states what the cited claims show moved, not why.
+
+At the top of `credibility_notes`, each with `{{e:computed}}`: D4, the quarter's rows, then D2, since every row is `NOT_ASSESSABLE`:
+
+> A delivery trend compares completed outcomes of consecutive fiscal years for a single metric and scope, on the original and the latest promise; it is not a judgment of management. STEADY means each compared endpoint held its level. DIVERGED means the promise moved and the endpoints disagree, so no direction is stated. Interim outcomes stay out of it.
+>
+> No metric and scope has a comparable completed-window assessment, so this record cannot show delivery rising or falling. A revision event states that a stated figure moved; it is neither an achievement nor better credibility.
+
+Rows, FY26_Q2 (prefix SHA-256 `23faff5e8d47a12c9d296fc6c2d97087d469fb3d671911d560c0f22b00d0c30e`):
+
+- `cables_revenue_growth consolidated: last event OPENED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.cables_revenue_growth.consolidated.AMBIGUOUS.cables-growth-FY26_Q2.original|ref}}`
+- `conductor_ebitda_per_mt consolidated: last event OPENED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.conductor_ebitda_per_mt.consolidated.AMBIGUOUS.conductor-ebitda-FY26_Q2.original|ref}}`
+
+Rows, FY26_Q3 (prefix SHA-256 `8334e4a1d573fc1fe5245a24049d44e2b30ed72ddc6929a2107551363ad428c2`):
+
+- `cables_revenue_growth consolidated: last event OPENED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.cables_revenue_growth.consolidated.AMBIGUOUS.cables-growth-FY26_Q2.original|ref}}`
+- `conductor_ebitda_per_mt consolidated: last event OPENED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.conductor_ebitda_per_mt.consolidated.AMBIGUOUS.conductor-ebitda-FY26_Q2.original|ref}}`
+- `cables_ebitda_margin consolidated: last event OPENED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.cables_ebitda_margin.consolidated.AMBIGUOUS.cables-margin-FY26_Q3.original|ref}}`
+- `cables_revenue_growth consolidated: last event DESCRIBED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.cables_revenue_growth.consolidated.DESCRIPTIVE.cables-growth-FY26_Q3.original|ref}}`
+
+Rows, FY26_Q4 (prefix SHA-256 `11b03490487caa63c9bd5718cdd928a228f8cc907841606526330705aeafc0ba`):
+
+- `cables_revenue_growth consolidated: last event OPENED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.cables_revenue_growth.consolidated.AMBIGUOUS.cables-growth-FY26_Q2.original|ref}}`
+- `conductor_ebitda_per_mt consolidated: last event REVISED_UP; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.conductor_ebitda_per_mt.consolidated.AMBIGUOUS.conductor-ebitda-FY26_Q2.original|ref}}`
+- `cables_ebitda_margin consolidated: last event OPENED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.cables_ebitda_margin.consolidated.AMBIGUOUS.cables-margin-FY26_Q3.original|ref}}`
+- `cables_revenue_growth consolidated: last event DESCRIBED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.cables_revenue_growth.consolidated.DESCRIPTIVE.cables-growth-FY26_Q3.original|ref}}`
+- `cables_revenue_growth consolidated: last event OPENED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.cables_revenue_growth.consolidated.MULTI_YEAR.cables-growth-FY26_Q4.original|ref}}`
+- `conductor_volume_growth consolidated: last event OPENED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.conductor_volume_growth.consolidated.AMBIGUOUS.conductor-volume-FY26_Q4.original|ref}}`
+
+Rows, FY27_Q1 (prefix SHA-256 `0575e2c26b92cc28f1fcb9f199acb462aa1c8e8984e1f4a1d0e1e18177536d40`):
+
+- `cables_revenue_growth consolidated: last event OPENED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.cables_revenue_growth.consolidated.AMBIGUOUS.cables-growth-FY26_Q2.original|ref}}`
+- `conductor_ebitda_per_mt consolidated: last event REVISED_UP; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.conductor_ebitda_per_mt.consolidated.AMBIGUOUS.conductor-ebitda-FY26_Q2.original|ref}}`
+- `cables_ebitda_margin consolidated: last event REVISED_UP; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.cables_ebitda_margin.consolidated.AMBIGUOUS.cables-margin-FY26_Q3.original|ref}}`
+- `cables_revenue_growth consolidated: last event DESCRIBED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.cables_revenue_growth.consolidated.DESCRIPTIVE.cables-growth-FY26_Q3.original|ref}}`
+- `cables_revenue_growth consolidated: last event OPENED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.cables_revenue_growth.consolidated.MULTI_YEAR.cables-growth-FY26_Q4.original|ref}}`
+- `conductor_volume_growth consolidated: last event OPENED; original UNRESOLVED; latest UNRESOLVED; delivery trend NOT_ASSESSABLE (no comparable completed windows) {{c:episode.conductor_volume_growth.consolidated.AMBIGUOUS.conductor-volume-FY26_Q4.original|ref}}`
