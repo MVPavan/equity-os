@@ -1,14 +1,18 @@
 {
   "now": {
-    "title": "RESEARCH-3 S3 ledger narrate: code approved, rehearsal next",
-    "detail": "Sol approved the code on 2026-11-02 after two rounds of fixes, the second found by a fresh closing review, then approved the frozen values and Task 4 scripts on their third round. Next: gate result, rehearsal on a restored copy, then live per quarter. Nothing has been written live for S3. Word checks cannot judge support, so the panel still has to reject unsupported prose."
+    "title": "RESEARCH-3 S3 ledger narrate: rehearsal closed, live run started",
+    "detail": "The final rehearsal passed on all four quarters, including both rejection drills. Two earlier rehearsals stopped because too many real drafts were refused; the guards stayed, the drafting reminder was sharpened, and a ? may now touch a placeholder. Live runs one quarter at a time, each read by Sol. Word checks cannot judge support, so the panel still has to reject unsupported prose."
   },
   "next": [
-    "RESEARCH-3 S3 rehearsal and live, then RESEARCH-4",
+    "RESEARCH-3 S3 live per quarter, then RESEARCH-4",
     "eqos-pds3: check whether approved thesis versions were drafted by the unisolated client",
     "Owner: materiality extended to a third slice (may overturn); keep macro charts monthly and drop index widgets? (recommended yes)"
   ],
   "log": [
+    {
+      "date": "2026-11-02",
+      "text": "RESEARCH-3 S3 rehearsal closed after three attempts: four quarters, two rejection drills and the seeded panel round passed. Spec section 4 now lets a ? touch a placeholder, reviewed by Sol. Thirty-one drafting launches spent against a ceiling of thirty-nine."
+    },
     {
       "date": "2026-11-02",
       "text": "RESEARCH-3 S3 code approved by Sol (10 findings, then 3 number-gate holes from the closing review, all fixed); frozen expectations and Task 4 scripts approved on the third round and committed. Gate 3 failed one untouched test on an environmental check (eqos-bs1b); gate 4 rerun."
