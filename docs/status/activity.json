@@ -1,14 +1,18 @@
 {
   "now": {
-    "title": "RESEARCH-3 S3 ledger narrate: rehearsal closed, live run started",
-    "detail": "The final rehearsal passed on all four quarters, including both rejection drills. Two earlier rehearsals stopped because too many real drafts were refused; the guards stayed, the drafting reminder was sharpened, and a ? may now touch a placeholder. Live runs one quarter at a time, each read by Sol. Word checks cannot judge support, so the panel still has to reject unsupported prose."
+    "title": "RESEARCH-3 S3 ledger narrate: live stopped after FY26_Q2 drafts were rejected, prompt trial next",
+    "detail": "Sol rejected all three live FY26_Q2 drafts for reasoning faults; every number matched and every deterministic gate passed. FY26_Q2 stands on approved deterministic v29 with no narrative; the other quarters are untouched. Sol reviewed a prompt revision. Next: full gate, then a trial on a test database where all four drafts must get Sol's approval. Without four approvals, S3 stops and goes to the owner unfinished."
   },
   "next": [
-    "RESEARCH-3 S3 live per quarter, then RESEARCH-4",
+    "RESEARCH-3 S3 gate and prompt trial; live resumes only on four approvals, then RESEARCH-4",
     "eqos-pds3: check whether approved thesis versions were drafted by the unisolated client",
     "Owner: materiality extended to a third slice (may overturn); keep macro charts monthly and drop index widgets? (recommended yes)"
   ],
   "log": [
+    {
+      "date": "2026-11-02",
+      "text": "RESEARCH-3 S3 live FY26_Q2: Sol rejected drafts v24, v26 and v28; recoveries v25, v27 and v29 approved, v29 is the head with no narrative. Rehearsal draft verdicts had been orchestrator-written, so this was the first real test of the panel pass rate. Prompt revised with Sol's wording; a four-of-four trial decides whether live resumes."
+    },
     {
       "date": "2026-11-02",
       "text": "RESEARCH-3 S3 rehearsal closed after three attempts: four quarters, two rejection drills and the seeded panel round passed. Spec section 4 now lets a ? touch a placeholder, reviewed by Sol. Thirty-one drafting launches spent against a ceiling of thirty-nine."
