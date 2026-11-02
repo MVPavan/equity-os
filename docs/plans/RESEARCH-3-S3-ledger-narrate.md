@@ -3,12 +3,11 @@
 **Origin:** `docs/specs/2026-10-27-research-3-thesis-analysis.md` §4, §5 "S3" (approved r4, gpt-6.1-sol `APPROVE`), with §0,
 §1, §2, §3, §6 and the owner rulings. Bead `eqos-bnx`, slice 3 → S3. S2 closed live on 2026-11-02 at `f1bf13d7`. Format and
 lessons: `docs/plans/RESEARCH-3-S2-management-credibility.md`, `docs/plans/RESEARCH-3-S1-risk-probe.md`.
-**Status:** draft r2 (2026-11-02), for Sol's re-review. Not approved.
-**Revision:** r2 fixes the 18 findings of Sol's r1 review (at `65ddc607`, `REQUEST_CHANGES`) and carries its rulings on C-1 to
-C-12, OD-1 to OD-4 and the carried duties, marked "r2 (S<n>)". Main changes: isolation is proven first, from execution evidence,
-with no API fallback (S1, Task 0); N+1 updates a closed list of disclosure sentences (S4, P8); the trend compares completed
-windows only and its guard works per metric and scope (S6, S7); causes stay `NOT_ASSESSED` and the rising-or-falling goal stays
-open (S5, Duty 1); the sizes are re-estimated above the spec's range (S17).
+**Status:** draft r3 (2026-11-02), for Sol's re-review. Not approved.
+**Revision:** r3 fixes Sol's r2 review (at `f78cc260`), marked "r3 (T<n>)": the no-thesis path can now pass (T1, P8); D2 appears only
+when no comparable assessment exists (T2); recovery pins are read, not open (T3). It takes three cuts: an unconditional verdict guard
+(T4, P4), production checks reused in gate (e) (T5), and existing trace and interpretation records reused (T6, Task 2). Sizes are
+re-estimated (File map). r2 fixed Sol's r1 review (at `65ddc607`), marked "r2 (S<n>)".
 **Goal:** `ledger narrate <version>` turns an `APPROVED` head N into DRAFT N+1: N's claims unchanged, N's sections unchanged but
 for the disclosure updates of P8, plus model notes that carry no number of their own. N itself stays untouched. The panel decides
 N+1 with the same evidence bundle the model saw. The four Apar heads end narrated and approved. **This does not answer the owner's
@@ -40,7 +39,7 @@ only `MATCH`, none `MATCH_UNTRUSTED`. No row in any head reaches `ACHIEVED`, `MI
 
 ## Spec against code at HEAD
 
-Checked at `f1bf13d7`; r2's new citations at `65ddc607` (no code change between them). S2's C-1 stands: spec §0 line numbers moved; this plan cites HEAD.
+Checked at `f1bf13d7`; r2's new citations at `65ddc607`, r3's at `f78cc260` (no code change between them). S2's C-1 stands: spec §0 line numbers moved; this plan cites HEAD.
 
 | # | Spec says | Code or data says | Recommended resolution |
 |---|---|---|---|
@@ -127,17 +126,19 @@ scope. `REVISED_UP` remains movement, never achievement or improved credibility.
    reverse down, the same level. A lone statement's original is also its latest (`credibility.py:546-547`). All compared endpoints
    agreeing gives `RISING`, `FALLING` or `STEADY`. Disagreeing gives `DIVERGED` ("the promise moved; read the endpoints"), with no
    direction. So a lowered target cannot manufacture a rise: original `MISSED` then `MISSED`, latest `MISSED` then `ACHIEVED` is
-   `DIVERGED`. Nothing scored in both windows, or non-consecutive windows, gives `NOT_ASSESSABLE`. A revision event never enters
-   the rule otherwise.
+   `DIVERGED`. Nothing scored in both windows, or non-consecutive windows, gives `NOT_ASSESSABLE`. r3 (T2): a revision event is
+   not an input. A revision alone establishes no direction, and a revised episode can take part in a direction when its comparable
+   endpoints agree.
 5. The trend states delivery between two windows, not a judgment of management (D4). The panel still judges every use of it.
-6. With no directional trend on any (metric, scope), a fixed sentence says no trend can be stated (D2).
+6. r3 (T2): only when every row is `NOT_ASSESSABLE`, a fixed sentence says no comparable assessment exists (D2). `STEADY` and
+   `DIVERGED` are assessments: their rows and D4 explain them, and D2 would falsely deny them.
 7. The model then writes what the record means for the thesis, labelled `{{e:inferred}}`, citing thesis-relevant claims.
 
 *Guardrails against implying more.*
 - The rows are sealed code output the model never edits. They are parsed from N's unrendered body, where quotes are placeholders
   (`credibility.py:563`), so a hostile quote cannot forge an outcome.
-- r2 (S7): the verdict lexicon (P4) is gated **per metric and scope**, on an actual comparable trend, not on "any scored row". A lone
-  scored window, or a scored revenue row beside unresolved margin commitments, unlocks nothing.
+- r3 (T4): the verdict lexicon (P4) refuses in model credibility prose **unconditionally**. Any direction or outcome is stated only
+  by the code-built rows, so no scored row, on any metric, unlocks a word.
 - The panel brief quotes Sol's `REVISED_UP` ruling and asks for any softer implication that passes the lexicon ("confidently",
   "comfortable"). That residue is the panel's, per spec §4's coverage statement: the guard supplements semantic review and
   replaces none of it.
@@ -195,13 +196,18 @@ spec §4 assigns that residue to the panel. Lexical acceptance or matched number
   labels; the spec's number-word lexicon, whole-word and case-insensitive; a placeholder touching anything but whitespace or
   `( ) , . ;`; any `{{` left after placeholder, class and location markers are removed (`{{c:fact.revenue}}` has no pipe, holds no
   digit, and would print raw). Over the model's text only:
-  - the verdict lexicon, r2 (S7) per sentence, over all of `credibility_notes` and over any sentence in another narrative section that
-    mentions credibility, management or guidance. Upward words (`rising`, `improv*`, `better`, `stronger`) need `RISING`; downward words
-    (`falling`, `deteriorat*`, `worse`, `weaker`) need `FALLING`; the rest (`credible`, `reliable`, `trustworth*`, `achiev*`, `deliver*`,
-    `on track`, `beat*`, `missed`, `conservative`, `aggressive`) need any of `RISING`, `FALLING`, `STEADY`. The sentence must name at least
-    one `episode.<metric>.<scope>` placeholder, and **every** pair it names must meet the requirement. `DIVERGED` and `NOT_ASSESSABLE`
-    open nothing. So "the target was achieved" refuses on a lone scored window, whose outcome the code row already shows; accepted
-    (C-12's remedy);
+  - r3 (T4) the verdict lexicon, refused **unconditionally**, per sentence, over all of `credibility_notes` and over any sentence in
+    another narrative section that mentions credibility, management or guidance: `rising`, `improv*`, `better`, `stronger`, `falling`,
+    `deteriorat*`, `worse`, `weaker`, `credible`, `reliable`, `trustworth*`, `achiev*`, `deliver*`, `on track`, `beat*`, `missed`,
+    `conservative`, `aggressive`. Directions and outcomes live only in the code-built rows, which the prompt forbids restating. No
+    sentence-to-metric attribution or permission logic exists. So "the target was achieved" now refuses in every case, including on
+    a row the code scored `ACHIEVED`, and "the delivery trend rows" refuses too: the prompt says to call them "the rows above".
+    Accepted (C-12's remedy). A note due on a `MISSED` row still explains it in other words ("the filed result fell short of the
+    stated figure", citing it). **Checked against the spec:** §3 asks for code-computed outcomes and for model notes on what stays
+    unresolved and why, and neither needs these words. §4's coverage statement lists no verdict lexicon, so this is an additive
+    refusal and direction claims stay the panel's. S2 C-12's trend comes from the code rows and its thesis consequence from a note
+    that needs no verdict word; the goal stays open as in Duty 1. Plan C-12's remedy, rerun with the lexicon in the prompt, applies;
+    rehearsal measures the refusal rate;
   - citable-location membership (C-4);
   - r2 (S2) excluded claims: no placeholder of any style may name a claim whose span is excluded from the bundle. A due row whose only
     claims are excluded therefore cannot pass, and no extra guard is added; the remedy is the config's span limit, reviewed;
@@ -232,7 +238,10 @@ spec §4 assigns that residue to the panel. Lexical acceptance or matched number
     response over its limit refuses and writes nothing (F-5 states what the response limit does not bound).
 - **P8, r2 (S4): disclosure updates.** `DISCLOSURE_UPDATES`, a frozen map of section key to (before, after) pairs, is the table U1–U6
   below, in `narrate.py`. Each `before` must occur exactly once in N's section, else narrate refuses before the model call, so changed
-  template text fails closed. All edited sections are in `DERIVED | DISCLOSED`, which `plan` drops at `rework.py:243` and a run rebuilds,
+  template text fails closed. r3 (T1): the one exemption. A version with no approved thesis has no U2 sentence: its `thesis_impact` body
+  is exactly `no_thesis_section(THESIS_IMPACT)`, the headed form `derived` writes (`falsifier_status.py:215-218`). For that exact body,
+  U2 is skipped and the section stays byte-identical; U1 and U3–U6 stay strict, and any other body missing U2's `before` refuses. All
+  edited sections are in `DERIVED | DISCLOSED`, which `plan` drops at `rework.py:243` and a run rebuilds,
   so no updated text reaches a deterministic M. `read_record` parses only record lines (`credibility.py:345-346`), so a later quarter's
   run reads N+1 as it reads N. N's own rows are untouched.
 
@@ -277,72 +286,72 @@ Considered and cut, for the owner's size rule:
 - r2 (S1): the API fallback. `use_api: true` refuses at config load, because that path bypasses the watchdog (`claude_client.py:73-74`,
   `:88`).
 - r2 (S6): a separate interim comparison. Streaming response capture (F-5).
+- r3 (T4): sentence-to-metric attribution and directional permissions in the verdict guard (P4).
+- r3 (T5): a lexical reimplementation in gate (e) (it would be a second copy of the checks, with its own bugs).
+- r3 (T6): a bespoke trace query and row model (Task 2).
 
 ## File map
 
 | File | Change | Responsibility | Lines |
 |---|---|---|---|
-| `src/fundamentals/ledger/narrate.py` | create | Flow (P1), prompt with R6 shapes and withheld quotes, section assembly (P2), disclosure updates (P8), `NarrateConfig` and its loader, `NarrateRefusedError` | ≈ 225 |
-| `src/fundamentals/ledger/narrate_checks.py` | create | `parse_draft` with empty bodies, delivery trend (P3), scoped verdict lexicon, notes due, location membership, excluded claims (P4) | ≈ 170 |
-| `src/fundamentals/ledger/evidence_bundle.py` | create | `BundleLimits`, `Bundle`, `build_bundle` with the complete trace representation and thesis binding, `panel_text` (P5) | ≈ 145 |
+| `src/fundamentals/ledger/narrate.py` | create | Flow (P1), prompt with R6 shapes, withheld quotes and the no-thesis instruction, section assembly (P2), disclosure updates (P8), `NarrateConfig` and its loader, `NarrateRefusedError` | ≈ 230 |
+| `src/fundamentals/ledger/narrate_checks.py` | create | `parse_draft` with empty bodies, delivery trend and its block (P3, D2 selection), unconditional verdict lexicon, notes due, location membership, excluded claims (P4) | ≈ 150 |
+| `src/fundamentals/ledger/evidence_bundle.py` | create | `BundleLimits`, `Bundle`, `build_bundle` rendering existing trace and interpretation records with thesis binding, `panel_text` (P5) | ≈ 125 |
 | `src/fundamentals/ledger/numeral_scan.py` | modify | `scan_narrative`, sharing the date and period patterns | +35 |
-| `src/fundamentals/ledger/falsifier_status.py` | modify | `NARRATIVE` beside `DERIVED` | +2 |
+| `src/fundamentals/ledger/falsifier_status.py` | modify | `NARRATIVE` beside `DERIVED`; r3 (T1) `no_thesis_section`, used by `derived`, bytes unchanged | +5 |
 | `src/fundamentals/ledger/rework.py` | modify | `:243` skips `NARRATIVE`; docstring | +2 |
 | `src/fundamentals/ledger/panel.py` | modify | `review(limits=)`; `_gate` uses `panel_text` | +8 |
 | `src/fundamentals/thesis/settings.py`, `thesis/claude_client.py` | modify | `extra_args: tuple[str, ...] = ()`, appended in `build_command` | +2 |
 | `src/fundamentals/api/ledger_cli.py` | modify | `narrate` action; `export --panel-text`; `_panel` loads limits | +45 |
 | `config/narrate.yaml` | create | Model id, the args Task 0 proved, timeout, retries, limits (OD-1) | ≈ 14 |
-| `tests/fundamentals/test_narrate_checks.py` | create | Pure: scan table, parse, trend, verdict lexicon, notes due, R6 shapes | ≈ 230 |
-| `tests/fundamentals/test_narrate_flow.py` | create | Pilot: full path with disclosure updates, refusal table with zero deltas, post-insert rollback, bundle, prompt boundary, limits, argv, panel, rework, recovery | ≈ 420 |
+| `tests/fundamentals/test_narrate_checks.py` | create | Pure: scan table, parse, trend and its assembled block, verdict lexicon, notes due, R6 shapes, argv and config load | ≈ 240 |
+| `tests/fundamentals/test_narrate_flow.py` | create | Pilot: full path, bound and no-thesis, with disclosure updates; refusal table with zero deltas; post-insert rollback; bundle; prompt boundary; limits; panel; rework; recovery | ≈ 455 |
 
-**Size, r2 (S17): re-estimated honestly.** About **650 production lines** (r1: 490) against the spec's 400–600, and **650 test lines**
-(r1: 390) against 300–400. r1's numbers were a target and left out work Sol's findings require. The estimate is above the spec's range
-on both counts; these are estimates, and are checked after Task 0 and the tests round.
+**Size, r3: re-estimated after the cuts.** About **620 production lines** (r2: 650) against the spec's 400–600, still slightly above it,
+and **695 test lines** (r2: 650) against 300–400, well above it. These are estimates, checked after Task 0 and the tests round.
 
-Net production change from r1, about +160 after cuts:
-
-| Lines | Requirement |
+| Production, r3 against r2 | Lines |
 |---|---|
-| +50 | Complete trace representation, plus the thesis bound to N with its no-thesis case (S9, S8) |
-| +45 | Endpoint trend, `DIVERGED`, and the guard per metric and scope (S6, S7) |
-| +30 | Disclosure updates and their frozen text (S4) |
-| +20 | R6 instruction per fired-rule shape (S15) |
-| +15 | Excluded quotes withheld from the prompt and refused as placeholders (S2) |
-| +12 | Prompt and response limits, config validation (S3, S1) |
-| +5 | Empty-body refusal (S14) |
-| −17 | Provider enum, Codex configuration and client factory cut (S16); `any_scored` removed (S7) |
+| T4: no attribution or permission logic; the trend's own rule stays | −20 |
+| T6: no bespoke query or row model; the operand rendering and exact claim association stay | −20 |
+| T1: `no_thesis_section`, the U2 exemption, the no-assessment instruction | +8 |
+| T2: the block that selects D2 | +2 |
 
-Extra test lines over r1, about +260. Each serves a requirement; none is omitted to hold the 400-line ceiling. The owner still wants
-the smallest thing that meets the spec: the Task 2 and Task 3 cases stay parametrized wherever they share a shape.
-
-| Lines | Requirement |
+| Tests, r3 against r2 | Lines |
 |---|---|
-| +55 | Trend and guard: relaxed target, interim-to-final, lone window, mixed and opposing metrics (S6, S7) |
-| +50 | Trace: unmatched operand, nested traces, several claims on one measurement key (S9) |
-| +40 | Recovery preservation, both verdicts (S12) |
-| +35 | Excluded span through the real prompt builder and `|quote`; first seen after N's cutoff (S2, S13) |
-| +30 | Fail-closed branches: `MATCH_UNTRUSTED`, post-insert failure, digest, limits (S13) |
-| +30 | Bound thesis with no `thesis.*` claims, no-thesis case (S8) |
-| +20 | Disclosure updates, R6 shapes (S4, S15) |
-| +20 | Adversarial fixtures, empty and reference-only bodies, limits, argv (S1, S3, S14) |
-| −20 | Reuse: `all_counts` (`test_credibility_binding.py:295`), the pilot fixture, the panel desk |
+| T4: unconditional refusals replace the attribution cases | −20 |
+| T2: assembled-block cases; the revised episode that reaches a direction | +15 |
+| T1: the no-thesis path through the panel, sharing the full path's helper | +15 |
+| Correction of r2: fixtures and helpers, which 420 lines did not fairly budget (below) | +35 |
 
-**Operational tooling, budgeted separately, never committed, scratch only:** `narr_gate.py` ≈ 300 (S2's `cred_gate.py` is 476), gate (f)'s
-mutation drill ≈ 40, `s3q.sh` ≈ 80, `s3panel.sh` ≈ 25, `make_brief.py` ≈ 60, the Task 0 evidence script ≈ 40, the seeded panel text ≈ 30:
-about **575 lines**. None counts against the budgets above.
+**The integration file (Sol's low-confidence point).** 420 was a ceiling r2 could not justify, so r3 removes it and budgets ≈ 455, about
+110 of that fixtures and helpers: a fake client, a draft builder of the five sections, the run-submit-approve chain and the rejected
+N+1 state. The confidence stays **medium at best**; these are not measured. What r3 does about it:
+- **Reuse:** `pilot`, `_pilot(request, imported=False)` (`test_prep2b_run_draft.py:117-120`, `prep2b_support.py:120`, `:135`),
+  `_rerun`, `_request_changes`, `all_counts` (`test_credibility_binding.py:295`) and the panel desk. No new harness.
+- **One pilot per refusal table.** The pilot fixture is function-scoped and builds a database, so the table runs its bad drafts in a loop
+  over one prepared N, asserting zero deltas after each. A refusal writes nothing, so they cannot interfere, and each failure names
+  its row.
+- **Pure where pure.** Argv, config load and the assembled trend block move to `test_narrate_checks.py`.
+- **Measured early.** The tests round writes the helpers first and reports their `wc -l`. Over 150 stops the round: the orchestrator
+  simplifies them or re-bases the estimate in the bead before the cases are written.
+
+**Operational tooling, budgeted separately, never committed, scratch only:** `narr_gate.py` ≈ 250 (r2: 300; T5 removes the lexical copy; S2's
+`cred_gate.py` is 476), gate (f)'s mutation drill ≈ 40, `s3q.sh` ≈ 80, `s3panel.sh` ≈ 25, `make_brief.py` ≈ 60, the Task 0 evidence script
+≈ 40, the seeded panel text ≈ 30: about **525 lines** (r2: 575). None counts against the budgets above.
 
 Why this is still far below S2's 1,060 and 1,900+:
 - S2 added a sealed record grammar, a window rule, financial outcomes and a correction path. S3 adds no persistent state and no
   financial logic: its one rule is the trend, about 45 lines.
-- The refusals are one parametrized table: a list of bad drafts, one assertion on the outcome. Spec §5 lists fourteen; each stays
-  a row, not a test function.
+- The refusals are one table: a list of bad drafts, one assertion on the outcome. Spec §5 lists fourteen; each stays a row, not a
+  test function.
 - Adverse trend cases are pure.
 - No existing test file changes, so no reseal.
 - `run_draft.py` and `cli.py` stay untouched.
 
 **The check, restated.** After Task 0 and the tests round, the orchestrator runs `wc -l` on the test files; after the first green
-implementation round, on all these files. Over **700 production or 720 test lines** is a stop: name what grew, cut or justify it in the
-bead before review. Reaching those numbers is not licence to use them: "could this be half the code?" stays a valid phase-end finding.
+implementation round, on all these files. Over **660 production** (r3, down from 700) **or 720 test lines** (unchanged: the cuts did not
+lower the honest test estimate, and raising the stop was not taken) is a stop: name what grew, cut or justify it in the bead before review. Reaching those numbers is not licence to use them: "could this be half the code?" stays a valid phase-end finding.
 
 ## Test-first order, gate and sealing
 
@@ -419,7 +428,8 @@ Interfaces:
   - `parse_draft(text: str) -> Mapping[str, str]`, refusing per P2, r2 (S14) including an empty body.
   - `class DeliveryTrend(StrEnum)`: `RISING, FALLING, STEADY, DIVERGED, NOT_ASSESSABLE`.
   - `TrendRow` (frozen): episode, metric, scope, last event, original and latest outcome, trend. `trend_rows(credibility_body: str) -> tuple[TrendRow, ...]`; `trend_lines(rows) -> tuple[str, ...]`.
-  - `verdict_words(section: str, text: str, rows: Sequence[TrendRow]) -> tuple[str, ...]`, r2 (S7).
+  - r3 (T2) `trend_block(rows) -> str`: D4, the row lines, and D2 only when every row is `NOT_ASSESSABLE`.
+  - r3 (T4) `verdict_words(section: str, text: str) -> tuple[str, ...]`.
   - `notes_due(probe_body: str, credibility_body: str) -> Mapping[str, tuple[str, ...]]`: section key to required key prefixes.
   - `r6_instruction(probe_body: str) -> str | None`, r2 (S15): the constant for the row's fired rules.
   - `missing_notes(due, bodies) -> tuple[str, ...]`; `bad_locations(text: str, citable: frozenset[tuple[str, str]]) -> tuple[str, ...]`; `excluded_refs(text: str, excluded: frozenset[str]) -> tuple[str, ...]`, r2 (S2).
@@ -435,10 +445,12 @@ Verification: `uv run pytest tests/fundamentals/test_narrate_checks.py -n 0`. Na
   `amount:{{c:k|}}`; `{{c:k|}}%`; `{{c:fact.revenue}}`. Allowed: a date, `FY26_Q2`, `Q3`, `({{c:k|}})`, `{{c:k|unit}},`.
 - (b) A digit in a style field through `render_section`'s real refusal.
 - (c) `parse_draft`: missing, repeated and extra keys; a deterministic key such as `risk_probe`; r2 (S14) an empty body, and a body of class markers alone. AX-5's reference-only note parses.
-- (d) r2 (S6) Trend, on bodies from `credibility.build`: both endpoints `MISSED` then `ACHIEVED` is `RISING`, the reverse `FALLING`, same `STEADY`. **Adversarial:** a relaxed target (latest up, original not) and a raised one are `DIVERGED`, never `RISING`. `BEHIND` or `ON_TRACK` then `ACHIEVED`, and the same final-to-interim, are `NOT_ASSESSABLE`. A lone scored window, non-consecutive windows and every `UNRESOLVED` row are `NOT_ASSESSABLE`. Two `REVISED_UP`s change nothing. A row shows both endpoints.
-- (e) r2 (S7) `verdict_words`: on v22's shape, "credibility is rising" and "better delivery" refuse; "revenue fell against a year earlier" outside `credibility_notes` passes. A lone scored window refuses. A sentence on an assessed metric beside one on an unassessed metric: only the first passes. Opposing metric trends: "rising" passes on the `RISING` pair, refuses on the `FALLING` pair and in a sentence naming both. `DIVERGED` refuses. A verdict word with no episode placeholder refuses.
+- (d) r2 (S6) Trend, on bodies from `credibility.build`: both endpoints `MISSED` then `ACHIEVED` is `RISING`, the reverse `FALLING`, same `STEADY`. **Adversarial:** a relaxed target (latest up, original not) is `DIVERGED`, never `RISING`, as is a raised one whose endpoints disagree. r3 (T2): a revised episode whose comparable endpoints both go up is `RISING`. `BEHIND` or `ON_TRACK` then `ACHIEVED`, and the same final-to-interim, are `NOT_ASSESSABLE`. A lone scored window, non-consecutive windows and every `UNRESOLVED` row are `NOT_ASSESSABLE`. Two `REVISED_UP`s change nothing. A row shows both endpoints.
+- (e) r3 (T4) `verdict_words` refuses unconditionally: each lexicon word in `credibility_notes`, including "the target was achieved" and "credibility is rising" with an episode placeholder on the row the code scored so; and in another section's sentence on credibility, management or guidance. "Revenue fell against a year earlier" in `drivers` passes; so does "the filed result fell short of the stated figure" in `credibility_notes`.
 - (f) `notes_due` on the literal shapes of v20 and v23's rows; a guard-flagged row's prefix. r2 (S15): `r6_instruction` on T, on L and T, on L alone and on non-positive equity returns its own constant, and only the T shapes carry the three elements.
 - (g) D1 to D4 and every trend row pass `scan_section` and `scan_narrative`.
+- (h) r3 (T2) `trend_block` on assembled records: all `NOT_ASSESSABLE` holds D2; all `STEADY`, all `DIVERGED`, and `RISING` beside `NOT_ASSESSABLE` hold no D2. Every block holds D4 and its rows, and D4 names each of `STEADY` and `DIVERGED`.
+- (i) r3 (moved from Task 3) `test_the_configured_argv_is_the_proven_one`: `load_narrate_config` on the committed file, `build_command`, exact equality with Task 0's argv. `use_api: true`, a null model, and each limit at zero refuse at load.
 
 Test seams: pure functions. Dependencies: Task 0.
 
@@ -464,18 +476,18 @@ Interfaces:
 
 Approach, in order, per spec §4:
 - Each claim: key, value as rendered, citation kind, capture id and anchor.
-- r2 (S9) each trace, as a complete deterministic representation, replacing r1's `unclaimed` leaf: for every operand of a cited trace and of the traces it reaches (existing `TRACES`, `citations.py:176`, read from `eqos.calculation_trace_operands`): operand name, temporal role, its interpretation id or child-trace id, source state, value or bounds, and value kind, currency, basis and period from the interpretation. Matching claim keys are listed where present, **matched on the exact cited record**: `citation.interpretation_id` or `citation.calculation_trace_id`, never the measurement-key digest alone, so several claims sharing a key are not confused. An operand with no claim, such as the headline bridge's `share_of_associates` (`run_traces.py:490-494`), stays complete evidence and stays unavailable as a prose number: the model can only write placeholders, and the scan refuses a typed digit.
+- r2 (S9) each trace, as a complete deterministic representation, replacing r1's `unclaimed` leaf: for every operand of a cited trace and of the traces it reaches: operand name, temporal role, its interpretation id or child-trace id, source state, value or bounds, and value kind, currency, basis and period from the interpretation. r3 (T6): rendered from the existing records, with no new query or model. `StoredTrace` (`evidence/repository_calc.py:94-101`) comes from `_read_traces(cursor.connection, ids)` (`evidence/repository.py:718`), which walks children and rechecks each content hash. `Interpretation` comes from `rows_sql.INTERPRETATIONS_BY_ID` and `interpretation_of` (`evidence/repository_rows.py:312`, `:551`) on a `dict_row` cursor of the same connection, as `panel.py:197`. The public `get_calculation_traces` and `get_interpretations` (`evidence/repository.py:649`, `:588`) are not used, because each opens a second pooled connection from inside the caller's, and `review` holds a pool, not a repository (`panel.py:109-133`). What that skips is R13's expiry query; `interpretation_of` still refuses a withheld vendor capture (`repository_rows.py:553`) for every operand the bundle reads, and the existing approval check runs first at the panel. Inferred sufficient; the first-party Apar evidence does not exercise it. The panel role can read all of this (`migrations/0012_report_ledger.sql:480`). Matching claim keys are listed where present, **matched on the exact cited record**: `citation.interpretation_id` or `citation.calculation_trace_id`, never the measurement-key digest alone, so several claims sharing a key are not confused. An operand with no claim, such as the headline bridge's `share_of_associates` (`run_traces.py:490-494`), stays complete evidence and stays unavailable as a prose number: the model can only write placeholders, and the scan refuses a typed digit.
 - Each distinct SOURCE_QUOTE span in full (F-2). A span over `max_span_chars` is omitted and not citable, and every claim citing it goes in `excluded` (S2).
 - The citable list, written as the `{{s:<capture id>|<anchor>}}` markers the model may use.
-- r2 (S8) the thesis actually bound to N, independent of whether any threshold was evaluable, because `derived` emits no `thesis.*` claim for an unevaluable falsifier (`falsifier_status.py:238-240`): read `version:<id>` and the sealed digest from N's `thesis_impact` body (`falsifier_status.py:226-227`), and refuse unless `store.sealed_digest` of that id equals it. That preserves the exact historical version and digest, with no lock taken. A body equal to `NO_THESIS` (`falsifier_status.py:78`) is the honest no-thesis case: the bundle says so, narrate proceeds, and `thesis_narrative` says no assessment is possible. Any other body refuses.
+- r2 (S8) the thesis actually bound to N, independent of whether any threshold was evaluable, because `derived` emits no `thesis.*` claim for an unevaluable falsifier (`falsifier_status.py:238-240`): read `version:<id>` and the sealed digest from N's `thesis_impact` body (`falsifier_status.py:226-227`), and refuse unless `store.sealed_digest` of that id equals it. That preserves the exact historical version and digest, with no lock taken. r3 (T1): a body exactly equal to `no_thesis_section(THESIS_IMPACT)`, the complete stored form holding `NO_THESIS` (`falsifier_status.py:78`, `:215-218`), is the honest no-thesis case: the bundle says so, narrate proceeds under P8's exemption, and `thesis_narrative` says no assessment is possible. Any other body refuses.
 - Over `max_total_bytes` refuses.
 
-N and N+1 hold the same claims, and `thesis_impact`'s binding survives U2, so the bundle is identical from either. r2 (S13): a narrated version whose rebuilt `sha256` differs from its author's refuses at the panel gate; a narrated version with `limits=None` refuses; both are named tests. A version with no narrative key returns exactly today's text.
+N and N+1 hold the same claims, and `thesis_impact`'s binding survives U2 (a no-thesis body does not change), so the bundle is identical from either. r2 (S13): a narrated version whose rebuilt `sha256` differs from its author's refuses at the panel gate; a narrated version with `limits=None` refuses; both are named tests. A version with no narrative key returns exactly today's text.
 
 Verification: `uv run pytest tests/fundamentals/test_narrate_flow.py -k bundle -n 0` (`build_bundle` needs the pilot's database), then the Task 3 panel nodes. Cases:
 - two builds are byte-equal; a span one character over is absent, not citable, and its claims excluded; one at the limit is whole;
 - r2 (S9): an actual unmatched operand is shown whole with no claim key; nested traces reach their leaves; multiple claims sharing a measurement key list only the record each cites;
-- r2 (S8): an approved report with a bound thesis and no `thesis.*` claims gets that exact thesis; a no-thesis report gets the fixed line; a digest that disagrees refuses;
+- r2 (S8): an approved report with a bound thesis and no `thesis.*` claims gets that exact thesis; a no-thesis report gets the fixed line, and a body holding `NO_THESIS` in any other form refuses; a digest that disagrees refuses;
 - a cap one byte short refuses;
 - no truncation: every present span equals its claim's quote;
 - `test_ledger_panel.py` stays green unchanged, which proves the non-narrated text did not move.
@@ -505,8 +517,8 @@ Interfaces:
   - `ledger export <version> --panel-text --out <path> [--narrate-config …]`.
 
 Approach:
-- **Refusals before any model call:** N's status is not `APPROVED`; N is not its period's head (`_head` filters to earnings updates, so a thesis id refuses too); N carries a `NARRATIVE` key; a disclosure `before` not found once (P8); bundle faults; a complete prompt over `max_prompt_bytes`.
-- **The prompt** (a constant, digit-free where it can be) holds: the output format and five keys; the marker syntax; the scan rules and both lexicons; the notes due for this version, by key prefix; `r6_instruction` when R6 is due (S15); that rows are named in words and by placeholder (C-11); that `credibility_notes` must state what the record means for the thesis without a verdict, and must not restate the code rows; r2 (S5) that `drivers` says what the cited claims show moved and neither states nor suggests a cause; that `thesis_narrative` gives one S06 stance as `{{e:opinion}}`; P7. Then, in the hash-named block, N's narrative and the bundle.
+- **Refusals before any model call:** N's status is not `APPROVED`; N is not its period's head (`_head` filters to earnings updates, so a thesis id refuses too); N carries a `NARRATIVE` key; a disclosure `before` not found once (P8, with r3's one U2 exemption); bundle faults; a complete prompt over `max_prompt_bytes`.
+- **The prompt** (a constant, digit-free where it can be) holds: the output format and five keys; the marker syntax; the scan rules and both lexicons; the notes due for this version, by key prefix; `r6_instruction` when R6 is due (S15); that rows are named in words and by placeholder (C-11); that `credibility_notes` must state what the record means for the thesis without a verdict, must not restate the code rows, r3 (T4) and refers to them only as "the rows above"; r2 (S5) that `drivers` says what the cited claims show moved and neither states nor suggests a cause; that `thesis_narrative` gives one S06 stance as `{{e:opinion}}`, or r3 (T1), selected when N's `thesis_impact` is the no-thesis section, a separate constant: `thesis_narrative` says no assessment is possible and gives no stance, and `credibility_notes` says the thesis consequence cannot be assessed; P7. Then, in the hash-named block, N's narrative and the bundle.
 - r2 (S2): **N's narrative in the prompt withholds excluded quotes.** It renders through the existing `narrative` with copies of the excluded claims whose `citation.quote` is a fixed withheld line, so `render_claim` needs no change (`display.py:77-80`). Every quote in a section body is a placeholder (`run_draft.py:628`, `credibility.py:563`). The panel still reads the full text.
 - **`ThesisClientError` becomes `NarrateRefusedError`.** Timeout and retries are the config's (`subprocess_runner.py:80-133`). No retry above them. r2 (S3): a response over `max_response_bytes` refuses.
 - **Assembly and checks** run before the write transaction, in P4's order, and all reasons are reported together.
@@ -515,8 +527,9 @@ Approach:
 
 Verification: `uv run pytest tests/fundamentals/test_narrate_flow.py tests/fundamentals/test_ledger_panel.py tests/fundamentals/test_ledger_panel_cli.py tests/fundamentals/test_prep5_rework.py -n 0` (compose postgres plus retained originals). Named tests in `test_narrate_flow.py`:
 - `test_full_path_narrated_version_supersedes_its_head`: `run` → submit → panel `APPROVE` → narrate with a fake client → N+1 sections are N's, with U1–U6 applied and every other byte identical, plus five keys in order; N unchanged; every claim's `model_dump` equal; `version_record` of N+1 equal to N's; cutoff, pins and predecessor as P1; `AS_KNOWN` all `MATCH` → submit → panel with a fake reviewer that records `subject_text`, which holds the bundle → `APPROVED`, N `SUPERSEDED`.
+- r3 (T1) `test_a_no_thesis_version_narrates_through_the_panel`: the same path through a shared helper, on `_pilot(request, imported=False)`, with no approved thesis. N+1's `thesis_impact` is byte-identical to N's; U1 and U3–U6 applied; the prompt holds the no-assessment constant and not the stance instruction; the bundle says no thesis; `check` all `MATCH`; submit; panel `APPROVE` supersedes N. A copy of the draft (no write) whose `thesis_impact` holds `NO_THESIS` in another form refuses in the disclosure step, with the client never called. That a pilot with `imported=False` can run a quarter is inferred from `test_prep2b_run_draft.py:181`; the tests round settles it before red sealing.
 - `test_a_recorded_response_binds_the_panel_text`: a binding over `export --panel-text` bytes decides; one over plain `export` bytes refuses.
-- `test_each_bad_draft_writes_nothing` (parametrized; spec §5's list, every table's count unchanged through `all_counts`, the refusal naming its cause): number word; `amount:123`; numbered item; each of `-{{c:…|}}`, `{{c:…|}}x`, `amount:{{c:…|}}`; digit in a style field; unknown claim key; a location in another issuer's document; a same-issuer later disclosure, real retrospective capture (C-5, non-membership); a capture outside the package; an eligible location that is not citable; an extra key; a deterministic key; a due note missing; a verdict word on a no-score body; r2 (S14) an empty body; r2 (S2, S13) a `{{s:…}}` marker on an excluded span; a `|quote` and a `|ref` placeholder on an excluded claim.
+- `test_each_bad_draft_writes_nothing` (r3: a table looped over one pilot; spec §5's list, every table's count unchanged through `all_counts`, the refusal naming its cause): number word; `amount:123`; numbered item; each of `-{{c:…|}}`, `{{c:…|}}x`, `amount:{{c:…|}}`; digit in a style field; unknown claim key; a location in another issuer's document; a same-issuer later disclosure, real retrospective capture (C-5, non-membership); a capture outside the package; an eligible location that is not citable; an extra key; a deterministic key; a due note missing; a verdict word; r2 (S14) an empty body; r2 (S2, S13) a `{{s:…}}` marker on an excluded span; a `|quote` and a `|ref` placeholder on an excluded claim.
 - r2 (S13) `test_a_first_seen_capture_after_the_cutoff_refuses`: a citable set holding a capture first seen strictly after N's cutoff is refused by `resolve_location`, separately from membership.
 - r2 (S2) `test_an_excluded_span_reaches_no_model_input`: an over-limit span on the pilot, through the real `drafting_prompt`: its text is absent from the prompt and present in `panel_text`.
 - r2 (S3) `test_adversarial_inputs_keep_their_boundary` (AX-1 to AX-5): AX-1 stays inside the hash-named block through the real `drafting_prompt`; AX-2 to AX-5 drafts pass the code and reach `panel_text` verbatim, labels-alone refuses as empty (the code column of the table).
@@ -524,7 +537,6 @@ Verification: `uv run pytest tests/fundamentals/test_narrate_flow.py tests/funda
 - `test_a_bundle_over_the_cap_refuses`; r2 (S3) a prompt and a response over their limits; a client error; a changed disclosure `before` (S4): each writing nothing.
 - r2 (S13) `test_a_failed_check_after_insert_rolls_back` (parametrized): a `MATCH_UNTRUSTED` claim, through the blocking item of `test_ledger_panel.py:318`; a nonpassing validation after `create_version`, injected at `check_version`, the one seam with no honest way to reach it. Each asserts its cause and zero deltas.
 - r2 (S13) `test_the_panel_refuses_a_narrated_version` (parametrized): a mismatched bundle digest in the author; `limits=None`.
-- r2 (S1, S16) `test_the_configured_argv_is_the_proven_one`: `load_narrate_config` on the committed file, `build_command`, exact equality with Task 0's argv. `use_api: true`, a null model, and each limit at zero refuse at load.
 - `test_a_stale_head_refuses_under_lock`: a fake client's `generate` writes a new head, and narrate refuses with no second version.
 - `test_a_rejected_narrative_reruns_without_it` (P6, r2 S12: parametrized over `REQUEST_CHANGES` and `REJECT`): the panel decides on N+1, adding a decision and a review and no validation; `--full-successor` refuses; an ordinary rerun writes M, with no narrative key, `AS_KNOWN`, predecessor N+1; **M is faithful to N: section keys equal, every section byte-identical outside gate (f)'s enumerated heading fields, every claim's `model_dump` equal, source cutoff, manifest, thesis binding and pins equal**; U1–U6's old text is back; narrate on M refuses until M is approved, then succeeds.
 - `test_rework_drops_the_narrative` (C-8, parametrized): an ordinary `run` from an approved narrated head; a selective rework after `REQUEST_CHANGES --claim` on an `IN_REVIEW` one. Each carries no narrative, `AS_KNOWN`, and narrates once approved.
@@ -584,9 +596,9 @@ Approach:
      - (a) r2 (S10): `<v>` is now the period's head (`_head` takes the maximum id, `run_draft.py:143`) and its predecessor is N; N still has the frozen digest and remains `APPROVED` until `<v>`'s approval supersedes it; `<v>` has N's cutoff and pins. After `ledger panel`: N is `SUPERSEDED`, `<v>` `APPROVED`.
      - (b) `<v>`'s first eleven sections are N's byte for byte after applying exactly U1–U6 (r2, S4), each once, and N's own bytes are unchanged; the next five are `NARRATIVE_ORDER`, ordinals following.
      - (c) Every N claim's full `model_dump()` equals `<v>`'s, key sets equal: **no number moved and none was added.**
-     - (d) Bundle SHA and bytes, D1 to D4, trend rows and bound thesis equal the frozen values; the author names that SHA.
-     - (e) An independent scratch recheck of the model text, not importing the code: digits, placeholder keys, locations against the bundle, excluded claims, and notes due (R6 on FY26_Q2 and FY26_Q4; each `REVISED_UP` on FY26_Q4 and FY27_Q1).
-     - (f) **Recovery only, replacing S2's (d2)**, on a deterministic M against N, not against the rejected N+1: section keys equal; every section byte-identical except `heading`; every claim's full `model_dump()` equal; pins equal; the rejected N+1 is M's predecessor. r2 (S12): the `heading` differences allowed are exactly three values, and no whole line: the derivation cutoff timestamp; the `Memory retrieved at store time` timestamp, with its items equal; and `Prior:`'s version and digest, only when the previous quarter's head has itself been narrated, and then equal to that head's. Title, source cutoff, manifest digest and `Originals first seen` must be equal. A rerun that pins a new run id is a deviation to report: whether `write_run_draft` reuses it on a rerun is not read here (`run_draft.py:375`), and the drill settles it, as a frozen rule for the live gate. No delta file: a fix that moves a deterministic section is a code change and needs its own frozen delta, as S2's. M+1 is then gated against M by (a)–(e).
+     - (d) Bundle SHA and bytes, D1 to D4, trend rows, notes due and bound thesis equal the frozen values; the author names that SHA.
+     - (e) r3 (T5): the production checks (`scan_narrative`, `verdict_words`, `bad_locations`, `excluded_refs`, `missing_notes`) rerun on the stored text of `<v>`, imported, not reimplemented, with notes due of R6 on FY26_Q2 and FY26_Q4 and each `REVISED_UP` on FY26_Q4 and FY27_Q1. This proves the stored text is what was checked. It is not independent evidence of the checks: that comes from gates (b)–(d)'s frozen comparisons, the adversarial negative tests and the panel's semantic review. A bug shared by the check and the gate therefore reaches the panel, which reads every sentence.
+     - (f) **Recovery only, replacing S2's (d2)**, on a deterministic M against N, not against the rejected N+1: section keys equal; every section byte-identical except `heading`; every claim's full `model_dump()` equal; pins equal; the rejected N+1 is M's predecessor. r2 (S12): the `heading` differences allowed are exactly three values, and no whole line: the derivation cutoff timestamp; the `Memory retrieved at store time` timestamp, with its items equal; and `Prior:`'s version and digest, only when the previous quarter's head has itself been narrated, and then equal to that head's. Title, source cutoff, manifest digest and `Originals first seen` must be equal. r3 (T3): recovery with the same inputs preserves pins: `RunDraft.run_id` is `--compare-run` (`api/cli.py:473`), `write_run_draft` unions it with the predecessor's pins (`run_draft.py:375`), N+1 keeps N's pins (P1), and the S2 wrapper fixes the comparison id per quarter (`scratchpad/research3-s2/s2q.sh:15-18`). Pin equality stays frozen. The drill verifies it, and any pin change fails the gate as a deviation; the drill does not legitimise one. No delta file: a fix that moves a deterministic section is a code change and needs its own frozen delta, as S2's. M+1 is then gated against M by (a)–(e).
      - (g) Deltas and (a)–(e)'s results equal the rehearsal's, model text excepted.
    - `ledger submit` → `ledger export --panel-text` and `ledger export` to `$OUT/out/` → a fresh Sol round, brief below; reply saved to `$OUT/responses/<Q>.md`, read before recording; verdict to `$OUT/verdicts/<Q>.json`.
    - `ledger panel <v> …` → `APPROVED`; verdict's delta checked; gate (a)'s second half; `db check-live` exits 0 after every write.
@@ -623,9 +635,9 @@ Risks:
 | Id | Where | Sentence (implementer may tighten wording, not drop content; each must pass `scan_narrative`) |
 |---|---|---|
 | D1 | Top of `drivers`, `{{e:computed}}` | The sections above are the approved deterministic version this draft succeeds, with every claim unchanged; only the sentences that describe these notes were updated. r2 (S4): the notes below were drafted by a model from the evidence bundle alone, which holds this version's claims and the quotes they cite, not the whole transcript: a cause management gave outside those quotes is absent, and absence here does not show that no cause exists. The model computes nothing: every number in these notes is a placeholder filled from a checked claim. |
-| D2 | `credibility_notes`, r2 (S7) no directional trend on any metric and scope, `{{e:computed}}` | No metric and scope has consecutive completed windows with scored outcomes, so this record cannot show delivery rising or falling. A revision event states that a stated figure moved; it is neither an achievement nor better credibility. |
+| D2 | `credibility_notes`, r3 (T2) only when every row is `NOT_ASSESSABLE`, `{{e:computed}}` | No metric and scope has a comparable completed-window assessment, so this record cannot show delivery rising or falling. A revision event states that a stated figure moved; it is neither an achievement nor better credibility. |
 | D3 | r2 (S5). `drivers`, after D1, `{{e:computed}}` | Causes: NOT_ASSESSED. The evidence holds no management explanation of causes, so this section states what the cited claims show moved, not why. |
-| D4 | r2 (S6). `credibility_notes`, above the rows, `{{e:computed}}` | A delivery trend compares completed outcomes of consecutive fiscal years for a single metric and scope, on the original and the latest promise; it is not a judgment of management. DIVERGED means the promise moved and the endpoints disagree, so no direction is stated. Interim outcomes stay out of it. |
+| D4 | r2 (S6). `credibility_notes`, above the rows, `{{e:computed}}` | A delivery trend compares completed outcomes of consecutive fiscal years for a single metric and scope, on the original and the latest promise; it is not a judgment of management. STEADY means each compared endpoint held its level. DIVERGED means the promise moved and the endpoints disagree, so no direction is stated. Interim outcomes stay out of it. |
 | Row | `credibility_notes`, `{{e:computed}}` | Each episode's metric, scope, last event, r2 (S6) original outcome, latest outcome, delivery trend and `ref`. `NOT_ASSESSABLE` reads "no comparable completed windows" or "interim, not a completed window". |
 
 ## Acceptance map (spec §5 S3, plus carried duties)
@@ -644,13 +656,13 @@ Risks:
 | A10 | Rework gives no narrative, `AS_KNOWN`, narrates once approved | `test_rework_drops_the_narrative` (C-8) |
 | A11 | The panel receives the bundle | `test_full_path_…`; `test_a_recorded_response_…` |
 | A12 | Four Apar reports narrated, verdicts recorded, Sol `APPROVE` | Task 4 |
-| A13 | **S2 C-12, mechanism only; the goal stays OPEN (r2, Sol ruling).** A sealed delivery trend per episode from code; `RISING`, `FALLING`, `STEADY`, `DIVERGED` on completed rows; `NOT_ASSESSABLE` plus D2 on Apar; a verdict refused per metric and scope; a thesis-consequence paragraph per quarter, judged by Sol. **Not proven and not claimed: an answer to where credibility is rising or falling** | Task 1 (d)(e); `test_the_c12_case`; Task 4 gate (d), brief, close |
+| A13 | **S2 C-12, mechanism only; the goal stays OPEN (r2, Sol ruling).** A sealed delivery trend per episode from code; `RISING`, `FALLING`, `STEADY`, `DIVERGED` on completed rows; `NOT_ASSESSABLE` plus D2 on Apar, r3 (T2) no D2 on `STEADY` or `DIVERGED`; r3 (T4) a verdict word refused unconditionally in model credibility prose; a thesis-consequence paragraph per quarter, judged by Sol. **Not proven and not claimed: an answer to where credibility is rising or falling** | Task 1 (d)(e)(h); `test_the_c12_case`; Task 4 gate (d), brief, close |
 | A14 | **R6:** a note due and present on FY26_Q2, FY26_Q4; content judged against Sol's three elements; r2 (S15) other shapes get their own instruction | Task 1 (f); Task 4 gate (e), brief |
 | A15 | `drivers`, `risk_notes`, `credibility_notes`, `thesis_narrative`, `analyst_questions` present and not empty; notes on every `FLAGGED`, `MISSED`, `REVISED_*`, `BEHIND` row. r2 (S5): **causal-driver coverage is not accepted here and stays open**; D3 present. r2 (S14): substantive sufficiency is the panel's | `test_each_bad_draft_…`; gate (b)(e); brief |
 | A16 | A rejected narrative's route and its gate, both verdicts | `test_a_rejected_narrative_…`; Task 4 drills, gate (f) |
 | A17 | r2 (S1): the data-only invocation, from execution evidence; the configured argv is the proven one | Task 0; `test_the_configured_argv_…` |
 | A18 | r2 (S3): complete prompt and response bounded; adversarial examples hold their boundary; the panel rejects them | `test_a_bundle_over_the_cap_…`; `test_adversarial_inputs_…`; seeded round |
-| A19 | r2 (S8, S9): the thesis bound to N with no `thesis.*` claims; the no-thesis case; a complete trace with unmatched and nested operands | Task 2 |
+| A19 | r2 (S8, S9): the thesis bound to N with no `thesis.*` claims; r3 (T1) the no-thesis case, through the panel; a complete trace with unmatched and nested operands | Task 2; `test_a_no_thesis_version_…` |
 | A20 | r2 (S13): `MATCH_UNTRUSTED`, a post-insert failure, a mismatched bundle digest, missing limits, first seen after the cutoff | `test_a_failed_check_…`; `test_the_panel_refuses_…`; `test_a_first_seen_…` |
 
 ## Open decisions
@@ -661,7 +673,7 @@ Each proceeds on the recommendation once Sol approves this plan (stack, "Autonom
 |---|---|---|
 | OD-1 | **The narrating model.** Spec §4 says "the configured client" and names none. The stack governs implementers and reviewers, not a report's model, so they do not conflict; its "three models, nothing else" is read as limiting the choice. | Claude Opus 5.5 through `ClaudeOpusClient`'s CLI path, `claude-opus-5-5`, named only in `config/narrate.yaml`. It is independent of the Sol panel; the CLI needs no new dependency. r2 (S1, Sol: `REQUEST_CHANGES` on r1): args are those Task 0 proves. Not `settings.py`'s defaults, which are stale (`:27`, `:35`). **No fallback:** if Task 0 fails, S3 stops and the client design is revised. Effort is not configured; the CLI default applies unless a verified flag is added. |
 | OD-2 | C-1's key `analyst_questions` | As recommended; Sol: accepted, with explicit substantive criteria (S14). |
-| OD-3 | r2 (S6, S7; Sol: `REQUEST_CHANGES` on r1): P3's delivery trend: completed windows only, interim excluded, endpoints preserved, `DIVERGED` on disagreement, guard per metric and scope. A methodology choice, not a verdict on Apar. | As written in Duty 1. Effect of a target revision: it can produce `DIVERGED`, never a direction by itself. |
+| OD-3 | r2 (S6; Sol: `REQUEST_CHANGES` on r1), r3 (T4): P3's delivery trend: completed windows only, interim excluded, endpoints preserved, `DIVERGED` on disagreement, no verdict word in model prose. A methodology choice, not a verdict on Apar. | As written in Duty 1. r3 (T2): a revision alone establishes no direction; it can produce `DIVERGED`, and a revised episode can take part in a direction when its comparable endpoints agree. |
 | OD-4 | A third materiality extension | r2 (Sol ruling): acceptable within reviewer authority for an explicitly scoped S3 demonstration, leaving S06 materiality, A-10, A-04/B-02 and core release unsatisfied. No owner gate. **Must be flagged to the owner at handoff.** |
 
 **The owner's financial judgment, decided nowhere here:** whether management is credible; whether the thesis stands, weakens or changes; what a flagged ratio means for a position. `thesis_narrative`'s stance is a labelled draft opinion that the panel may approve as report text. It changes no thesis version, and the owner reads it and decides.
@@ -672,7 +684,7 @@ Each proceeds on the recommendation once Sol approves this plan (stack, "Autonom
 - r2 (S1): before anything else, Task 0 and its evidence
 - Before Task 1: the tests round, then `scripts/verify.sh red RESEARCH-3-S3 <nodes>`, every node red
 - `VERIFY_SCOPE_BASE=$S3_BASE scripts/verify.sh gate RESEARCH-3-S3`, its `ROUTE:` line read on its own
-- `wc -l` of every changed file: production ≤ 800 each and the restated stop (700 production, 720 tests); tests ≤ 800
+- `wc -l` of every changed file: production ≤ 800 each and the restated stop (660 production, 720 tests); tests ≤ 800
 - `git status` shows only the files in the file map
 
 ## Self-review
@@ -688,7 +700,7 @@ Each proceeds on the recommendation once Sol approves this plan (stack, "Autonom
   - r2: an excluded span re-entering through N's rendered text or `|quote` → P4, Task 3. A bound thesis with no `thesis.*` claim → Task 2. N+1 taking the head from N → gate (a).
   - Follow-up beads to file at close: transcript evidence for causal `drivers` (C-7); the rising-or-falling goal, open and unanswerable on Apar until a single-year quote or registered measure exists (Duty 1); the materiality flag to the owner (OD-4).
   - The status dashboard is refreshed by the orchestrator after each committed task (routine, not a plan task).
-- **Certain, from code or a read:** r1's cited lines at `f1bf13d7`; r2's new ones at `65ddc607`; the live-base table; U1–U6's `before` text in the S2 v22 export and in source; the CLI flags' existence in `claude --help` 2.1.314; `strace` absent on this machine on 2026-11-02; the Linux argv limit is a kernel constant, not measured here.
+- **Certain, from code or a read:** r1's cited lines at `f1bf13d7`; r2's new ones at `65ddc607`; the live-base table; U1–U6's `before` text in the S2 v22 export and in source; the CLI flags' existence in `claude --help` 2.1.314; `strace` absent on this machine on 2026-11-02; the Linux argv limit is a kernel constant, not measured here; r3: T1's stored form as written by `derived` and asserted at `test_falsifier_status.py:319`, T3's pin path, T6's readers and the panel role's table grant.
 - **Inferred:**
   - Prompt and bundle sizes, from export and thesis lengths; the bundle's own size is estimated, and r2's complete traces enlarge it. If the largest prompt nears the cap, Task 4's freeze dump shows it first.
   - Claim equality on N+1, from F-1.
@@ -696,8 +708,9 @@ Each proceeds on the recommendation once Sol approves this plan (stack, "Autonom
   - The Task 0 channels' field names, and that U1–U6's `before` text is byte-equal in v20, v21 and v23 as in v22 (same code at their writes; the freeze dump and P8's refusal settle it).
 - **Unverified, with where each is settled:**
   - Whether the flags remove tools and instructions in `-p` mode, and how to pass "no sources": Task 0.
-  - Whether a rerun reuses its run id, so M's pins equal N's: the rehearsal drill.
-  - The lexicon's refusal rate on real drafts, including the scoped guard: rehearsal.
+  - Whether M's pins equal N's in practice, which r3 reads as following from the code (T3): the rehearsal drill.
+  - The lexicon's refusal rate on real drafts, now unconditional: rehearsal.
+  - Whether a pilot with `imported=False` can run a quarter, and the integration file's size: the tests round.
   - Whether Opus can write useful `drivers` from this evidence, and whether Sol approves them (C-7): rehearsal text, then the panel.
   - The later-disclosure, first-seen and other-issuer fixtures' mechanics: the tests round, before red sealing.
   - No test, model or write command, and no isolation probe, was run for this plan. `claude --help` and `claude --version` were.
