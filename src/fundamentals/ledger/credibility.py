@@ -388,9 +388,9 @@ def _episode(claim: NumericClaim, entry: TargetEntry | None, targets: Targets) -
     return f"{head}.{entry.window}.{targets.root(entry).id}"
 
 
-def _sealed_month(held: Recorded) -> int:
-    """The fiscal-year-end month a record line's quarter label and period end fix."""
-    return (held.stated_end.month + (4 - int(held.stated[-1])) * 3 - 1) % 12 + 1
+def _label_month(stated: str, ended: date) -> int:
+    """The fiscal-year-end month a quarter label and its period end fix."""
+    return (ended.month + (4 - int(stated[-1])) * 3 - 1) % 12 + 1
 
 
 def prepare(
@@ -407,12 +407,17 @@ def prepare(
 ) -> Prepared:
     """Join the pool to the mapping and check all of it, writing nothing."""
     for held in (*record.statements, *same_period.statements):
-        if (sealed := _sealed_month(held)) != month:
+        if (sealed := _label_month(held.stated, held.stated_end)) != month:
             raise RunDraftError(
                 f"credibility statement stated {held.stated}: sealed on a fiscal year ending in "
                 f"month {sealed}, this run's {month}; a calendar change cannot carry promises"
             )
     end = date.fromisoformat(str(period_end))
+    if (fixed := _label_month(period, end)) != month:
+        raise RunDraftError(
+            f"credibility period {period} ended {end}: fixes a fiscal year ending in "
+            f"month {fixed}, this run's {month}"
+        )
     pool = {_triple(s.claims[0]): (s.claims[0], s.stated, s.stated_end) for s in record.statements}
     for claim in stated_claims:
         pool.setdefault(_triple(claim), (claim, period, end))

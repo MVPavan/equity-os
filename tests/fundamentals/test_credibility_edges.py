@@ -67,9 +67,9 @@ def _bound_open_window(root: Path, measures: Any) -> Any:
         cred.Record(),
         cred.Record(),
         write_targets(root, entry("A", held, "FY28")),
-        period="FY28_Q4",
+        period="FY28_Q3",
         period_end=date(2028, 2, 29),
-        month=3,
+        month=5,
         filed_at={},
         actual_blobs=frozenset(),
     )
@@ -329,6 +329,22 @@ def test_an_effective_fiscal_setting_change_refuses_the_next_run_with_every_tabl
     with pytest.raises(RunDraftError, match="stated FY26_Q2: .*month 3, this run's 12"):
         pilot.run("FY26_Q3")
     assert all_counts(pilot) == before
+
+
+def test_a_label_its_calendar_cannot_give_is_refused_before_it_can_be_sealed(
+    tmp_path: Path,
+) -> None:
+    """P7, r5 (C3): FY26_Q2 ending September fixes a March year. Sealed under December, that line
+    would refuse December and pass a later March run, rereading the promise's fiscal window."""
+    cred, held = cred_module(), claim()
+    mapping = write_targets(tmp_path, entry("A", held))
+    none = cred.Record()
+    with pytest.raises(RunDraftError, match="FY26_Q2 ended 2025-09-30: .*month 3, this run's 12"):
+        _prepare((held,), none, none, mapping, "FY26_Q2", date(2025, 9, 30), 12)
+    first = finish(_prepare((held,), none, none, mapping, "FY25_Q3", date(2025, 9, 30), 12))
+    sealed = cred.read_record(first.body, first.claims)
+    with pytest.raises(RunDraftError, match="stated FY25_Q3: .*month 12, this run's 3"):
+        _prepare((), sealed, none, mapping, "FY26_Q3", date(2025, 12, 31), 3)
 
 
 def test_a_december_year_chain_carries_under_its_own_calendar(tmp_path: Path) -> None:
