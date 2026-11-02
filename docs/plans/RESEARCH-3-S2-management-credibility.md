@@ -209,8 +209,10 @@ claim must route to a fact, trace or threshold). `test_report_export_gaps.py:42`
   - **Guaranteed zero on every table:** `preflight`, `check_pins`, `check_head`, the rework gate, `prepare`, `admit`.
   - **Late:** the under-lock identity and digest checks, `_Binder.filed`'s structural raise, and `AS_KNOWN`
     validation. The version rolls back, but traces and facts already committed in their own transactions stay
-    (`evidence/repository.py:636`). These occur only through a concurrent head change or a store fault, not a
-    mapping fault, and the run reports them as refusals with no such guarantee.
+    (`evidence/repository.py:636`). These occur through a concurrent head change, a store fault or unavailable
+    inputs (a run with no usable comparator, `eqos-7d3a`), not a mapping fault: `prepare` also renders the
+    prospective section, parses its record and runs the real scanner. The run reports them as refusals with no such
+    guarantee.
 - **P13, a link resolves through the pool (r4, F3).** Episode identity depends on every entry on `chain(entry)`.
   Each entry on a statement's chain must name a triple present in the pool, checked on every `prepare`, else
   `RunDraftError`. So every entry that decides a recorded root is itself a recorded, pinned statement, and no
