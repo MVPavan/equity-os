@@ -135,8 +135,8 @@ def test_unknown_numeric_issuer_and_row_ids_still_stop(gate, template) -> None:
     assert "real captured identifier" in result.stdout
 
 
-def test_identifier_rail_ignores_four_digit_values_and_reports_every_match(gate) -> None:
-    """Four digits cannot be told from a year or round amount; a truncated report hides leaks."""
+def test_identifier_rail_ignores_bare_four_digit_values_and_reports_every_match(gate) -> None:
+    """Bare four digits look like a year or round amount; a truncated report hides leaks."""
     root, _ = gate
     tokens = [str(90_001 + at) for at in range(4)]
     (root / "tests/fundamentals/test_synthetic.py").write_text(f"values = {[2023, *tokens]}\n")
@@ -148,6 +148,18 @@ def test_identifier_rail_ignores_four_digit_values_and_reports_every_match(gate)
     assert result.returncode == 3
     assert f"real captured identifier in a fixture: {','.join(tokens)}" in result.stdout
     assert "2023" not in result.stdout.split("real captured identifier")[1].split("\n")[0]
+
+
+def test_identifier_rail_still_catches_a_four_digit_id_in_id_context(gate) -> None:
+    """A real short id pasted as a company URL is a leak, even though a bare one is not judged."""
+    root, _ = gate
+    (root / "tests/fundamentals/test_synthetic.py").write_text('url = "/company/1234/"\n')
+    _capture(root, '<tr data-row-company-id="1234">')
+
+    result = _run(gate)
+
+    assert result.returncode == 3
+    assert "real captured identifier in a fixture: 1234" in result.stdout
 
 
 @pytest.mark.parametrize("indent", (0, 24))
