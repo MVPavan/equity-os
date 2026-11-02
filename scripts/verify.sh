@@ -678,10 +678,11 @@ PYEOF
     if [ -s "${added_tests}" ] && [ "${#caps[@]}" -gt 0 ]; then
       local ids leaked
       ids="$(mktemp)"
-      grep -rhoE 'data-row-company-id="[0-9]{4,}"|/company/(id/)?[0-9]{4,}/' "${caps[@]}" 2>/dev/null \
-        | grep -oE '[0-9]{4,}' | sort -u >"${ids}"
+      # Five digits up: a four-digit value cannot be told from a year or a round amount.
+      grep -rhoE 'data-row-company-id="[0-9]{5,}"|/company/(id/)?[0-9]{5,}/' "${caps[@]}" 2>/dev/null \
+        | grep -oE '[0-9]{5,}' | sort -u >"${ids}"
       if [ -s "${ids}" ]; then
-        leaked="$(grep -howFf "${ids}" "${added_tests}" 2>/dev/null | sort -u | head -3 | paste -sd, -)"
+        leaked="$(grep -howFf "${ids}" "${added_tests}" 2>/dev/null | sort -u | paste -sd, -)"
         [ -n "${leaked}" ] && rails="${rails}${rails:+; }real captured identifier in a fixture: ${leaked}"
       fi
       rm -f "${ids}"
