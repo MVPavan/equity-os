@@ -66,6 +66,7 @@ class ClaudeOpusClient:
         ]
         if self._config.model is not None:
             command.extend([_MODEL_FLAG, self._config.model])
+        command.extend(self._config.extra_args)
         return command
 
     def generate(self, prompt: str) -> ModelResponse:

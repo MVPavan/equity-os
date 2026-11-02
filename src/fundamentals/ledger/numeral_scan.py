@@ -24,14 +24,16 @@ _NUMERAL = re.compile(r"\d")
 _ID_PREFIXES = frozenset(
     {"memory", *(target.value.removesuffix("_id") for target in SupportTarget)}
 )
+_DATES = r"\b\d{4}-\d{2}-\d{2}(?:T[\d:.]+(?:Z|[+-]\d{2}:\d{2})?)?"
+_PERIODS = r"\bFY\d{2,4}(?:_Q[1-4])?\b|\b[QH][1-4]\b"
 # Structural numerals (ledger spec §1), removed before the numeral search.
 _STRUCTURAL = re.compile(
     "|".join(
         (
             r"^[ \t]*\d+[.)][ \t]",  # list numbering
             r"^#+[ \t]*\d+(?:\.\d+)*\.?",  # section ordinals
-            r"\b\d{4}-\d{2}-\d{2}(?:T[\d:.]+(?:Z|[+-]\d{2}:\d{2})?)?",  # dates
-            r"\bFY\d{2,4}(?:_Q[1-4])?\b|\b[QH][1-4]\b",  # period labels
+            _DATES,
+            _PERIODS,
             r"\[\^\d+\]",  # footnote markers
             r"\bp\d+\.b\d+\.\d+:\d+\b",  # source-location coordinates
             # provenance hashes, never a number in scientific notation
@@ -45,6 +47,17 @@ _STRUCTURAL = re.compile(
     re.MULTILINE,
 )
 _CLASSES = frozenset(EpistemicClass)
+# Spec §4's narrative-mode scan: only dates and period labels are structural.
+NUMBER_WORDS = (
+    "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+    "fifteen sixteen seventeen eighteen nineteen twenty thirty forty fifty sixty seventy eighty "
+    "ninety hundred thousand lakh crore million billion dozen twice thrice double doubled triple "
+    "tripled halve halved percent bps"
+).split() + ["per cent", "basis point", "basis points"]
+_NARRATIVE_EXEMPT = re.compile(f"{_DATES}|{_PERIODS}")
+_DIGIT_TOKEN = re.compile(r"\S*\d\S*")
+_LEXICON = re.compile(rf"\b(?:{'|'.join(NUMBER_WORDS)})\b|-fold\b", re.IGNORECASE)
+_MAY_TOUCH = frozenset(" \t\r\n(),.;")
 
 
 def scan_section(text: str, *, resolves: Callable[[str, str], bool]) -> tuple[VersionState, ...]:
@@ -68,3 +81,19 @@ def scan_section(text: str, *, resolves: Callable[[str, str], bool]) -> tuple[Ve
         if failing or (EpistemicClass.OBSERVED in classes and not backed):
             found.add(VersionState.UNCITED_PROSE)
     return tuple(state for state in VersionState if state in found)
+
+
+def scan_narrative(text: str) -> tuple[str, ...]:
+    """Why a narrative section's text may hold a number of its own; empty when clean."""
+    reasons = [
+        f"placeholder touches other text: {found.group()}"
+        for found in PLACEHOLDER.finditer(text)
+        if not _MAY_TOUCH.issuperset(text[max(found.start() - 1, 0) : found.start()])
+        or not _MAY_TOUCH.issuperset(text[found.end() : found.end() + 1])
+    ]
+    bare = LOCATION_MARKER.sub(" ", CLASS_MARKER.sub(" ", PLACEHOLDER.sub(" ", text)))
+    if "{{" in bare:
+        reasons.append("a {{ marker is left unfilled")
+    reasons += [f"digit: {t}" for t in _DIGIT_TOKEN.findall(_NARRATIVE_EXEMPT.sub(" ", bare))]
+    reasons += [f"number word: {found.group()}" for found in _LEXICON.finditer(bare)]
+    return tuple(reasons)

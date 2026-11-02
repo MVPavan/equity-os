@@ -33,7 +33,7 @@ from fundamentals.contracts.ledger import (
 from fundamentals.contracts.snapshot import canonical_json
 from fundamentals.contracts.source_catalog import SourceCatalog
 from fundamentals.ledger import store
-from fundamentals.ledger.display import narrative
+from fundamentals.ledger.evidence_bundle import BundleLimits, panel_text
 from fundamentals.ledger.lifecycle import (
     DecisionRefusedError,
     append_decision,
@@ -115,10 +115,12 @@ def review(
     catalog: SourceCatalog | None = None,
     snapshots: SnapshotStore | None = None,
     describe: Callable[[Cursor[Any], int], str] | None = None,
+    limits: BundleLimits | None = None,
 ) -> DecisionRecord:
     """Decide one report version, disposition proposal or memory candidate by the reviewer's
     verdict, as the pool's (panel) role; a version's claims are checked with ``catalog`` and
-    ``snapshots``, and a candidate's text is ``describe(cursor, item_id)``."""
+    ``snapshots``, a narrated version's bundle is rebuilt under ``limits``, and a candidate's text
+    is ``describe(cursor, item_id)``."""
     if subject_kind not in _VERDICTS:
         raise DecisionRefusedError(_NOT_PANEL.format(subject_kind=subject_kind))
     check = None
@@ -128,7 +130,7 @@ def review(
         raise DecisionRefusedError(_NEEDS.format(subject_kind=V, what="catalog and snapshots"))
     if subject_kind is M and describe is None:
         raise DecisionRefusedError(_NEEDS.format(subject_kind=M, what="describe"))
-    gate = partial(_gate, check=check, describe=describe)
+    gate = partial(_gate, check=check, describe=describe, limits=limits)
     as_of = overlay_boundary(pool) if subject_kind is P else None
     with pool.connection() as conn, conn.cursor() as cursor:
         text, gated, _ = gate(cursor, subject_kind, subject_id, as_of)
@@ -166,6 +168,7 @@ def _gate(
     *,
     check: Callable[[Cursor[Any], int], Validation] | None,
     describe: Callable[[Cursor[Any], int], str] | None,
+    limits: BundleLimits | None,
 ) -> tuple[str, tuple[str, object], Validation | None]:
     """The reviewed text, the gated state (digest, a version's check result or a candidate's
     text) and a version's passing check if every D10 gate holds, else refuse. A proposal's
@@ -193,7 +196,7 @@ def _gate(
             raise _refused(subject_kind, subject_id, _FAILS)
         draft = store.read_version(cursor, subject_id)
         result = validation.model_dump(exclude={"overlay_position"})
-        return narrative(draft.sections, draft.claims).decode(), (digest, result), validation
+        return panel_text(cursor, draft, limits), (digest, result), validation
     with cursor.connection.cursor(row_factory=dict_row) as own:
         row = own.execute(_PROPOSAL, (subject_id,)).fetchone()
     assert row is not None and as_of is not None

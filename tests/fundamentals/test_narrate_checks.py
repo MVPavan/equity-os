@@ -79,7 +79,7 @@ def _record(root: Path, period: str, *windows: Window) -> str:
         held = [
             claim(low=low, quote=f"growth of {low}% in {window}", page=next(page)) for low in lows
         ]
-        entries += [entry(f"{window}-{at}", item, window) for at, item in enumerate(held)]
+        entries += [entry(f"{window}-{chr(97 + at)}", item, window) for at, item in enumerate(held)]
         first.append(held[0])
         later += held[1:]
         if actual is not None:

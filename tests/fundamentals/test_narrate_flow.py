@@ -136,7 +136,7 @@ def test_a_recorded_response_binds_the_panel_text(
     capsys.readouterr()
     assert _ledger(pilot, "narrate", version) == 0
     new = int(capsys.readouterr().out.split()[-1])
-    assert main(["ledger", "submit", str(new)]) == 0
+    assert _ledger(pilot, "submit", new) == 0
     digest, plain = _bound(pilot, new)
     out = pilot.tmp_path / "panel.txt"
     assert main(["ledger", "export", str(new), "--panel-text", "--out", str(out)]) == 0

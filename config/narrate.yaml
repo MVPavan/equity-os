@@ -1,0 +1,11 @@
+# ledger narrate: the drafting model and the evidence limits (RESEARCH-3 S3, OD-1, P7).
+# The CLI's isolation args are a code constant Task 0 proved; a file cannot change them.
+claude:
+  model: claude-opus-5-5
+  timeout_seconds: 900
+  retries: 1
+limits:
+  max_span_chars: 4000
+  max_total_bytes: 100000
+  max_prompt_bytes: 131072
+  max_response_bytes: 60000

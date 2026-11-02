@@ -15,11 +15,15 @@
         (decides an IN_REVIEW version on a recorded reviewer response whose one EQOS-BINDING
         line names the version, its sealed digest, its narrative SHA-256 and the verdict; the
         verdict file names only provider, model, effort and brief_version)
+    ledger narrate <version id> --stock <symbol> --snapshot-root <dir> [as check]
+        [--narrate-config config/narrate.yaml]   (approved head to DRAFT successor: prints its id)
     ledger import --snapshot-root <dir> [--config config/ledger_import.yaml] [--repo .]
         [--watchlist config/watchlist.yaml] [--issuer-config <yaml>]... [--thesis-successor]
         (--thesis-successor imports only the configured successor thesis onto the chain)
     ledger stage <item.yaml>   (a MemoryItemDraft; an exact retry prints the same id)
     ledger export <version id> [--out PATH]   (narrative bytes; stdout unless --out)
+    ledger export <version id> --panel-text [--out PATH] [--narrate-config <yaml>]
+        (the exact bytes the panel reads, which a recorded binding hashes)
     ledger export --stock <symbol> --out <dir> [--status-notes] [--memory]
         (every version's narrative, and its status note, and the promoted memory, under
         <dir>/<symbol>/, which must be fresh or empty: nothing is overwritten)
@@ -60,6 +64,8 @@ from fundamentals.contracts.memory import MemoryItemDraft, MemoryStatus
 from fundamentals.contracts.retention import OriginalExpiredError
 from fundamentals.contracts.snapshot import SnapshotError
 from fundamentals.contracts.source_catalog import SourceCatalog
+from fundamentals.ledger import store
+from fundamentals.ledger.evidence_bundle import panel_text
 from fundamentals.ledger.export import export_version, status_note, stock_entity, stock_versions
 from fundamentals.ledger.importer import (
     ImportedVersion,
@@ -68,6 +74,7 @@ from fundamentals.ledger.importer import (
     load_import_config,
 )
 from fundamentals.ledger.lifecycle import DecisionRefusedError, decide, submit, validate
+from fundamentals.ledger.narrate import load_narrate_config, narrate
 from fundamentals.ledger.panel import review
 from fundamentals.ledger.recorded_reviewer import RecordedReviewer, Responder, rehearsal_allowed
 from fundamentals.memory import retrieval
@@ -77,6 +84,7 @@ from fundamentals.pg.pool import DatabaseUnavailableError, open_pool
 from fundamentals.pg.role_secrets import RoleSecretError, load_login, secrets_dir
 from fundamentals.pg.settings import PgRole, PgSettings
 from fundamentals.store.snapshot_store import SnapshotStore
+from fundamentals.thesis.claude_client import ClaudeOpusClient
 
 LEDGER_COMMAND = "ledger"
 DECIDE_ACTION = "decide"
@@ -86,8 +94,11 @@ PANEL_ACTION = "panel"
 IMPORT_ACTION = "import"
 EXPORT_ACTION = "export"
 STAGE_ACTION = "stage"
+NARRATE_ACTION = "narrate"
 DEFAULT_WATCHLIST = Path("config") / "watchlist.yaml"
 DEFAULT_IMPORT_CONFIG = Path("config") / "ledger_import.yaml"
+DEFAULT_NARRATE_CONFIG = Path("config") / "narrate.yaml"
+NARRATE_CONFIG_FLAG = "--narrate-config"
 ISSUER_CONFIG_FLAG = "--issuer-config"
 _ACTION_DEST = "ledger_action"
 _HELP = "decide report-ledger subjects and check report versions"
@@ -96,6 +107,9 @@ _CHECK_HELP = "check every claim of a version and append the validation"
 _SUBMIT_HELP = "seal a draft for review as the runtime role"
 _PANEL_HELP = "decide a submitted version as the panel login on a recorded reviewer response"
 _IMPORT_HELP = "import the configured retained versions as the panel role"
+_NARRATE_HELP = (
+    "draft the model notes on an approved head as a DRAFT successor, as the runtime role"
+)
 _STAGE_HELP = "stage a memory item from a YAML MemoryItemDraft as the runtime role"
 _EXPORT_HELP = (
     "write a version's narrative bytes, or a stock's narratives, notes and memory into a fresh "
@@ -152,8 +166,8 @@ def _add_sources(action: argparse.ArgumentParser) -> None:
 
 
 def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register ``ledger`` with its ``decide``, ``check``, ``submit``, ``panel``, ``import``,
-    ``stage`` and ``export`` actions."""
+    """Register ``ledger`` with its ``decide``, ``check``, ``submit``, ``panel``, ``narrate``,
+    ``import``, ``stage`` and ``export`` actions."""
     parser = subparsers.add_parser(LEDGER_COMMAND, help=_HELP)
     actions = parser.add_subparsers(dest=_ACTION_DEST, required=True)
     decision = actions.add_parser(DECIDE_ACTION, help=_DECIDE_HELP)
@@ -179,7 +193,12 @@ def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     panel.add_argument("version", type=int)
     panel.add_argument("--verdict", type=Path, required=True)
     panel.add_argument("--response", type=Path, required=True)
+    panel.add_argument(NARRATE_CONFIG_FLAG, type=Path, default=DEFAULT_NARRATE_CONFIG)
     _add_sources(panel)
+    narration = actions.add_parser(NARRATE_ACTION, help=_NARRATE_HELP)
+    narration.add_argument("version", type=int)
+    narration.add_argument(NARRATE_CONFIG_FLAG, type=Path, default=DEFAULT_NARRATE_CONFIG)
+    _add_sources(narration)
     imports = actions.add_parser(IMPORT_ACTION, help=_IMPORT_HELP)
     imports.add_argument("--snapshot-root", type=Path, required=True)
     imports.add_argument("--config", type=Path, default=DEFAULT_IMPORT_CONFIG)
@@ -196,6 +215,8 @@ def add_ledger_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     export.add_argument("--out", type=Path)
     export.add_argument("--status-notes", action="store_true")
     export.add_argument("--memory", action="store_true")
+    export.add_argument("--panel-text", action="store_true")
+    export.add_argument(NARRATE_CONFIG_FLAG, type=Path, default=DEFAULT_NARRATE_CONFIG)
 
 
 def dispatch_ledger_command(args: argparse.Namespace) -> int | None:
@@ -208,6 +229,7 @@ def dispatch_ledger_command(args: argparse.Namespace) -> int | None:
             CHECK_ACTION: _check,
             SUBMIT_ACTION: _submit,
             PANEL_ACTION: _panel,
+            NARRATE_ACTION: _narrate,
             IMPORT_ACTION: _import,
             STAGE_ACTION: _stage,
             EXPORT_ACTION: _export,
@@ -281,6 +303,7 @@ def _panel(args: argparse.Namespace) -> int:
             _OTHER_SUBJECT.format(bound=reviewer.binding.subject, subject=subject)
         )
     sources = decision_sources(args)
+    limits = load_narrate_config(args.narrate_config).limits
     login = load_login(PgRole.PANEL, secrets_dir(os.environ))
     with open_pool(PgSettings(), PgRole.PANEL, login=login) as pool:
         with pool.connection() as conn:
@@ -295,9 +318,22 @@ def _panel(args: argparse.Namespace) -> int:
             subject_kind=SubjectKind.REPORT_VERSION,
             subject_id=args.version,
             reviewer=reviewer,
+            limits=limits,
             **sources,
         )
     sys.stdout.write(_DECISION.format(id=record.id) + "\n")
+    return EXIT_OK
+
+
+def _narrate(args: argparse.Namespace) -> int:
+    """Narrate one approved head as the runtime role and print the new version's id."""
+    config = load_narrate_config(args.narrate_config)
+    client = ClaudeOpusClient(config.claude)
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+        new_id = narrate(
+            pool, args.version, client=client, limits=config.limits, **decision_sources(args)
+        )
+    sys.stdout.write(f"{new_id}\n")
     return EXIT_OK
 
 
@@ -352,7 +388,13 @@ def _export(args: argparse.Namespace) -> int:
     if args.status_notes or args.memory:
         raise ValueError(_NEEDS_STOCK)
     with open_pool(PgSettings(), PgRole.RUNTIME) as pool, pool.connection() as conn:
-        body = export_version(conn.cursor(), args.version_id)
+        cursor = conn.cursor()
+        if args.panel_text:
+            limits = load_narrate_config(args.narrate_config).limits
+            draft = store.read_version(cursor, args.version_id)
+            body = panel_text(cursor, draft, limits).encode()
+        else:
+            body = export_version(cursor, args.version_id)
     if args.out is None:
         sys.stdout.buffer.write(body)
     else:

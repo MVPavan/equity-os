@@ -19,7 +19,8 @@ them, refuses (plan RESEARCH-1 D7): a threshold's route is superseding the thesi
 or calculation's is diagnosis, then ``--full-successor``, and a credibility claim's is diagnosis, a
 mapping correction if the mapping is wrong, then ``--full-successor``. The disclosed open-questions
 and not-performed sections are likewise regenerated from the run's guidance on every write, outside
-the rework contract.
+the rework contract. A narrative section owns no claim and is dropped: a reworked successor is
+narrated again once approved (RESEARCH-3 S3).
 """
 
 from __future__ import annotations
@@ -36,7 +37,13 @@ from fundamentals.evidence.repository import EvidenceRepository
 from fundamentals.evidence.repository_calc import StoredTrace
 from fundamentals.ledger import store
 from fundamentals.ledger.display import FILED, PLACEHOLDER, DisplayError, render_section
-from fundamentals.ledger.falsifier_status import CREDIBILITY, DERIVED, RISK_PROBE, THESIS_IMPACT
+from fundamentals.ledger.falsifier_status import (
+    CREDIBILITY,
+    DERIVED,
+    NARRATIVE,
+    RISK_PROBE,
+    THESIS_IMPACT,
+)
 from fundamentals.ledger.run_traces import DISCLOSED, RunDraftError
 
 Atom = tuple[str, str]
@@ -240,7 +247,7 @@ def plan(cursor: Cursor[Any], repository: EvidenceRepository, head: int) -> Rewo
             f"{', '.join(derived)} is re-derived from the approved thesis; supersede the thesis "
             "instead"
         )
-    sections = [s for s in version.sections if s.section_key not in DERIVED | DISCLOSED]
+    sections = [s for s in version.sections if s.section_key not in DERIVED | DISCLOSED | NARRATIVE]
     cited = [claim.citation for claim in claims.values()]
     trace_ids = [c.calculation_trace_id for c in cited if c.calculation_trace_id is not None]
     traces = {t.trace_id: t for t in repository.get_calculation_traces(trace_ids)}

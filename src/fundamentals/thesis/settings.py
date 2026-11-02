@@ -70,6 +70,7 @@ class ClaudeClientConfig(BaseModel):
     executable: str = DEFAULT_CLAUDE_EXECUTABLE
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     retries: int = DEFAULT_RETRIES
+    extra_args: tuple[str, ...] = ()
     use_api: bool = False
     api_key: SecretStr | None = None
     api_max_tokens: int = 4096

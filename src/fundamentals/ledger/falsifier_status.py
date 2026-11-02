@@ -44,6 +44,8 @@ THESIS_IMPACT, FALSIFIER_STATUS = "thesis_impact", "observable_falsifiers"
 RISK_PROBE = "risk_probe"
 CREDIBILITY = "management_credibility"
 DERIVED = frozenset({THESIS_IMPACT, FALSIFIER_STATUS, RISK_PROBE, CREDIBILITY})
+NARRATIVE_ORDER = "drivers risk_notes credibility_notes thesis_narrative analyst_questions".split()
+NARRATIVE = frozenset(NARRATIVE_ORDER)
 _PCT, _DAYS, _RATIO = ValueKind.PERCENTAGE, ValueKind.DAYS, ValueKind.RATIO
 # A metric id: its label, the run claim measuring it (``None``: the ETR line's claim) and its
 # value kind.
@@ -137,6 +139,11 @@ def approved_thesis(
     )
 
 
+def no_thesis_section(key: str) -> str:
+    """A derived section's whole stored body when no thesis was approved."""
+    return f"## {key}\n\n{NO_THESIS}\n\n"
+
+
 def bindable_thesis(sources: Sequence[tuple[str, bytes]], symbol: str) -> ApprovedThesis:
     """The single YAML twin among a thesis version's import ``sources``, parsed; one that is
     missing, ambiguous, unparseable or not of ``symbol`` raises ``ValueError``."""
@@ -213,9 +220,7 @@ def derived(
 ) -> tuple[tuple[tuple[str, str], ...], tuple[NumericClaim, ...]]:
     """The two derived sections as (key, body) and each evaluated row's threshold claim."""
     if bound is None:
-        return tuple(
-            (key, f"## {key}\n\n{NO_THESIS}\n\n") for key in (THESIS_IMPACT, FALSIFIER_STATUS)
-        ), ()
+        return tuple((key, no_thesis_section(key)) for key in (THESIS_IMPACT, FALSIFIER_STATUS)), ()
     pinned = f"version:{bound.version_id}"
     by_status = [
         f"{status.value} {', '.join(r.falsifier_id for r in rows if r.disposition is status)}"
