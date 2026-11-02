@@ -1,14 +1,18 @@
 {
   "now": {
-    "title": "RESEARCH-3 S2 management credibility: mapping frozen, rehearsal next",
-    "detail": "Code passes gate 6 at 347443fc (5,509 tests, rails OK). Sol approved all eight Apar guidance entries on 2026-11-02 and the expectations are frozen in the plan. Next: full four-quarter rehearsal on a restored copy of live, then live regeneration with a Sol panel per quarter. Nothing written live for S2 yet."
+    "title": "RESEARCH-3 S2 management credibility closed live; S3 next",
+    "detail": "All four Apar quarters regenerated with the credibility record and approved by Sol: FY26_Q2 v20, FY26_Q3 v21, FY26_Q4 v22, FY27_Q1 v23. Claims 91, 86, 101, 91 as frozen, with no earlier claim changed. Every row is UNRESOLVED: Apar's quotes name no single target year, so no promise is scored as met or missed. Backup 06497e13."
   },
   "next": [
-    "RESEARCH-3 S2 rehearsal, then live regeneration of four Apar quarters; then S3, RESEARCH-4",
-    "Owner: keep macro charts on a monthly schedule and drop index widgets? (recommended yes to both)",
+    "RESEARCH-3 S3 (trend and thesis consequence, R6 wording, regenerate), then RESEARCH-4",
+    "Owner: materiality treatment extended a second time; may overturn. Keep macro charts monthly and drop index widgets? (recommended yes to both)",
     "eqos-aa6.28 capture error messages; eqos-dna.3; DOCS-1 follow-ups msq.3-.7"
   ],
   "log": [
+    {
+      "date": "2026-11-02",
+      "text": "RESEARCH-3 S2 Task 4 closed live: v20, v21, v22, v23 APPROVED by Sol; gates and check-live pass; deltas matched rehearsal; earlier digests unchanged; backup 06497e13. Docker went down twice mid-run (not caused by this work); no write was lost."
+    },
     {
       "date": "2026-11-02",
       "text": "RESEARCH-3 S2 code closed through Sol's closing review (gate 6 ROUTE PASS at 347443fc); freeze review APPROVE on all eight guidance entries, expectations committed to the plan."

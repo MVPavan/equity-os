@@ -838,6 +838,7 @@ Approach:
      write its delta file (below); `PYTHONPATH=$OUT/drill-src run --full-successor` writes `<v2>`. Before submit, the
      gate must **fail** with an empty delta, and with a delta naming `risk_probe`, and **pass** with the true one. Then
      `submit`, `export`, response, verdict, `panel` → `APPROVED`. An unaffected section or claim moving is a deviation.
+     Rehearsal deviation (2026-11-02): a full copy of `src` refuses, because the operator anchors its install root on `__file__`, so `drill-src` was an overlay of symlinks in which only `credibility.py` differs.
      Apar has no `cred.*` claim, so the delta's `cred.*` branch is not exercised live; `cred_gate.py` is run on a
      scratch pair of `model_dump()`s to prove that branch.
    - **Rehearsal health, r2 (R13).** `db check-live` refuses an `eqos_test_*` database by design
