@@ -37,6 +37,7 @@ from fundamentals.ledger.guidance_targets import (
     Targets,
     derive_window,
     fiscal_span,
+    fiscal_year,
 )
 from fundamentals.ledger.import_mapping import QUOTE_STYLE, _slot, _valued, refs
 from fundamentals.ledger.numeral_scan import scan_section
@@ -418,6 +419,8 @@ def prepare(
             f"credibility period {period} ended {end}: fixes a fiscal year ending in "
             f"month {fixed}, this run's {month}"
         )
+    if int(period[2:4]) != fiscal_year(end, month) % 100:
+        raise RunDraftError(f"credibility period {period} ended {end}: another fiscal year")
     pool = {_triple(s.claims[0]): (s.claims[0], s.stated, s.stated_end) for s in record.statements}
     for claim in stated_claims:
         pool.setdefault(_triple(claim), (claim, period, end))

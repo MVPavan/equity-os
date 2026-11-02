@@ -347,6 +347,14 @@ def test_a_label_its_calendar_cannot_give_is_refused_before_it_can_be_sealed(
         _prepare((), sealed, none, mapping, "FY26_Q3", date(2025, 12, 31), 3)
 
 
+def test_a_label_of_another_fiscal_year_is_refused_before_it_can_be_sealed(tmp_path: Path) -> None:
+    """September 2025 is in FY26 of a March year; FY27_Q2 would seal a false originating quarter."""
+    held, none = claim(), cred_module().Record()
+    mapping = write_targets(tmp_path, entry("A", held))
+    with pytest.raises(RunDraftError, match="FY27_Q2 ended 2025-09-30: another fiscal year"):
+        _prepare((held,), none, none, mapping, "FY27_Q2", date(2025, 9, 30), 3)
+
+
 def test_a_december_year_chain_carries_under_its_own_calendar(tmp_path: Path) -> None:
     """P7, r5 (C3): the refusal is a change of calendar, not a preference for March."""
     cred, held = cred_module(), claim()

@@ -194,7 +194,7 @@ claim must route to a fact, trace or threshold). `test_report_export_gaps.py:42`
   r5 (C3): every window uses one fiscal calendar for the whole chain. A record line's quarter label and period
   end fix the year-end month it was sealed under, so the line's grammar needs no new field: `prepare` refuses, before
   the first write, when any statement of either head fixes a month other than the run's. A real change of calendar is
-  rare and ambiguous for an open promise, so it stops the chain rather than being reinterpreted.
+  rare and ambiguous for an open promise, so it stops the chain rather than being reinterpreted. The run's own label must also name the fiscal year its period end falls in, so no false originating quarter is sealed.
   r5 (C3): `prepare` also refuses a run whose own quarter label and period end fix another month, so a line sealed from here on names the calendar actually used.
   It makes the `cred.*` path real and testable on the retained pilot. Apar emits no such metric, so its
   report has no `cred.*` claim. Tests of scope and direction inject a registry.
