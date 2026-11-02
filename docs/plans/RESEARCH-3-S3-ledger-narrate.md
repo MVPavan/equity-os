@@ -3,8 +3,8 @@
 **Origin:** `docs/specs/2026-10-27-research-3-thesis-analysis.md` §4, §5 "S3" (approved r4, gpt-6.1-sol `APPROVE`), with §0,
 §1, §2, §3, §6 and the owner rulings. Bead `eqos-bnx`, slice 3 → S3. S2 closed live on 2026-11-02 at `f1bf13d7`. Format and
 lessons: `docs/plans/RESEARCH-3-S2-management-credibility.md`, `docs/plans/RESEARCH-3-S1-risk-probe.md`.
-**Status:** approved r5 (2026-11-02) — approver gpt-6.1-sol, `APPROVE` on the re-review of its fresh closing review's fixes (at `b8360233`), after rounds r1-r3, in which the orchestrator applied the r3 fixes as specified (agent-stack step 5). Two non-blocking wording notes stand. The owner may overturn OD-1 to OD-4, including the third materiality extension (OD-4).
-**Revision:** r5 fixes Sol's fresh closing review (at `7d71da87`), marked "r5 (W<n>)": the proven isolation args are a code constant no config can change (W1, Task 0), and a version with no extracted guidance can narrate (W2, P8). r4 applies Sol's r3 review (at `984c6947`), marked "r4 (V<n>)": R13's guard is kept on the trace read (V1), the no-thesis fixture is reachable (V2), and gate (e)'s verdict check skips the code-built prefix (V3). r3 fixes Sol's r2 review (at `f78cc260`), marked "r3 (T<n>)": the no-thesis path can now pass (T1, P8); D2 appears only
+**Status:** draft r6 (2026-11-02), for Sol's ruling on Task 0's result. r5 was approved by gpt-6.1-sol at `b8360233`. Task 0's rule sends a failed proof back through a plan revision and a fresh Sol round, so no red tests or production code start until then. The owner may overturn OD-1 to OD-4, including the third materiality extension (OD-4).
+**Revision:** r6 records Task 0's first result, marked "r6 (X<n>)": the r5 args left project memory in the request, so a request capture decides, one setting joins the args (X1), and the context no arg removes is stated (X2). r5 fixes Sol's fresh closing review (at `7d71da87`), marked "r5 (W<n>)": the proven isolation args are a code constant no config can change (W1, Task 0), and a version with no extracted guidance can narrate (W2, P8). r4 applies Sol's r3 review (at `984c6947`), marked "r4 (V<n>)": R13's guard is kept on the trace read (V1), the no-thesis fixture is reachable (V2), and gate (e)'s verdict check skips the code-built prefix (V3). r3 fixes Sol's r2 review (at `f78cc260`), marked "r3 (T<n>)": the no-thesis path can now pass (T1, P8); D2 appears only
 when no comparable assessment exists (T2); recovery pins are read, not open (T3). It takes three cuts: an unconditional verdict guard
 (T4, P4), production checks reused in gate (e) (T5), and existing trace and interpretation records reused (T6, Task 2). Sizes are
 re-estimated (File map). r2 fixed Sol's r1 review (at `65ddc607`), marked "r2 (S<n>)".
@@ -383,7 +383,7 @@ own answer about itself is never evidence.
 Files:
 - Create (never committed): the evidence script and its outputs under `scratchpad/research3-s3/isolation/`. No repo file changes.
 
-Approach. A fixed tiny prompt, from the checkout root, as the operator will run it, at most four model calls and no database. The
+Approach. A fixed tiny prompt, from the checkout root, as the operator will run it, r6 (X1) at most eight model calls (the first probe used seven) and no database. The
 candidate args are `--tools ""`, `--setting-sources` with no source, `--strict-mcp-config`, `--disable-slash-commands`,
 `--no-session-persistence` and `--system-prompt` with one fixed line (the default system prompt carries the working directory and git
 state). How to pass "no sources" and whether each flag is needed are settled here, and an unneeded flag is dropped.
@@ -402,6 +402,11 @@ The event and log field names are inferred from the CLI's documented flags and a
 differential and the others must still suffice, or it counts as not established. `strace` is not installed on this machine (checked
 2026-11-02), so syscall tracing is not assumed; if it is available when this runs, its `openat` and `execve` list is added.
 
+r6 (X1), **result of the first probe (2026-11-02, CLI 2.1.314):** the r5 candidate args failed. Init lists, tool events and the debug log all passed, yet the token differential did not (checkout 1,190, same-length directory outside the repo 594), and the request itself held the project's auto-memory index, framed as instructions. Those channels pass falsely, so:
+5. r6 (X1) **Request capture, the deciding channel:** `ANTHROPIC_BASE_URL` at a throwaway listener on 127.0.0.1 recording bodies only, never headers, and answering an error, so it costs no model call. The main request must hold no tools and no instruction text. Its messages and system blocks from the checkout and from a same-length directory outside the repo must differ only in the environment block's working directory and git flag. `--settings '{"autoMemoryEnabled":false}'` joins the args; with it this holds, and one real call returns normally. The body holds the account email, so it stays in the scratch directory and is never quoted.
+
+r6 (X2), **residual context that no tested arg removes, stated as a limit, not hidden:** an account email block, an environment block (working directory, git flag, OS version, date, model name), a fixed SDK identity line, and a separate session-naming request that carries the prompt to the same provider and whose output is discarded. None is an instruction from this project or evidence; the scan refuses any digit from them, and the panel reads every sentence.
+
 Pass: every channel shows nothing loaded or callable, and the control shows the channels work. The proven args go to `NARRATE_ISOLATION` (r5, W1),
 the evidence paths and result to the bead, and Task 3's argv test pins them. **Not established: S3 stops and the client design is revised
 through a plan revision and a fresh Sol round. There is no fallback to activate.** The same applies if the proof needs something the
@@ -410,7 +415,7 @@ client cannot do, such as a working directory (`_default_run` passes none).
 Dependencies: Sol's approval of this plan. Everything else depends on this task.
 
 Risks: an upgrade of the CLI can change these flags' meaning. Rehearsal and live run the argv test's constant unchanged, and the version
-in the evidence is recorded and rechecked at Task 4's start.
+in the evidence is recorded and rechecked at Task 4's start. r6 (X1): that recheck repeats the capture.
 
 ### Task 1: Scan and pure checks
 
