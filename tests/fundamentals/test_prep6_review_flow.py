@@ -132,7 +132,7 @@ def test_review_records_telemetry_with_its_decision_and_rereviews_only_what_was_
     )
     special = {REVENUE: (REJECTED, wrong_value), PBT: (DEFERRED, none)}
     plan = [(key, *special.get(key, (ACCEPTED, none))) for key in keys] + [(GUIDE, EDITED, wording)]
-    gaps = [timedelta(seconds=20 + i % 5) for i in range(len(plan))]
+    gaps = [timedelta(seconds=15 + i % 5) for i in range(len(plan))]
     finished = T0 + timedelta(minutes=30)
     reads = _scripted(monkeypatch, _times(T0, gaps, finished))
     session = tmp_path / "review-n"
