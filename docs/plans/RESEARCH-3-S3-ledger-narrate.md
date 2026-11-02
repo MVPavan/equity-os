@@ -351,6 +351,8 @@ Why this is still far below S2's 1,060 and 1,900+:
 - No existing test file changes, so no reseal.
 - `run_draft.py` and `cli.py` stay untouched.
 
+**Re-based at the tests round (orchestrator, 2026-11-02).** The tests measured 1,176 lines in four files against the 720 stop: `test_narrate_checks.py` 360, `test_narrate_flow.py` 350, `test_narrate_refusals.py` 295, `narrate_support.py` 171. No named test was dropped, since these are the proofs Sol's rounds required; the split into a refusals file and a support module, the frozen U1–U6 literals and the pure exemption test added about 90 lines. The test stop is now 1,200 for the suite as sealed. A smaller honest suite would need dropping cases, which stays a valid phase-end finding if a named case can go. The test also pins `narrate.apply_disclosure_updates(bodies)`. The production stop of 660 is unchanged.
+
 **The check, restated.** After Task 0 and the tests round, the orchestrator runs `wc -l` on the test files; after the first green
 implementation round, on all these files. Over **660 production** (r3, down from 700) **or 720 test lines** (unchanged: the cuts did not
 lower the honest test estimate, and raising the stop was not taken) is a stop: name what grew, cut or justify it in the bead before review. Reaching those numbers is not licence to use them: "could this be half the code?" stays a valid phase-end finding.
@@ -364,7 +366,7 @@ lower the honest test estimate, and raising the stop was not taken) is a stop: n
    existing modules. Nothing is added to `test_prep5_rework.py` (760), `test_prep2b_run_draft.py` (763) or
    `test_credibility_binding.py` (734); over 800 lines routes `CONTRACT` (`scripts/verify.sh:470-473`). The round reports `wc -l`.
 2. **Red capture, orchestrator only:** `scripts/verify.sh red RESEARCH-3-S3 tests/fundamentals/test_narrate_checks.py
-   tests/fundamentals/test_narrate_flow.py`. Every node must fail, with none missing; a node passing pre-change is vacuous, and is
+   tests/fundamentals/test_narrate_flow.py tests/fundamentals/test_narrate_refusals.py`. Every node must fail, with none missing; a node passing pre-change is vacuous, and is
    fixed before production code.
 3. **Implement** Tasks 1–3 without touching sealed files. A sealed test changes only through `scripts/verify.sh reseal RESEARCH-3-S3
    <proof-file>`, whose proof shows the amended assertion failing against the implementation it was wrong about.
@@ -554,7 +556,7 @@ Verification: `uv run pytest tests/fundamentals/test_narrate_flow.py tests/funda
 - r2 (S3) `test_adversarial_inputs_keep_their_boundary` (AX-1 to AX-5): AX-1 stays inside the hash-named block through the real `drafting_prompt`; AX-2 to AX-5 drafts pass the code and reach `panel_text` verbatim, labels-alone refuses as empty (the code column of the table).
 - `test_narrate_refuses_the_wrong_version` (parametrized): `DRAFT`, `IN_REVIEW`, not the head, already narrated, a thesis id. The client is never called.
 - `test_a_bundle_over_the_cap_refuses`; r2 (S3) a prompt and a response over their limits; a client error; a changed disclosure `before` (S4): each writing nothing.
-- r2 (S13) `test_a_failed_check_after_insert_rolls_back` (parametrized): a `MATCH_UNTRUSTED` claim, through the blocking item of `test_ledger_panel.py:318`; a nonpassing validation after `create_version`, injected at `check_version`, the one seam with no honest way to reach it. Each asserts its cause and zero deltas.
+- r2 (S13) `test_a_failed_check_after_insert_rolls_back` (parametrized): a `MATCH_UNTRUSTED` claim, through an appended run-cell claim on a copy of N (tests round: the blocking item of `test_ledger_panel.py:318` belongs to another fixture and leaves pilot claims `MATCH`); a nonpassing validation after `create_version`, injected at `check_version`, the one seam with no honest way to reach it. Each asserts its cause and zero deltas.
 - r2 (S13) `test_the_panel_refuses_a_narrated_version` (parametrized): a mismatched bundle digest in the author; `limits=None`.
 - `test_a_stale_head_refuses_under_lock`: a fake client's `generate` writes a new head, and narrate refuses with no second version.
 - `test_a_rejected_narrative_reruns_without_it` (P6, r2 S12: parametrized over `REQUEST_CHANGES` and `REJECT`): the panel decides on N+1, adding a decision and a review and no validation; `--full-successor` refuses; an ordinary rerun writes M, with no narrative key, `AS_KNOWN`, predecessor N+1; **M is faithful to N: section keys equal, every section byte-identical outside gate (f)'s enumerated heading fields, every claim's `model_dump` equal, source cutoff, manifest, thesis binding and pins equal**; U1–U6's old text is back; narrate on M refuses until M is approved, then succeeds.
