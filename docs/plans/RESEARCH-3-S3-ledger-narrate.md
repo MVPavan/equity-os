@@ -757,9 +757,18 @@ Sol's closing review of `8e3d4eee` (`REQUEST_CHANGES`, three P2 holes in the nar
 - **Class markers.** A class marker outside the registered epistemic classes refuses, including in a heading. Markers come out in one pass, so a location marker wrapped around a class marker, `{{s:{{e:inferred}}|123}}`, stays visible and refuses.
 - **Stops.** For these fixes only, production is re-based to 810 lines and tests to 1,210.
 
+## Rehearsal restart (2026-11-02, Sol `APPROVE`)
+
+The first rehearsal stopped after six drafting launches: FY26_Q2 three, FY26_Q3 three. Four were refused and wrote nothing, for "one" or "two" in plain English or a placeholder touching other text in `analyst_questions`. The logs show the adjacency refusal, not the neighbouring character, so a `?` is inferred. FY26_Q3 could not complete its rejection drill inside its four launches, so the run stopped rather than raise the limit.
+
+- **Change.** `REWORD_REMINDER` follows the evidence block in the drafting prompt. The guards are untouched, and "a", "each" and "both" stay under the panel's sentence-by-sentence review, because they can broaden a claim.
+- **Restart.** A fresh restore on the reminder's commit, the stopped run kept as `task4/rehearsal-1`. Gate (g) uses only the restarted run. The plan's six to eight drafting launches is exceeded: the six above plus at least six report drafts. This is a recorded deviation; repeated restarts must not be used to evade the launch limit.
+- **Seeded round.** The result on `rehearsal-1`'s FY26_Q2 text stands, because the reminder changes what the drafting model reads and the panel brief is unchanged. Text, brief, response and hashes are kept together.
+- **Refusal stop.** A second refusal in a quarter stops new drafting for diagnosis before the remaining launches are spent. No automatic feedback loop. If adjacency failures prove to be ordinary question punctuation, the next step is a reviewed spec and guard amendment allowing `?`. Persistent number words get a further meaning-preserving prompt revision. Neither weakens a semantic check or raises the limit.
+
 ## Frozen expectations
 
-Read-only freeze at `80c4213f`. Approved by GPT-6.1 Sol on 2026-11-02: `VERDICT: APPROVE` on the third review round of these values and the Task 4 tooling.
+Read-only freeze at `80c4213f`, approved by GPT-6.1 Sol on 2026-11-02: `VERDICT: APPROVE` on the third review round of these values and the Task 4 tooling. Re-frozen at `b347d4b7` after the reminder below changed only the prompt size, approved by GPT-6.1 Sol the same day: `VERDICT: APPROVE`.
 
 Limits read from `config/narrate.yaml`: span 4000, bundle 100000, prompt 131071, response 60000.
 
@@ -767,19 +776,19 @@ Limits read from `config/narrate.yaml`: span 4000, bundle 100000, prompt 131071,
 
 | Quarter | Oracle SHA-256 |
 |---|---|
-| FY26_Q2 | `c67f0b7abc40b62f2b3b3ba65d57343d311ac5603de7fdbc90f71f103312ae72` |
-| FY26_Q3 | `8311e29addc4011b84afffdf9ad7d4bbd8eb1e7373111b36b723c7068cb7e0fc` |
-| FY26_Q4 | `7ef54495c00c73f3f65be81bb4780455e7e17f3de4028037cf9104c83c0dabe9` |
-| FY27_Q1 | `e31295bcec0cbec4695fe096c2c0ca0a3dde3a0d7c51326ea52ea70541224935` |
+| FY26_Q2 | `c1d60b37128d6682f0893f5f2cfb817f7e4d0cea418984ea17d62401c0501bac` |
+| FY26_Q3 | `7b304ef54e8c15b91dafe096c3844a9ef885c896834cf95d9adfd3027c784bcd` |
+| FY26_Q4 | `5ecde43fc94ab4c7a2d3b4a5a18896942e1596bede41f1957f6dbd52406efbfe` |
+| FY27_Q1 | `2a0c23b9e98829c7ec6dd4100e56f2ff68d27bf125600f56b1c3ad90531594f0` |
 
-**Measured values, replacing the plan's two estimates.** The bundles are 44,124 to 49,209 bytes, not about 20 KB; complete prompts are 75,319 to 87,324 bytes, not about 75 KB at the largest. Citable spans per head are 2, 4, 7 and 8, so FY26_Q2 has two spans, below the estimated four to eight. Interpretation (Sol): the filed claims support an account of what moved and not causal drivers. No cap changes and no evidence is widened: the sizes fit the limits above, and the agreed narrower scope and semantic rejection criterion stand.
+**Measured values, replacing the plan's two estimates.** The bundles are 44,124 to 49,209 bytes, not about 20 KB; complete prompts are 75,574 to 87,579 bytes, not about 75 KB at the largest. Citable spans per head are 2, 4, 7 and 8, so FY26_Q2 has two spans, below the estimated four to eight. Interpretation (Sol): the filed claims support an account of what moved and not causal drivers. No cap changes and no evidence is widened: the sizes fit the limits above, and the agreed narrower scope and semantic rejection criterion stand.
 
 | Quarter | Head | Sealed digest | Sections | Claims | Claim dumps SHA-256 | Bundle SHA-256 | Bundle bytes | Citable spans | Excluded | F2 fires | Prompt bytes |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| FY26_Q2 | v20 `APPROVED` | `8d33a2b5cf4acc1a03400348b9c6e579d8f844b0c31e355d19c30de627b8bbd7` | 11 to 16 | 91 | `0157922993fa7462ad35eb350102bdc2b6c923c04b0d4ec2205468635a63a0af` | `26eafa048e456a7d6a75f73f61bb601eb666916ead674763ef7444e6d0809542` | 47025 | 2 | 0 | no | 76742 |
-| FY26_Q3 | v21 `APPROVED` | `34ab8e70a6d7858945ddb6d2370322070e1d2b58f5f2f3f5e87254681083b3fb` | 11 to 16 | 86 | `a170c1c6e3dc2d85297d29f4b135a1f34227aac8990f863545d997f4925206bd` | `fec6c23297d5ae7b033e3be8c975f967d2ecdac6e042960d9c3a4b6f8c7df69f` | 44124 | 4 | 0 | no | 75319 |
-| FY26_Q4 | v22 `APPROVED` | `7af7ff0ef131b9174c6eb3afd3e689d6969d048e981a867757da0a2971a6138f` | 11 to 16 | 101 | `55be41577b8b0e899351b83692873dfafd6fe3f52fcf10e4998494243d0e13c1` | `5d3d24b818ba93d3995e8fec05d472b87e10ae0e954159e1012d737299adff8b` | 49209 | 7 | 0 | no | 87324 |
-| FY27_Q1 | v23 `APPROVED` | `349d3bf9a7bb41f6d9ea649bd24bbafe671f7ee9390ca0d6f985e1271cd3d45b` | 11 to 16 | 91 | `15f8e14b269158e27751d6e32bd3fc1bbe9baa08fef9d387b38772596bd54897` | `96e235542bea24c7b04216142fd37c296383d890d904eaa7a2f445a589ae8d56` | 45673 | 8 | 0 | no | 80633 |
+| FY26_Q2 | v20 `APPROVED` | `8d33a2b5cf4acc1a03400348b9c6e579d8f844b0c31e355d19c30de627b8bbd7` | 11 to 16 | 91 | `0157922993fa7462ad35eb350102bdc2b6c923c04b0d4ec2205468635a63a0af` | `26eafa048e456a7d6a75f73f61bb601eb666916ead674763ef7444e6d0809542` | 47025 | 2 | 0 | no | 76997 |
+| FY26_Q3 | v21 `APPROVED` | `34ab8e70a6d7858945ddb6d2370322070e1d2b58f5f2f3f5e87254681083b3fb` | 11 to 16 | 86 | `a170c1c6e3dc2d85297d29f4b135a1f34227aac8990f863545d997f4925206bd` | `fec6c23297d5ae7b033e3be8c975f967d2ecdac6e042960d9c3a4b6f8c7df69f` | 44124 | 4 | 0 | no | 75574 |
+| FY26_Q4 | v22 `APPROVED` | `7af7ff0ef131b9174c6eb3afd3e689d6969d048e981a867757da0a2971a6138f` | 11 to 16 | 101 | `55be41577b8b0e899351b83692873dfafd6fe3f52fcf10e4998494243d0e13c1` | `5d3d24b818ba93d3995e8fec05d472b87e10ae0e954159e1012d737299adff8b` | 49209 | 7 | 0 | no | 87579 |
+| FY27_Q1 | v23 `APPROVED` | `349d3bf9a7bb41f6d9ea649bd24bbafe671f7ee9390ca0d6f985e1271cd3d45b` | 11 to 16 | 91 | `15f8e14b269158e27751d6e32bd3fc1bbe9baa08fef9d387b38772596bd54897` | `96e235542bea24c7b04216142fd37c296383d890d904eaa7a2f445a589ae8d56` | 45673 | 8 | 0 | no | 80888 |
 
 Bound thesis on every head: version 13, digest `3a4ac8ef1297c39c19862e5a9a83b792a73263a76f7db259e6d345084e25608f`.
 
