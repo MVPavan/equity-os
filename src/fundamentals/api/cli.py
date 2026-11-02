@@ -431,6 +431,7 @@ def run_command(
                         prior.actuals,
                         entity_id=prior.entity_id,
                         versions=versions,
+                        declared=xbrl[1:],
                     )
                 )
                 facts.update(

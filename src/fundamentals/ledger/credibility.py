@@ -39,6 +39,7 @@ from fundamentals.ledger.guidance_targets import (
     fiscal_span,
 )
 from fundamentals.ledger.import_mapping import QUOTE_STYLE, _slot, _valued, refs
+from fundamentals.ledger.numeral_scan import scan_section
 from fundamentals.ledger.run_traces import CHANGE_PCT, RunDraftError, _Binder, admitted_xbrl, cite
 from fundamentals.output.earnings_update import EarningsUpdate
 
@@ -440,7 +441,7 @@ def prepare(
         name = _ROLE.sub("", held.claims[0].claim_key.removeprefix("episode."))
         if held.entry_id in live and name not in episodes:
             dropped.setdefault(name, live[held.entry_id].id)
-    return Prepared(
+    ready = Prepared(
         episodes=episodes,
         corrections=tuple((targets.entries[i], new) for i, new in live.items()),
         retired=tuple(
@@ -452,6 +453,13 @@ def prepare(
         blobs=frozenset(triple[1] for triple in pool) | actual_blobs,
         month=month,
     )
+    # The mapping's rendered text faces the version's scan and the next run's parse only after
+    # upstream writes, so both run here. Actuals add no mapping-controlled text.
+    built = build(ready, actuals=(), exact={}, unavailable={})
+    read_record(built.body, built.claims)
+    if states := scan_section(built.body, resolves=lambda *_: True):
+        raise RunDraftError(f"guidance mapping renders an invalid section: {', '.join(states)}")
+    return ready
 
 
 def build(
@@ -493,18 +501,12 @@ def build(
         results.append((Outcome.UNRESOLVED, reason))
         lines.append(f"- {COMPUTED} {episode}: {Outcome.UNRESOLVED.value} ({reason})")
     lines += [_correction(old, new) for old, new in prepared.corrections]
-    paragraphs = [
-        f"{COMPUTED} No guidance quote has been extracted in this report chain, so no commitment "
-        "is tracked."
-    ]
+    paragraphs = [f"{COMPUTED} {NO_STATEMENT}"]
     if prepared.episodes:
         paragraphs = [f"{COMPUTED} {' '.join(DISCLOSURES)}", "\n".join(lines)]
         if all(outcome is Outcome.UNRESOLVED for outcome, _ in results):
             named = (part for _, reason in results if reason for part in reason.split("; "))
-            paragraphs.append(
-                f"{COMPUTED} No row in this version reaches an achieved, missed or interim "
-                f"outcome. Reasons: {'; '.join(dict.fromkeys(named))}."
-            )
+            paragraphs.append(f"{COMPUTED} {NO_OUTCOME.format('; '.join(dict.fromkeys(named)))}")
     paragraphs.append("\n".join((_RETIRED_HEADER, *(prepared.retired or [_NONE]))))
     body = f"## {CREDIBILITY}\n\n" + "".join(f"{paragraph}\n\n" for paragraph in paragraphs)
     return Built(
@@ -650,13 +652,19 @@ def bind_credibility(
     entity_id: int,
     versions: ConfigVersions,
     registry: Mapping[tuple[str, str], Actual] = ACTUALS,
+    declared: Sequence[str] = (),
 ) -> Built:
-    """A stored or carried actual per registered window due, or a reason, and the built section."""
+    """A stored or carried actual per registered window due, or a reason, and the built section.
+    ``declared`` names the run's comparator XBRLs, admitted even if no comparison could use one."""
     start, stop = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
     binder = _Binder(repo, entity_id, start, stop, versions)
     own, comparators = admitted_xbrl(update)
+    used = (source.file_sha256 for source, _ in comparators.values())
     sources = [(own, SelectionSource.PACKAGE_AS_REPORTED)]
-    sources += [(source, SelectionSource.HISTORICAL_PACKAGE) for source, _ in comparators.values()]
+    sources += [
+        (own.model_copy(update={"file_sha256": blob}), SelectionSource.HISTORICAL_PACKAGE)
+        for blob in dict.fromkeys((*declared, *used))
+    ]
     carried = {claim.claim_key: claim for claim in prior_actuals}
     actuals: tuple[NumericClaim, ...] = ()
     exact: dict[str, Fraction] = {}

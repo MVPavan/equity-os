@@ -11,7 +11,7 @@ import json
 import re
 from calendar import monthrange
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -64,7 +64,7 @@ class TargetEntry(BaseModel):
     window_text: str
     window: str = Field(pattern=r"^(?:FY\d{2}|MULTI_YEAR|AMBIGUOUS)$")
     reading: Reading
-    definition: str
+    definition: str = Field(pattern=r"^[\w -]+$")  # shown in a correction line, so never markup
     same_as: str | None = None
     supersedes: str | None = None
 
@@ -86,6 +86,12 @@ class TargetEntry(BaseModel):
     def triple(self) -> tuple[str, str, str]:
         """The statement this entry maps."""
         return self.claim_key, self.source_sha256, self.anchor
+
+
+class _Document(BaseModel):
+    """A mapping file's envelope."""
+
+    entries: tuple[TargetEntry, ...]
 
 
 class Targets(BaseModel):
@@ -129,11 +135,13 @@ def load_targets(symbol: str, root: Path = ROOT) -> Targets:
     path = root / "config" / "guidance_targets" / f"{symbol.lower()}.yaml"
     if not path.exists():
         return Targets(entries={})
-    raw = yaml.safe_load(path.read_text("utf-8"))["entries"]
     try:
-        entries = [TargetEntry(**item) for item in raw]
+        entries = _Document.model_validate(yaml.safe_load(path.read_text("utf-8"))).entries
+    except (yaml.YAMLError, UnicodeDecodeError) as error:
+        raise RunDraftError(f"guidance targets of {symbol}: malformed YAML") from error
     except ValidationError as error:
-        raise RunDraftError(f"guidance targets of {symbol}: {error}") from error
+        found = "; ".join(f"{e['loc']}: {e['msg']}" for e in error.errors())
+        raise RunDraftError(f"guidance targets of {symbol}: {found}") from error
     targets = Targets(entries={entry.id: entry for entry in entries})
     if len(targets.entries) != len(entries):
         raise RunDraftError(f"guidance targets of {symbol}: duplicate id")
@@ -141,7 +149,7 @@ def load_targets(symbol: str, root: Path = ROOT) -> Targets:
     return targets
 
 
-def _check_links(entries: list[TargetEntry], targets: Targets) -> None:
+def _check_links(entries: Sequence[TargetEntry], targets: Targets) -> None:
     """Refuse a correction or link that does not hold, before and after successor resolution."""
     by_id, position = targets.entries, {entry.id: at for at, entry in enumerate(entries)}
     corrected = Counter(entry.supersedes for entry in entries if entry.supersedes)
