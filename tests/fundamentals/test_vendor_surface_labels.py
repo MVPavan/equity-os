@@ -56,15 +56,34 @@ def test_code_acceptance(label, units, per_share, reply, reason):
     assert field == (json.loads(reply)["field"] if reason == "MAPPED" else None)
 
 
-def test_multi_year_average_never_lands_in_a_period_field():
-    """A multi-year average is not a period margin; `%` alone would store the wrong number."""
-    label = "5yr Avg Operating Profit Margin"
+@pytest.mark.parametrize(
+    "label",
+    [
+        "5yr Avg Operating Profit Margin",
+        "5 Years Sales Growth",
+        "three year Sales Growth",
+        "Ten-Year Sales Growth",
+        "Sales CAGR",
+        "Compounded Sales Growth",
+        "Multi-year Margin",
+    ],
+)
+@pytest.mark.parametrize("field", ["opm_pct", "opm_5yr_avg_pct", "opm_3yr_cagr_pct"])
+def test_multi_year_or_average_labels_never_map(label, field):
+    """Dictionary v3 has no aggregate field, so a matching id or `%` cannot store a wrong number:
+    not a period field, nor a field of another duration or aggregation."""
     sample = LabelSample(label=label, units=frozenset({"%"}), per_share=False)
-    fields = {"opm_pct": ValueKind.PERCENTAGE, "opm_5yr_avg_pct": ValueKind.PERCENTAGE}
-    period = json.dumps({"label": label, "field": "opm_pct"})
-    assert accept(sample, period, fields) == (None, "NOT_IN_DICTIONARY")
-    average = json.dumps({"label": label, "field": "opm_5yr_avg_pct"})
-    assert accept(sample, average, fields) == ("opm_5yr_avg_pct", "MAPPED")
+    fields = dict.fromkeys(("opm_pct", "opm_5yr_avg_pct", "opm_3yr_cagr_pct"), ValueKind.PERCENTAGE)
+    reply = json.dumps({"label": label, "field": field})
+    assert accept(sample, reply, fields) == (None, "NOT_IN_DICTIONARY")
+
+
+@pytest.mark.parametrize("label", ["Sales Growth", "OPM %", "Year end Margin", "FY24 Margin"])
+def test_a_period_label_is_not_mistaken_for_a_multi_year_one(label):
+    """The guard must not eat single-period labels, or real fields stop mapping."""
+    sample = LabelSample(label=label, units=frozenset({"%"}), per_share=False)
+    reply = json.dumps({"label": label, "field": "opm_pct"})
+    assert accept(sample, reply, {"opm_pct": ValueKind.PERCENTAGE}) == ("opm_pct", "MAPPED")
 
 
 @pytest.mark.pg
