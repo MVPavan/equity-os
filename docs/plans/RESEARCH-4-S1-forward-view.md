@@ -179,6 +179,11 @@ Dependencies: None; may run before the rulings.
 
 Risks: **any failure stops S1 with the gap named.** No fallback, no substitute span chosen silently. A check needing a schema change is a plan revision. The worker opens only the §1 pages; the 2026-10-29 filing is opened by nobody.
 
+**Task 0 result (2026-11-03, at `ec44e6ce`).** Checks 1 to 7 pass and stop nothing; check 8: no admitted page in the §1 set states a conductor or oil realisation, so C-5's wording applies. The candidate list holds 12 entries, 11 `TABLE` and 1 `PROSE`; its ids and contract names are drafts for Tasks 4 and 10. Figures stay in scratch. Corrections for the tasks below:
+- `PGOPTIONS` alone does not make a session read-only, because the code's `conninfo` sets libpq `options`, which overrides it. A read-only script sets the option in the connection or `conn.read_only = True`, and checks `transaction_read_only`.
+- Spec §1's "not in `Retrospective.published`" is wrong for the investor update: it is in the pinned manifest. A retrospective run takes the manifest's time, so Task 7 checks S1 case 5's `published.at` refusal independently of that lookup.
+- `conductor_utilisation` and `working_capital_days` each state a range, so under §6.2 rule 3 they are not disclosures and their assumptions show no comparison. Spec §4 lists them as `fcst.d.*`, and S2 case 2 expects one. S1 omits them; the S2 plan resolves case 2.
+
 ### Task 1: Worktree, retained inputs and the invariant text
 
 Goal: the dedicated `research-4` worktree exists with its retained inputs and isolation checks passing, and its `.claude/project/invariants.md` holds extensions A and B verbatim from spec §7.1, after invariant 7's 2026-10-28 extension, naming the owner's ruling date.
