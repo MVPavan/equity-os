@@ -1,6 +1,6 @@
 # RESEARCH-4 — Forward view — Spec
 
-**Status:** approved r5 (2026-11-03): approver gpt-6.1-sol, `APPROVE` on the re-review of its fresh closing review. Build depends on two separate owner rulings, permissions A and B in §7.1, not yet given. No implementation, rehearsal or live result is established.
+**Status:** approved r6 (2026-11-03): approver gpt-6.1-sol, `APPROVE` on r5's re-review after its fresh closing review, and on r6's amendments with the S1 plan. Amendment: OD-9, §6.2 rule 3, §7.3's capture identity, S1 cases 1 and 4, §10 and the total estimate (§9, last row). Build depends on two separate owner rulings, permissions A and B in §7.1, not yet given. No implementation, rehearsal or live result is established.
 **Origin:** bead `eqos-3v3w`; binding requirements `docs/specs/2026-10-27-research-3-thesis-analysis.md` §7; owner
 direction `docs/goals/2026-10-27-research-report-targets.md`.
 **Implementer:** Opus. **Boundaries:** E-01 stays deferred
@@ -81,7 +81,7 @@ it.
 | Need | Where it is | State today |
 |---|---|---|
 | FY26 annual P&L, balance sheet, cash flow, segment revenue | FY26_Q4 XBRL, the FY27_Q1 run's QoQ comparator (`config/aparinds-fy27-q1-pg.yaml:100-102`) | 181 `MAPPED` interpretations under the run's pins, including all lines in §4; Task 0 reconciles the count |
-| FY26 volume, EBITDA, EBITDA per unit by division | NSE investor update filed 2026-05-28 (blob `1deb9bd637c1`), pp. 3-5 | Text layer present. Rows sit in single blocks (`Volume (MT) …` p3; `Volume (KL) …` p4); headers and units sit in other blocks. Not in any run package |
+| FY26 volume, EBITDA, EBITDA per unit by division | NSE investor update filed 2026-05-28 (blob `1deb9bd637c1`), pp. 3-5 | Text layer present. Row labels and cells mostly share a block (`Volume (MT) …` p3); some labels sit in another block and one block can hold two rows; headers span several blocks and units sit in others (§6.2 rule 3). Not in any run package |
 | FY26 division EBITDA to PAT | Same document p6 (`FY26 DIVISION WISE EBITDA TO PAT`) | Text layer, one block per row |
 | Capex plan, utilisation, volume and growth statements | FY26_Q4 transcript pp. 7, 10, 11, 15, 16 (blob `69aba177cad6`) | In the FY27_Q1 package through prior quotes (`run_draft.py:716`) |
 | Working-capital days statement | FY27_Q1 transcript p. 11 (blob `78a312c86f58`) | In the package |
@@ -347,8 +347,9 @@ forward:
       quote: <exact span>
       contract: {metric: <m>, scope: <s>, horizon: <h>, unit: <u>, constant_currency: <bool or null>}  # sealed
       context:                        # each an exact span, verified as the quote is
-        - {role: PERIOD, anchor: <span>, quote: <header text>}
-        - {role: SUBJECT, anchor: <span>, quote: <division heading>}
+        - {role: HEADER, anchor: <span>, quote: <column label text>}   # TABLE form; one or several
+        - {role: PERIOD, anchor: <span>, quote: <period text>}         # where a header does not state it
+        - {role: SUBJECT, anchor: <span>, quote: <division heading or row label>}
         - {role: UNIT, anchor: <span>, quote: <unit text>}   # DEFINITION for a footnote, as needed
       columns: [<label>, ...]         # TABLE form only: the header's labels, in order
       column: FY26                    # TABLE form only
@@ -391,14 +392,29 @@ disclosure's one value is both bounds) and renders `INSIDE`, `BELOW` or `ABOVE`;
 2. Contract: the entry's `contract` equals the closed list's for the id. Only here, at import and write, is the closed
    list read. Every check reads the sealed `contract` (§7.3, row 7), never the closed list or a location across
    history, so a corrected list or book cannot unbind anything.
-3. Value and period: the closed list fixes each id's form and required period, the period its `contract` states. Each
-   form has an exact field set. A range-only statement is not a disclosure, so its assumption shows no comparison (§4);
+3. Value and period: the closed list fixes each id's form, required period and, for `TABLE`, required column. The
+   period is the one its `contract` states. Each form has an exact field set. A range-only statement is not a disclosure, so its assumption shows no comparison (§4);
    guidance ranges stay `ledger.*` claims, which `reference` already names.
-   - `TABLE`: the `PERIOD` span holds each of `columns` as text, in that order; `column` is one of them and equals the
-     required period; the `SUBJECT` and `UNIT` spans hold the closed list's division name and unit text; and
-     `numbers(quote)[columns.index(column)] == value`. `guidance_quote_holds` alone accepts any number in the quote,
-     which would pass a wrong column. A column mapping is sealed, so the reviewer and the code judge the same claim.
-   - `PROSE`, no `columns` or `column`: the quote, less its period labels, holds exactly one number, equal to `value`;
+   - `TABLE`, all of:
+     - *Header order.* Code orders the `HEADER` spans by retained position (page, block, start), never book order. Their
+       anchors must equal the closed list's for that table, and their joined text, whitespace normalised, must equal
+       `columns` joined. So permuting context and `columns` together refuses.
+     - *Column and period.* `column` equals the required column and occurs once in `columns`. In a table whose columns
+       are periods, the required column is the required period. Otherwise a `PERIOD` span at the closed list's anchor
+       holds the required period: `division_total_pat_fy26` takes column `Total` under the FY26 heading, with its
+       division headers verified as above.
+     - *Row.* The closed list holds reviewed `row_text`, `row_anchor` and `cells_anchor`. The quote's anchor equals
+       `cells_anchor`, and a `SUBJECT` span at `row_anchor` holds `row_text`. Other `SUBJECT` and `UNIT` spans hold the
+       closed list's division name and unit text. So a slice cannot be read as another row's, including where the label
+       sits in another block, one block holds two rows, or a label holds `(Note 1)`.
+     - *Cells.* The quote splits on whitespace into exactly `len(columns)` cells, each read by a sign-preserving grammar
+       for this check (grouped digits, decimals, optional `%`, a leading `-` or enclosing parentheses); any other token
+       refuses. The selected signed cell equals `value`. `guidance_quote_holds` alone accepts any number in the quote and
+       drops signs, which would pass a wrong column or a negative; it and guidance parsing do not change.
+
+     A column mapping is sealed, so the reviewer and the code judge the same claim.
+   - `PROSE`, no `columns` or `column`: the quote, less its period labels, holds exactly one number, unsigned and not
+     parenthesised, equal to `value`;
      the quote or a `PERIOD` span holds the required period; the quote or `SUBJECT` and `UNIT` spans hold the closed
      list's subject and unit text.
 4. **Cross-foot against filed figures**, tolerance one crore (the presentation rounds to crore): each division's
@@ -569,7 +585,7 @@ holds at ordinary resolution.
 | Role | Input claim | Must equal |
 |---|---|---|
 | Assumption endpoint | `fcst.a.<scope>.<id>.<end>` | `THESIS_CLAIM` whose cited row's key is exactly `assumption.<scope>.<id>.<end>` (`thesis.X` → `falsifier.X`, `fcst.p.X` → `scenario.X`, `fcst.t.X` → `trigger.X`; else `None`). Scope is the book's for that id. Value kind and unit are the registry's; currency and scale none, or crore for `capex_crore` |
-| Disclosure | `fcst.d.<id>` | `SOURCE_QUOTE`; capture, anchor, quote, value and contract are the cited book's |
+| Disclosure | `fcst.d.<id>` | `SOURCE_QUOTE`; anchor, quote, value and contract are the cited book's. Its capture is the one selection gives (`_cited`): first-party, holding the book's exact `source_sha256` and supplying the verified span; it need not be the pinned observation's capture, which stays the publication and issuer evidence (§6.2 rules 5, 6) |
 | Filed operand | `probe.Rn.<line>` | Filed `FIGURE`; `measurement_key`: canonical id `<line>`, the report's entity, `CONSOLIDATED`, `forward.filed`'s window or balance date, INR, `CURRENCY_AMOUNT`; unit crore, scale 10^7 |
 | Base trace | `fcst.base.<x>` | `CALCULATION`; same key fields with canonical id `fcst.base.<x>`; row 4 ties the trace's digest to it |
 | Any | | Not a `PROJECTION` |
@@ -715,20 +731,25 @@ unit economics by division; assumption table; rate anchors; the `NOT_ASSESSED` l
 how much of it is volume against price, the margin path, the capacity and cable limits, then each assumption labelled
 opinion, with its comparison to guidance, quote and FY26 anchor beside it.
 
-**Estimate.** About 780-950 production lines, 50 SQL, 370-480 test lines.
+**Estimate (r5, historical; the current figures are in the total below).** About 780-950 production lines, 50 SQL, 370-480 test lines.
 
 **Acceptance cases.**
-1. Hand-computed: a synthetic book with round numbers gives each line FY27-FY31, exact. Real FY26 inputs: `P^c_0` and
-   `EBITDA per MT` reproduce the disclosure inside tolerance.
+1. Hand-computed: a synthetic book with round numbers gives each line FY27-FY31, exact. Real FY26 inputs: `EBITDA per
+   MT` reproduces the disclosure inside tolerance, an independent comparison. `P^c_0` reproduces a stated realisation
+   only if Task 0 records that an admitted source states one. If none does, its exact identity
+   `P^c_0 V^c_0 / C = R^c_0` checks the implementation of the definition and is not reported as independent reproduction.
 2. Bridge terms sum exactly to `Rev_5 - Rev_0`. Shares omitted when revenue does not grow. Negative `s_0` works.
 3. §7.4's proofs.
 4. Meaning refusals, each named: the FY25 column's value (column and cross-foot); **a coherent wrong-year pair: the
    genuine FY25 `column` and value under the FY26 id and contract, whose EBITDA, per-unit and revenue arithmetic all
-   still cross-foot** (required period); `columns` out of order against the `PERIOD` span; a `SUBJECT` span of another
-   division; oil's row labelled conductor (segment cross-foot); unit KL under an MT metric (contract); a period label
+   still cross-foot** (required period); `columns` out of order against the `HEADER` spans; **`HEADER` entries and
+   `columns` permuted together, values otherwise coherent** (retained order); a `SUBJECT` span of another division; **one
+   row's numeric slice under another row's id, in one block and across split labels, values copied** (row binding); **a
+   negative cell quoted under a positive value** (signed cell, reached with all else valid); oil's row labelled conductor (segment cross-foot); unit KL under an MT metric (contract); a period label
    not matching the contract; a number absent from the quote; a quote not at its anchor; a presentation of another
    issuer (observation). `PROSE`: a quote holding two numbers; a statement of another target period; `lower_bound`, or
-   `columns` on a prose id (field set). A prose statement of one number and its required period passes, with no column.
+   `columns` on a prose id (field set). Valid controls pass: a prose statement of one number and its required period, with
+   no column; a label in another block; two rows in one block; a `(Note 1)` label; column `Total` under its FY26 heading.
 5. Time: a disclosure of the 2026-10-29 presentation refuses, by publication against `as_of`, and FY27_Q2 appears
    nowhere in the rendered section's sources. `published.at` differing from the pinned observation refuses. A book
    with `applies_to: FY26_Q4`, or a differing `as_of` or `filed`, on the FY27_Q1 run gives `NOT_ASSESSED`.
@@ -816,7 +837,9 @@ thesis import, `ledger run … --parity`, real Sol round, digest comparison, `ch
 
 **Acceptance.** §7.5's rehearsal. Live: all `MATCH`, parity held, digests unchanged, Sol `APPROVE`.
 
-**Total estimate.** About 1,085-1,350 production lines, 50 SQL and 670-870 test lines, about 95-120 production lines
+**Total estimate.** r6, after the S1 plan moved S3's book parsing, guards and cases 1-2 into S1: **I** about 1,245-1,480
+production lines, 50 SQL and 980-1,240 test lines; S1 about 1,000-1,130 and 720-880, S3 about 75-130 and 80-120, and S2 and
+the live close as stated. The r5 estimate follows. About 1,085-1,350 production lines, 50 SQL and 670-870 test lines, about 95-120 production lines
 above r2: the output registry, model versioning, version-bound contracts and scenario falsifiers, less stale-statement
 triggers and the twin branch of `contract_bindings`. Sol found no basis for halving it. **I** Binding and the import
 branch are the uncertain parts. Estimates, not acceptance ceilings.
@@ -848,7 +871,7 @@ written (§2, §5.3). No question here is the owner's financial judgement; §7.1
 | r1-14, r2-4 | Three correction routes; released model ids immutable | §7.6 |
 | r2-5, r3-1 | Contract sealed in the twin; own twin for imported, cited twin for drafted; no `bound` | §6.2, §7.2, §7.3; §7.4 Contract replay |
 | r1-15 | Claim counts from the registry; estimates not ceilings | §7.2 |
-| OD-6, OD-9 | Pinned publication; `ledger narrate` refuses a `forward_view` version | §6.2 rule 6; §10 |
+| OD-6, OD-9 | Pinned publication; `ledger narrate` refuses a version holding any `fcst.` claim, before any model call, and narrates a claim-free `NOT_ASSESSED` version as today (r6; r5 refused any `forward_view` version, which would stop every future narrate) | §6.2 rule 6; §10 |
 | r2-6 | Blocking Task 0, including no quoted thesis claim anywhere live | §8 Task 0 |
 | r3 notes | Retrospective status plain; §7.1 wording; touch points moved to the plan note | §6.2, §6.3, §7.1, §10 |
 | r4-1 | Model-authored free text holds no `{` or `}`, so no marker can relabel a computed number | §6.2 guards; S1 case 7 |
@@ -857,6 +880,7 @@ written (§2, §5.3). No question here is the owner's financial judgement; §7.1
 | r4-4 | `TABLE` and `PROSE` scalar forms, each validated; range form removed; a disclosure's value is both bounds | §6.2 rule 3; S1 case 4; S2 case 6 |
 | r4-5 | A `PROJECTION` must equal the canonical rounded result exactly at row 5 | §7.3 step 5; §7.4 Tamper; §10 |
 | r4-6 | Loss-year dividend case follows the prior-year formula, both directions | S2 case 4 |
+| S1 plan review r1 (C-1 to C-6) | r6: OD-9; retained header order; column separate from period; row binding and signed cells; realisation conditional on Task 0; capture identity explicit | §6.2 rule 3; §7.3; S1 cases 1, 4; §8 total; §10 |
 
 ## 10. Notes for the plan
 
@@ -889,5 +913,5 @@ written (§2, §5.3). No question here is the owner's financial judgement; §7.1
 | `verify/thesis_predicates.py:84-105` | `forward` block with validators; falsifiers untouched |
 | `ledger/import_mapping.py:286-291` | `map_q0` branch for `forward`, with no `bound` |
 | `ledger/rework.py:233-249` | A branch for `fcst.*` keys (§7.6) |
-| `ledger/narrate.py:233` | Refuses a version holding `forward_view` (OD-9) |
+| `ledger/narrate.py:233` | Refuses a version holding any `fcst.` claim, before any model call (OD-9) |
 | `ledger/forward_model.py`, `ledger/forward.py` (new) | Pure model and `MODELS`, `OUTPUTS`; binding, `validate_book`, trigger evaluator, parity and code-built section |
