@@ -1,6 +1,6 @@
 """Raw-first market traversal and durable pagination over retained responses."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -10,6 +10,7 @@ from vendor_surface_support import RetainedResponseOpener, load_request_index
 
 from fundamentals.ingest import vendor_surface_market as market
 from fundamentals.ingest.vendor_surface_capture import Request
+from fundamentals.ingest.vendor_surface_due import is_due
 from fundamentals.ingest.vendor_surface_expand import EXPANSIONS, MARKET_PARENTS
 from fundamentals.ingest.vendor_surface_fetch import PgSiteLock, Site, SiteSession, VendorFetcher
 from fundamentals.ingest.vendor_surface_parse import (
@@ -681,3 +682,14 @@ def test_sitemap_with_xml_declaration_has_no_continuation():
     )
     raw = b'<?xml version="1.0" encoding="UTF-8"?><sitemapindex><sitemap/></sitemapindex>'
     assert market.continuation(request, Body(raw=raw), 1) is None
+
+
+@pytest.mark.parametrize("surface", ["macro-chart-api", "markets-indices-widget-api"])
+@pytest.mark.parametrize("age,pending", [(None, False), (timedelta(days=30), True)])
+def test_owner_disabled_surface_is_never_due_but_can_be_reenabled(surface, age, pending):
+    """The owner stopped these fetches pending a later decision; the flag alone restores them."""
+    now = datetime(2026, 11, 3, tzinfo=UTC)
+    last = now - age if age else None
+    spec = next(s for s in MARKET_SPECS if s.id == surface)
+    assert is_due(spec, last, now, pending) is False
+    assert is_due(spec.model_copy(update={"enabled": True}), last, now, pending) is True

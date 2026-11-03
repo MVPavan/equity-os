@@ -84,15 +84,6 @@ def test_is_due(cadence, last, pending, expected):
     assert due.is_due(spec, last, NOW, pending) is expected
 
 
-@pytest.mark.parametrize("surface", ["macro-chart-api", "markets-indices-widget-api"])
-@pytest.mark.parametrize("last,pending", [(None, False), (NOW - 30 * DAY, True)])
-def test_owner_disabled_surface_is_never_due_but_can_be_reenabled(surface, last, pending):
-    """The owner stopped these fetches pending a later decision; the flag alone restores them."""
-    spec = next(s for s in SPECS if s.id == surface)
-    assert due.is_due(spec, last, NOW, pending) is False
-    assert due.is_due(spec.model_copy(update={"enabled": True}), last, NOW, pending) is True
-
-
 class DueOpener(OpenerDirector):
     """Exact retained addresses, the results feed by path, otherwise 404."""
 

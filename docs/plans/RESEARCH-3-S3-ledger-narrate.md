@@ -799,6 +799,16 @@ Run at gate-passed `cecf26fe` (`ROUTE: PASS`, 5597 passed), on `eqos_test_s3_tri
 
 **The stop rule fired on the refusal: Task 4 stays stopped and FY26_Q2 holds at v29, as this plan required.** The trial's four approvals were not obtained, `trial-complete.txt` does not exist, and the wrapper refuses `FY26_Q2-r3` live. Two approvals on one draft each are not evidence of reliability, and the refusal is not evidence against the prompt revision: it is the existing numeral guard, on a different fault from the panel's. This is reported to the owner as an S3 result; the task remains open and S3 is not closed. The close step's follow-up beads wait for that decision. Live state: FY26_Q2 v29, FY26_Q3 v21, FY26_Q4 v22, FY27_Q1 v23, all `APPROVED`, earlier sealed digests unchanged, `check-live` ok, backup `26659ae9ebb7441eaecf8b924b614fbc`.
 
+## Live amendment: the trial resumes (2026-11-03)
+
+The owner decided: "You can resume the S3 trial." This relaxes the trial's stop rule after seeing it fire. GPT-6.1 Sol reviewed how it is carried out: `VERDICT: APPROVE` on the second round, on 2026-11-03.
+
+- **Trial.** It continues on `eqos_test_s3_trial` at `FY26_Q4` on v22, then `FY27_Q1` on v23. v30 and v31 keep their approvals. Refusals now follow the live rule: four launches per quarter, shared across attempts, retrying only ordinary wording, count-expression or markup-output faults, with a fresh call on the same prompt and no repair. `FY26_Q4` has used one launch. `drivers: digit: 2025` is retryable.
+- **Unchanged.** All four must be `APPROVE`. A failed gate, an incomplete review or a non-approval stops the trial, with no replacement sample and no further prompt tuning. Nothing from the trial is imported into live. If it completes, the approved live path applies as written above.
+- **Launches.** Development launches are at 34 and may reach 41, above the 35 stated earlier.
+- **Commits.** v30 and v31 ran at `cecf26fe`, the rest at this record's commit. In between, only a vendor-surface flag and documents changed. Before drafting, the four frozen prompts are rebuilt at that commit and compared byte for byte, and `ledger narrate` runs only there.
+- **Tooling found on review.** The wrapper checked no order between quarters, so a later quarter could have drafted after an earlier one spent its launches. A quarter's first attempt now needs the preceding quarter's narrated `APPROVE` and passed `post`; a recovery M does not count. No live write used this route.
+
 ## Frozen expectations
 
 Read-only freeze at `80c4213f`, approved by GPT-6.1 Sol on 2026-11-02: `VERDICT: APPROVE` on the third review round of these values and the Task 4 tooling. Re-frozen at `b347d4b7`, then at `83c89b4c` after the changes below; each changed only the prompt size and oracle digests, and GPT-6.1 Sol accepted the measured values the same day. `797b17c0` is a formatting correction and changes no expectation. Re-frozen for the 2026-11-02 reviewed prompt revision below: a read-only copy of the freeze showed each prompt 627 bytes larger and every other value unchanged, with bundles and updated sections byte-identical, except `status`, because v20 is now `SUPERSEDED`; this table keeps the head values the run was frozen on.
