@@ -1,14 +1,18 @@
 {
   "now": {
-    "title": "RESEARCH-3 S3 stopped again: waiting for the owner's decision",
-    "detail": "The resumed prompt trial needed four Sol approvals on a test database. Two were approved; Sol requested changes on FY26_Q4's draft for a credibility note with no concrete thesis consequence, which under the approved rule stops the trial. FY26_Q2 stands on approved deterministic v29 with no narrative. FY26_Q3, FY26_Q4 and FY27_Q1 are unchanged at their approved S2 versions. No live writes until the owner decides."
+    "title": "RESEARCH-4 started: writing the forward-view spec",
+    "detail": "RESEARCH-3 S3 closed at the owner's direction with its goal unmet: no narrated version reached the live ledger. RESEARCH-4 is the forward view: five-year estimates computed by code from cited assumptions. First step is the spec, including how to get presentation and concall extraction, which DOCS-1 did not deliver."
   },
   "next": [
-    "Owner: close S3 as it stands, or revise the prompt again and rerun the trial?",
+    "Spec for RESEARCH-4, reviewed by Sol, then the plan",
     "eqos-pds3: check whether approved thesis versions were drafted by the unisolated client",
-    "Owner: materiality extended to a third slice (may overturn); enable Tijori macro charts and index widgets later, and how often?"
+    "Owner: materiality extended to a third slice (eqos-7t96); enable Tijori macro charts and index widgets later, and how often (eqos-tyuk)?"
   ],
   "log": [
+    {
+      "date": "2026-11-03",
+      "text": "RESEARCH-3 S3 closed by the owner with its goal unmet: no narrated live version. Live heads v29, v21, v22, v23 stay APPROVED; digests unchanged; backup b29ee3ce. Rising-or-falling and causal drivers stay open. RESEARCH-4 started."
+    },
     {
       "date": "2026-11-03",
       "text": "RESEARCH-3 S3 trial resumed at gate-passed 05d5a4cf and stopped again: Sol requested changes on FY26_Q4's draft v32 (credibility note lacks a concrete thesis consequence). All deterministic checks passed. Live unchanged. Goes to the owner."
