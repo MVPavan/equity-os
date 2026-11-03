@@ -1,14 +1,19 @@
 {
   "now": {
-    "title": "RESEARCH-4 started: writing the forward-view spec",
-    "detail": "RESEARCH-3 S3 closed at the owner's direction with its goal unmet: no narrated version reached the live ledger. RESEARCH-4 is the forward view: five-year estimates computed by code from cited assumptions. First step is the spec, including how to get presentation and concall extraction, which DOCS-1 did not deliver."
+    "title": "RESEARCH-4 spec approved: writing the plan, waiting on two owner permissions",
+    "detail": "Sol approved the forward-view spec: five-year estimates computed by code from cited assumptions, FY27_Q1 only, about 1,085 to 1,350 production lines (estimate). Building needs the owner's rulings on permissions A and B in the spec's section 7.1, because projections and quoted document figures are exceptions to invariants 6 and 7."
   },
   "next": [
-    "Spec for RESEARCH-4, reviewed by Sol, then the plan",
+    "Owner: grant permissions A (projection record) and B (document figures as quotes)?",
+    "RESEARCH-4 plan reviewed by Sol, then Task 0's read-only data proof",
     "eqos-pds3: check whether approved thesis versions were drafted by the unisolated client",
-    "Owner: materiality extended to a third slice (eqos-7t96); enable Tijori macro charts and index widgets later, and how often (eqos-tyuk)?"
+    "Owner: materiality extended to a third slice (eqos-7t96); Tijori macro charts and index widgets later (eqos-tyuk)"
   ],
   "log": [
+    {
+      "date": "2026-11-03",
+      "text": "RESEARCH-4 spec approved by Sol after four fix rounds and a fresh closing review that found six real defects, including a route for a model to show a computed number under a false label. Two owner permissions are outstanding."
+    },
     {
       "date": "2026-11-03",
       "text": "RESEARCH-3 S3 closed by the owner with its goal unmet: no narrated live version. Live heads v29, v21, v22, v23 stay APPROVED; digests unchanged; backup b29ee3ce. Rising-or-falling and causal drivers stay open. RESEARCH-4 started."
