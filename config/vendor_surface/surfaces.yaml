@@ -166,7 +166,7 @@
 - {site: tijori, id: search-page, scope: MARKET, path: /in/search/, group: NONE, cadence: WEEKLY}
 - {site: tijori, id: markets, scope: MARKET, path: /in/markets, group: NONE, cadence: WEEKLY}
 - {site: tijori, id: macro, scope: MARKET, path: /in/macro, group: NONE, cadence: WEEKLY}
-- {site: tijori, id: macro-chart-api, scope: MARKET, path: '/api/v1/macro/chart/{indicator_id}/', group: SERIES, cadence: WEEKLY, expand: tijori_macro, xhr: true}
+- {site: tijori, id: macro-chart-api, scope: MARKET, path: '/api/v1/macro/chart/{indicator_id}/', group: SERIES, cadence: WEEKLY, expand: tijori_macro, xhr: true, enabled: false}
 - {site: tijori, id: sector-page, scope: MARKET, path: '/sector/{slug}', group: NONE, cadence: WEEKLY, expand: tijori_sectors}
 - {site: tijori, id: sector-ms-chart-api, scope: MARKET, path: '/api/v1/sector/ms-chart/{chart_id}/', group: SERIES, cadence: WEEKLY, expand: tijori_sector_charts, xhr: true}
 - {site: tijori, id: sector-company-opm-api, scope: MARKET, path: '/api/v1/sector/company-opm/{metric_id}/', group: SERIES, cadence: WEEKLY, expand: tijori_sector_charts, xhr: true}
@@ -191,4 +191,4 @@
 - {site: tijori, id: robots, scope: MARKET, path: /robots.txt, group: NONE, cadence: WEEKLY}
 - {site: tijori, id: llms-txt, scope: MARKET, path: /llms.txt, group: NONE, cadence: WEEKLY}
 - {site: tijori, id: policy-pages, scope: MARKET, path: /support | /privacy-policy | /terms-of-use | /cancellation-policy, group: NONE, cadence: WEEKLY}
-- {site: tijori, id: markets-indices-widget-api, scope: MARKET, path: '/api/v1/{table}/{field}/{activeIndex}/', group: NONE, cadence: WEEKLY, expand: tijori_widgets, xhr: true}
+- {site: tijori, id: markets-indices-widget-api, scope: MARKET, path: '/api/v1/{table}/{field}/{activeIndex}/', group: NONE, cadence: WEEKLY, expand: tijori_widgets, xhr: true, enabled: false}

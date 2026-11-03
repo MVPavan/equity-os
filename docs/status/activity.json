@@ -1,14 +1,19 @@
 {
   "now": {
-    "title": "RESEARCH-3 S3 stopped: waiting for the owner's decision",
-    "detail": "The prompt trial needed four Sol approvals on a test database. Two drafts were approved; the third, FY26_Q4, was refused for a bare year in its text, which under the approved rule stops the trial. FY26_Q2 stands on approved deterministic v29 with no narrative. FY26_Q3, FY26_Q4 and FY27_Q1 are unchanged at their approved S2 versions. No live writes until the owner decides."
+    "title": "RESEARCH-3 S3 trial resuming: owner approved",
+    "detail": "The owner approved resuming the prompt trial for FY26_Q4 and FY27_Q1, using the normal wording-refusal retry. All four drafts still need Sol's approval on a test database before any live draft. FY26_Q2 stays on approved deterministic v29 with no narrative until then."
   },
   "next": [
-    "Owner: S3 stopped; let the trial resume with the normal wording-refusal retry, or close S3 as it stands?",
+    "Sol reviews the trial amendment, and the gate runs on the new commit",
+    "Trial FY26_Q4 and FY27_Q1, then live FY26_Q2 (last launch), FY26_Q3, FY26_Q4, FY27_Q1",
     "eqos-pds3: check whether approved thesis versions were drafted by the unisolated client",
-    "Owner: materiality extended to a third slice (may overturn); keep macro charts monthly and drop index widgets? (recommended yes)"
+    "Owner: materiality extended to a third slice (may overturn); enable Tijori macro charts and index widgets later, and how often?"
   ],
   "log": [
+    {
+      "date": "2026-11-03",
+      "text": "Owner disabled Tijori macro charts and index widgets with a config flag, nothing deleted: retained captures and parsers stay, and the flag restores fetching. Owner also approved resuming the S3 prompt trial."
+    },
     {
       "date": "2026-11-02",
       "text": "RESEARCH-3 S3 prompt trial stopped: Sol approved FY26_Q2 and FY26_Q3 trial drafts with no findings, then FY26_Q4's draft was refused for a bare year. Stop rule held: no retry, live unchanged, backup taken. Goes to the owner."

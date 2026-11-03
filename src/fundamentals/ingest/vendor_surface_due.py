@@ -131,7 +131,9 @@ Expand = Callable[[Request, Seen], tuple[tuple[Request, ...], tuple[str, ...]]]
 def is_due(
     spec: SurfaceSpec, last_usable: datetime | None, now: datetime, trigger_pending: bool
 ) -> bool:
-    """Apply the surface cadence to its latest usable capture."""
+    """Apply the surface cadence to its latest usable capture; a disabled surface is never due."""
+    if not spec.enabled:
+        return False
     if last_usable is None or trigger_pending:
         return True
     if spec.cadence is Cadence.DAILY:

@@ -53,6 +53,7 @@ class SurfaceSpec(BaseModel):
     sections: tuple[str, ...] = ()
     selector: str | None = None
     feed: bool = False
+    enabled: bool = True  # False stops new fetches; retained captures and parsers stay.
 
 
 def load_specs(path: Path, catalog: Path) -> tuple[SurfaceSpec, ...]:
