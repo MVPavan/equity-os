@@ -227,6 +227,14 @@ Dependencies: Task 1.
 
 Risks: **test-first; this is the plan's main behaviour risk control.** The integration file may outgrow its estimate; the stop above applies.
 
+**Orchestrator rulings during Task 2 (2026-11-04).**
+- **Helper stop.** Raised from 150 to 220 lines: the first draft reached 181, mostly the data the acceptance map requires (12 disclosures, layout controls, a complete book). The 900-line test total is unchanged. Sol may still judge the size at phase end.
+- **Schema faults (corrects D5).** `import_thesis_successor` calls `map_q0` before `bindable_thesis` (`importer.py`), so the `forward` branch parses the book inside `_parsing` and every guard and schema row refuses with `LosslessError`, as Task 4 states. `bindable_thesis` is not the refusal path.
+- **One patch point for `DISCLOSURES`.** Production reads `forward_book.DISCLOSURES` through the module at call time, never `from ... import DISCLOSURES`, so tests patch one attribute and need no module that a later task creates.
+- **Names the plan left open.** The tests fix the `OUTPUTS` lines, bridge keys, `BookFault` members and `DisclosureSpec` fields, following the spec's terms. Implementers follow the tests.
+- **Digest proof.** The frozen pre-0046 `version_sealed_digest` body from `migrations/0042_thesis_claim_citation.sql` is loaded under another name and compared with the current function on one database, for claims with a null `projection_model`. Task 11 keeps the real before-and-after proof.
+- **Real filed figures in `test_forward_view.py`.** The invented PDF is generated at run time under `tmp_path` so it can cross-foot against the retained statement; only the generator is committed. Rate anchors are hand-checked on a seeded statement.
+
 ### Task 3: The pure model
 
 Goal: `compute` gives each `REVENUE` and `PROFIT` line exactly as spec §5.1-§5.3, with failures per block and no exception but an unknown model.
