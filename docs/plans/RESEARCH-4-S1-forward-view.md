@@ -1,7 +1,7 @@
 # RESEARCH-4 S1 — Base-case forward view — Implementation Plan
 
 **Origin:** `docs/specs/2026-11-03-research-4-forward-view.md` (r6, approved with this plan by gpt-6.1-sol), §8 S1 and §10, with §0-§7. Bead `eqos-3v3w`. Format: `.claude/skills/planning/references/plan-format.md`.
-**Status:** approved r3 (2026-11-03): approver gpt-6.1-sol, `APPROVE` after two fix rounds. Task 0 is read-only and may run first. No later task starts before the owner rules on permissions A and B.
+**Status:** approved r3 (2026-11-03): approver gpt-6.1-sol, `APPROVE` after two fix rounds. Task 0 passed (below). The owner granted permissions A and B on 2026-11-04.
 **Goal:** on `eqos_test_r4`, the FY27_Q1 run writes a `forward_view` section with a base-case five-year path by driver and division, recomputed by code on every check, all claims `MATCH`, with a real Sol `APPROVE` and a readable export.
 **Out of scope:**
 - Any live write: 0046, the thesis and the report stay off the live database until the live close.
@@ -21,7 +21,7 @@
 
 ## Permissions gate
 
-**The owner has not ruled on permissions A and B (spec §7.1). This plan assumes both are granted.**
+**The owner granted permissions A and B on 2026-11-04 (spec §7.1), so the declined routes below do not apply.**
 - **Task 0 is read-only and may run first.**
 - **No task after Task 0 starts before both rulings exist.** Task 1, creating the worktree and applying the invariant text, is the first task after them.
 - **B declined:** S1 stops. The estimates start from division volumes and margins, so they cannot be built as designed.

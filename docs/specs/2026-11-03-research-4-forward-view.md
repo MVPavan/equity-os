@@ -1,6 +1,6 @@
 # RESEARCH-4 — Forward view — Spec
 
-**Status:** approved r6 (2026-11-03): approver gpt-6.1-sol, `APPROVE` on r5's re-review after its fresh closing review, and on r6's amendments with the S1 plan. Amendment: OD-9, §6.2 rule 3, §7.3's capture identity, S1 cases 1 and 4, §10 and the total estimate (§9, last row). Build depends on two separate owner rulings, permissions A and B in §7.1, not yet given. No implementation, rehearsal or live result is established.
+**Status:** approved r6 (2026-11-03): approver gpt-6.1-sol, `APPROVE` on r5's re-review after its fresh closing review, and on r6's amendments with the S1 plan. Amendment: OD-9, §6.2 rule 3, §7.3's capture identity, S1 cases 1 and 4, §10 and the total estimate (§9, last row). The owner granted permissions A and B in §7.1 on 2026-11-04. No implementation, rehearsal or live result is established.
 **Origin:** bead `eqos-3v3w`; binding requirements `docs/specs/2026-10-27-research-3-thesis-analysis.md` §7; owner
 direction `docs/goals/2026-10-27-research-report-targets.md`.
 **Implementer:** Opus. **Boundaries:** E-01 stays deferred

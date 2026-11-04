@@ -1,15 +1,23 @@
 {
   "now": {
-    "title": "RESEARCH-4 spec approved: writing the plan, waiting on two owner permissions",
-    "detail": "Sol approved the forward-view spec: five-year estimates computed by code from cited assumptions, FY27_Q1 only, about 1,085 to 1,350 production lines (estimate). Building needs the owner's rulings on permissions A and B in the spec's section 7.1, because projections and quoted document figures are exceptions to invariants 6 and 7."
+    "title": "RESEARCH-4 S1 building: base-case forward view on a test database",
+    "detail": "The owner granted permissions A and B on 2026-11-04. Sol approved the S1 plan and its read-only data proof passed. S1 builds the base-case five-year path by driver and division in a dedicated worktree on branch research-4. Nothing reaches the live database until the live close."
   },
   "next": [
-    "Owner: grant permissions A (projection record) and B (document figures as quotes)?",
-    "RESEARCH-4 plan reviewed by Sol, then Task 0's read-only data proof",
+    "RESEARCH-4 S1: worktree and invariant text, then acceptance tests, model, assumption book and a real Sol report round on eqos_test_r4",
+    "RESEARCH-4 S2 (working capital, funding gap), S3 (bear and bull, triggers), then one live publication",
     "eqos-pds3: check whether approved thesis versions were drafted by the unisolated client",
     "Owner: materiality extended to a third slice (eqos-7t96); Tijori macro charts and index widgets later (eqos-tyuk)"
   ],
   "log": [
+    {
+      "date": "2026-11-04",
+      "text": "Owner granted RESEARCH-4 permissions A (projection record) and B (document figures as quotes). S1 implementation starts."
+    },
+    {
+      "date": "2026-11-03",
+      "text": "RESEARCH-4 S1 plan approved by Sol after two fix rounds. Its read-only data proof passed checks 1 to 7; no admitted page states a conductor or oil realisation, so that comparison uses the plan's fallback wording."
+    },
     {
       "date": "2026-11-03",
       "text": "RESEARCH-4 spec approved by Sol after four fix rounds and a fresh closing review that found six real defects, including a route for a model to show a computed number under a false label. Two owner permissions are outstanding."
