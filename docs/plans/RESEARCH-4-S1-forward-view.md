@@ -234,6 +234,9 @@ Risks: **test-first; this is the plan's main behaviour risk control.** The integ
 - **Names the plan left open.** The tests fix the `OUTPUTS` lines, bridge keys, `BookFault` members and `DisclosureSpec` fields, following the spec's terms. Implementers follow the tests.
 - **Digest proof.** The frozen pre-0046 `version_sealed_digest` body from `migrations/0042_thesis_claim_citation.sql` is loaded under another name and compared with the current function on one database, for claims with a null `projection_model`. Task 11 keeps the real before-and-after proof.
 - **Real filed figures in `test_forward_view.py`.** The invented PDF is generated at run time under `tmp_path` so it can cross-foot against the retained statement; only the generator is committed. Rate anchors are hand-checked on a seeded statement.
+- **FY26 computed rows are exactly nine, not "about fifteen"** (Task 3, spec §7.2): `conductor_realisation`, `oil_realisation`, `others_revenue`, `others_share`, `residual_ebitda_share`, `margin`, `conductor_margin`, `oil_margin`, `cable_margin`. Filed FY26 lines stay on `probe.*` and disclosed ones on `fcst.d.*`. Division margins rest on spec §5.3's "Rows" sentence and S1's FY26-FY31 table. `E^i_0` is the disclosed figure, and `E^c_t = V^c_t eC_t / C` applies for `t >= 1`.
+
+**Task 2 result (2026-11-04, `02de561e` on `research-4`).** Red proof 26/26. **Over the stops:** 1,567 test lines including a 411-line helper, against 900 and 220, after a real 17% reduction from 1,880 unformatted lines, with no acceptance row dropped. What holds it up is listed in the bead. Ruled: proceed, and Sol judges necessity and size at phase end. The aggregate test estimate moves from 980-1,240 to about 1,830-1,930 (**I**), assuming the later slices' estimates hold.
 
 ### Task 3: The pure model
 
