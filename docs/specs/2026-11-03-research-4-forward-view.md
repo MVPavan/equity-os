@@ -384,7 +384,7 @@ forward:
 table `COMPARABLE[assumption id]` lists reference claims of compatible subject and definition. For each year in
 `reference.years`, inside the statement's target window, code compares the interpolated base value with the bounds (a
 disclosure's one value is both bounds) and renders `INSIDE`, `BELOW` or `ABOVE`; every other year renders
-`NOT_COMPARABLE: guidance does not cover this year`.
+`NOT_COMPARABLE: guidance does not establish this year`. A comparison requires the statement's own target window to name that year and its definition to be the assumption's (Sol, S1 code rounds 2 and 3). The four admitted `ledger.*` keys are undated, so on real data they appear beside the assumption as `NOT_COMPARABLE` and only `capex_fy27` compares; the report states this limitation. A dated key added later must certify both definition and target window, and a CAGR never gets an unqualified yearly label.
 
 **Meaning validation (finding 18), `validate_book`, at import and at every write:**
 1. Span: the capture's text at each anchor, quote and context alike, equals its stated text (`QUOTE_NOT_FOUND`, row
@@ -603,7 +603,7 @@ second argument to `_bind` for these keys, and needs no `bound`:
 | Drafted `fcst.d.<id>` | The version's single `cited_sealed_digest` selects a thesis of the entity, sealed under that digest as `_THESIS_CLAIM` requires; its twin | Same field, same id |
 | Any other quote | Unchanged: `bound.get(key)` if imported, else `bound_contract` | Unchanged |
 
-No twin, no entry, or zero or several digests gives no contract, so row 7 fails closed for both paths. A later book
+No twin, no entry, or zero or several digests gives no contract and no resolution, so the claim reads `UNRESOLVED` for both paths; row 7 applies only once an entry is established. A later book
 correcting the same quote at the same location therefore gives its thesis and later reports the new contract, leaves
 each earlier thesis and report the old one, and touches no `ledger.*` claim at that span. Thesis imports stay out of
 `_IMPORTED_QUOTES` (`citations.py:205`), so a book never binds or unbinds a guidance quote, and a thesis's Markdown is
@@ -659,7 +659,8 @@ and `FY27-FY31` for peak gap, and the horizon equals it. Peak gap's year renders
   location, and write its report. Recheck all four: A and its report still `MATCH` on the old contract, B and its report
   on the new one, and each version's stored claim asserting the other's contract → `QUOTE_MEANING_MISMATCH`. A
   `ledger.*` claim at that span keeps its `bound_contract` and its `MATCH` throughout. A report holding two digests, and
-  a twin with no entry for the id → `QUOTE_MEANING_MISMATCH`.
+  a twin with no entry for the id → `UNRESOLVED`, because resolution cannot establish the sealed entry (Sol, S1 code
+  round 3).
 - **Replay stability.** S1's sealed version still checks `MATCH` under S2's and S3's code, with no funding input
   required of it. New lines add keys and never change `forward.1`'s earlier lines (§7.6 for a correction).
 - **Import atomicity.** A book failing each of validation, citation, issuer, publication and cross-foot leaves no
