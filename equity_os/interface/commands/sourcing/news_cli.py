@@ -108,7 +108,7 @@ def _days_argument(value: str) -> int:
 
 
 def add_news_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register the ``fundamentals news`` command."""
+    """Register the ``eqos news`` command."""
     parser = subparsers.add_parser(
         NEWS_COMMAND,
         help="fetch recent per-stock announcements and render derived events",

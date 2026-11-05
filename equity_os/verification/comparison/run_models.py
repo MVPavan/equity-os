@@ -65,7 +65,7 @@ class RunStatus(StrEnum):
 
 
 class RunExitStatus(IntEnum):
-    """Exit codes of ``fundamentals compare run`` (design decision 14; 2 is argparse's)."""
+    """Exit codes of ``eqos compare run`` (design decision 14; 2 is argparse's)."""
 
     SUCCESS = 0
     SUCCESS_WITH_OPEN_HIGH = 3

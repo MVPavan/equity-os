@@ -1,4 +1,4 @@
-"""CLI composition for ``fundamentals screener-company``.
+"""CLI composition for ``eqos screener-company``.
 
 Slice 2 of the Screener build. It mirrors ``screener-financials`` deliberately —
 identical refusal-before-the-network, identical no-clobber pre-flight, identical
@@ -105,7 +105,7 @@ class ScreenerCompanyRefused(BaseModel):
 def add_screener_company_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
-    """Register the ``fundamentals screener-company`` command."""
+    """Register the ``eqos screener-company`` command."""
     parser = subparsers.add_parser(
         SCREENER_COMPANY_COMMAND,
         help="acquire the shareholding, segments, modal, peers and ratio documents of one stock",

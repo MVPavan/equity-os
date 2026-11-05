@@ -1,4 +1,4 @@
-"""Dispatch and command implementation for ``fundamentals report``.
+"""Dispatch and command implementation for ``eqos report``.
 
 Extracted verbatim from :mod:`equity_os.interface.entry.cli` so the composition root
 stays inside its file-size bound. The command still renders each stock's update

@@ -1,4 +1,4 @@
-"""CLI composition for ``fundamentals screener-financials``.
+"""CLI composition for ``eqos screener-financials``.
 
 Slice 1 of the Screener build. It mirrors ``screener-page`` deliberately —
 identical refusal-before-the-network, identical no-clobber pre-flight, identical
@@ -108,7 +108,7 @@ class ScreenerFinancialsRefused(BaseModel):
 def add_screener_financials_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
-    """Register the ``fundamentals screener-financials`` command."""
+    """Register the ``eqos screener-financials`` command."""
     parser = subparsers.add_parser(
         SCREENER_FINANCIALS_COMMAND,
         help="acquire the financial sections and schedules of one watchlist stock",

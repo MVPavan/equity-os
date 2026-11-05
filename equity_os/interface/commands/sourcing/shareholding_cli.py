@@ -1,4 +1,4 @@
-"""``fundamentals shareholding acquire|ingest`` (plan D8 Task 4, R8).
+"""``eqos shareholding acquire|ingest`` (plan D8 Task 4, R8).
 
 ``acquire`` writes the next generation under ``<raw-root>/<SYMBOL>/`` through the live
 transport (an operator run, never scheduled); a parser refusal mid-sequence still writes the

@@ -69,7 +69,7 @@ _DESCRIPTION = "Run source-backed Fundamentals acquisition, validation, and repo
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the ``fundamentals`` argument parser."""
+    """Build the ``eqos`` argument parser."""
     parser = argparse.ArgumentParser(prog="eqos", description=_DESCRIPTION)
     subparsers = parser.add_subparsers(dest="command", required=True)
     register = subparsers.add_parser(

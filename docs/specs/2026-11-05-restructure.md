@@ -266,10 +266,13 @@ The daily intake is paused, so nothing needs to run during the move. Green is pr
 of the branch, and the branch lands only after both the gate and the rehearsal pass on it. Nothing
 is half-moved on `main` at any point.
 
-The branch holds two commits, built on the pre-move tip `P` (the `main` commit carrying
-`scripts/restructure/`): the **move commit**, which only the script writes, and one **overlay
-commit** with the READMEs, source list, its test and the living docs. A rebuild re-runs the script
-and cherry-picks the overlay, so these are new candidate branches and nothing is rewritten.
+The branch is built on the pre-move tip `P` (the `main` commit carrying `scripts/restructure/`):
+first the **move commit** (`92a5d533`), which only the script writes, then every later commit: the
+**overlay commit** with the READMEs, source list, its test and the living docs, and the review fixes
+(now `440d4008`, `a400fa16`, `93b5163d` and the closing-review fix). Rollback reverts every commit
+after `P`, newest first, then runs `uv sync`. A rebuild re-runs the script on `P` and cherry-picks
+every commit after the move commit in order, so these are new candidate branches and nothing is
+rewritten.
 
 **The candidate is committed before any history check.** `test_approved_payload_preceded_its_e2e`
 reads commits and fails on an uncommitted tree.

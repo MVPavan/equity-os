@@ -1,4 +1,4 @@
-"""Dispatch and command implementation for ``fundamentals validate``.
+"""Dispatch and command implementation for ``eqos validate``.
 
 Extracted verbatim from :mod:`equity_os.interface.entry.cli` so the composition root
 stays inside its file-size bound. The gold loop itself is unchanged: the

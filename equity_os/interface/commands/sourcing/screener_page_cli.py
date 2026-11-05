@@ -61,7 +61,7 @@ class ScreenerPageRun(BaseModel):
 def add_screener_page_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
-    """Register the ``fundamentals screener-page`` command."""
+    """Register the ``eqos screener-page`` command."""
     parser = subparsers.add_parser(
         SCREENER_PAGE_COMMAND,
         help="acquire one subscriber Screener company page for a watchlist stock",

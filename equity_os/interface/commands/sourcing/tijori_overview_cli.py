@@ -52,7 +52,7 @@ _STOP_DIR = Path("data")
 def add_tijori_overview_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
-    """Register the ``fundamentals tijori-overview`` command."""
+    """Register the ``eqos tijori-overview`` command."""
     parser = subparsers.add_parser(
         TIJORI_OVERVIEW_COMMAND,
         help="acquire the typed Tijori overview-page data sections for one watchlist stock",

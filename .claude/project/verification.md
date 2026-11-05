@@ -1,8 +1,7 @@
 # Verification
 
-This repo currently has **no first-party application code, build, or CI**.
-There are no test/lint/build commands to run for the repo as a whole, so the
-health gate is **structural** — do not invent commands.
+The `equity-os` uv project has a real test gate, below. The structural gate still
+applies to non-Python and non-product changes.
 
 ## Structural gate (run what applies to your change)
 

@@ -36,7 +36,7 @@ _SUMMARY_HEADER = "stock\trows\tcolumns\tquarantined\tbreakups\tunreadable\tcomp
 def add_tijori_shareholding_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
-    """Register the ``fundamentals tijori-shareholding`` command."""
+    """Register the ``eqos tijori-shareholding`` command."""
     parser = subparsers.add_parser(
         TIJORI_SHAREHOLDING_COMMAND,
         help="acquire the typed Tijori detailed shareholding table for one watchlist stock",

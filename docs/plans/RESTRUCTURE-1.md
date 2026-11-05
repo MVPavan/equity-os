@@ -271,7 +271,9 @@ Interfaces:
 - Consumes: Sol's approval, with the approved candidate as the only thing landed.
 
 Approach: Confirm `main`'s tip is `P`; if it moved, rebuild from the new tip and re-run the gate.
-Record live table counts. Fast-forward `main` to the candidate. Run `uv sync`. Remove the leftover
+Record live table counts. Fast-forward `main` to the candidate. Run `uv sync`. Then, before any
+operational use, install `scratchpad/restructure/lq.sh.moved` as
+`scratchpad/live-run-1/live-scratch/lq.sh`, the helper the scheduled prompt sources. Remove the leftover
 ignored `__pycache__` folders under `src/` and `tests/fundamentals/` (only those), so `src/` is gone.
 Update the disabled scheduled task's text through `schedule_task`, leaving it disabled. The
 orchestrator updates `bd remember` entries naming old paths, records Sol's verdict on `eqos-foec`,
@@ -285,7 +287,9 @@ except `.beads/issues.jsonl`. `bd show` on each new bead.
 
 Dependencies: Tasks 4, 5 and `APPROVE`.
 
-Risks: Rollback is `git revert` of the two commits plus `uv sync`; no database state needs undoing.
+Risks: Rollback is `git revert` of every commit after `P`, newest first, from the tip down to the move
+commit `92a5d533` (now: the closing-review fix, `93b5163d`, `a400fa16`, `440d4008`, `92a5d533`),
+then `uv sync`; no database state needs undoing.
 The cutover was rehearsed on this checkout in Task 4.
 
 ## Self-review

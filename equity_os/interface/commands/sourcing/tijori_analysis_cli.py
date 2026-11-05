@@ -67,7 +67,7 @@ class AnalysisRun(BaseModel):
 def add_tijori_analysis_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
-    """Register the ``fundamentals tijori-analysis`` command."""
+    """Register the ``eqos tijori-analysis`` command."""
     parser = subparsers.add_parser(
         TIJORI_ANALYSIS_COMMAND,
         help="acquire the typed Tijori analysis JSON APIs for one watchlist stock",

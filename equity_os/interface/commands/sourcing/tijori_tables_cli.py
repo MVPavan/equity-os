@@ -38,7 +38,7 @@ _UNKNOWN_PLAN_TIER = "unknown"
 def add_tijori_tables_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
-    """Register the ``fundamentals tijori-tables`` command."""
+    """Register the ``eqos tijori-tables`` command."""
     parser = subparsers.add_parser(
         TIJORI_TABLES_COMMAND,
         help="acquire typed raw Tijori financial tables for one watchlist stock",

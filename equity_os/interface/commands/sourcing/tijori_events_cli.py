@@ -77,7 +77,7 @@ class EventsRun(BaseModel):
 def add_tijori_events_parser(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser],
 ) -> None:
-    """Register the ``fundamentals tijori-events`` command."""
+    """Register the ``eqos tijori-events`` command."""
     parser = subparsers.add_parser(
         TIJORI_EVENTS_COMMAND,
         help="acquire the typed Tijori site-level and timeline event surfaces",

@@ -7,7 +7,7 @@ Top-level layout and how to navigate.
 | `docs/blueprint/` | The product docs: `funda-blueprint-implementation-decision-register-v2.md` (**canonical** decisions/gates), `funda-blueprint-final-consolidated-review.md` (architecture rationale), `funda-third-order-review-disposition-report.md` (why v2 changed), and the superseded v1 register |
 | `.claude/` | Installed Claude harness: `rules/`, `skills/`, `agents/`, `commands/`, `hooks/`, `docs/`, `project/` overlay (this file's home) |
 | `.beads/` | Beads issue tracker (embedded Dolt, db `equity_os`, prefix `equity-os`) + `beads.md` workflow doc |
-| `.codex/` | **bd-generated integration config only** (`config.toml`, `hooks.json`) — *not* a Codex harness; `AGENTS.md`'s `.codex/` references are dangling (see adoption-report) |
+| `.codex/` | Codex harness: `skills/`, `agents/`, `hooks/`, `rules/`, `docs/`, `project/` overlay, plus the bd-generated `config.toml` and `hooks.json` |
 | `.agents/` | bd-generated OpenAI-agent beads skill — not hand-maintained |
 | `CLAUDE.md` / `AGENTS.md` | Always-loaded entry points (harness-installed) |
 | `CONTEXT.md` | Domain glossary — use its terms in issues, docs, and code |

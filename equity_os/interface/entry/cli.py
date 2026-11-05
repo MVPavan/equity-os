@@ -1,6 +1,6 @@
 """Composition root: load config, construct adapters, run the increment.
 
-``fundamentals run --issuer INFY --quarter Q1-FY25`` loads the non-secret YAML
+``eqos run --issuer INFY --quarter Q1-FY25`` loads the non-secret YAML
 configuration, resolves the held-source paths, constructs the XBRL input (from a
 held/synthetic local instance by default, or a polite live NSE fetch when
 ``--xbrl-mode live`` is passed), opens the append-only fact store, runs the
