@@ -13,6 +13,16 @@ Core harness is stable; repo-specific facts live in `.codex/project/`.
 - If unsure, say so. Never fabricate citations, data, or examples.
 - Owner preference (2026-10-14): crisp, minimal, to-the-point code over lots of code. Smallest solution that meets the spec; delete what is not needed.
 
+## Data Extraction
+
+Owner rule (2026-11-05). Test: would the same code work unchanged on a second company?
+
+- **Standard data: code.** Automate only what passes the test, such as filed statements and XBRL lines.
+- **Company-specific data: a model.** Division tables, volumes, capacity, utilisation, management statements and other one-off disclosures: a model reads the document and extracts them. Do not write parsers, rules or per-company code for these.
+- **A model finds; it does not vouch.** Every extracted number carries its exact page and quote, and code confirms the number is there in the retained document before use. A second model checks meaning: unit, scale, sign, period, scope. What code cannot confirm, such as a page with no text layer, reads `NOT_ASSESSED`.
+- **"Not disclosed" is a valid answer.** Never derive, estimate or fill a figure in extraction; a figure derived from extracted ones is calculated by code.
+- **Extract once.** Store the reviewed result with its source and date, and reuse it. Do not re-extract on each run. `invariants.md` still applies.
+
 ## Read Order
 
 1. `AGENTS.md`, then `CONTEXT.md` (domain glossary — use its terms, flag conflicts)

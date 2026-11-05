@@ -1,15 +1,23 @@
 {
   "now": {
-    "title": "RESEARCH-4 S1 building: base-case forward view on a test database",
-    "detail": "The owner granted permissions A and B on 2026-11-04. Sol approved the S1 plan and its read-only data proof passed. S1 builds the base-case five-year path by driver and division in a dedicated worktree on branch research-4. Nothing reaches the live database until the live close."
+    "title": "RESEARCH-4 S1: fixing Sol's closing review before the assumption book",
+    "detail": "S1's code is built on branch research-4 in a dedicated worktree. Gate 5 passed at fbc23416 (5,650 tests), but Sol's fresh closing review returned REQUEST_CHANGES with 3 P1, 3 P2 and 1 P3 findings. An Opus fix round is running, followed by a new gate and a Sol re-review. Then the assumption book, a rehearsal on a test database and close. Nothing reaches the live database until the live close."
   },
   "next": [
-    "RESEARCH-4 S1: worktree and invariant text, then acceptance tests, model, assumption book and a real Sol report round on eqos_test_r4",
+    "RESEARCH-4 S1: closing-review fixes, gate 6 and Sol re-review; check annual reports for capacity and cash notes; then assumption book (Task 10), rehearsal (Task 11) and close (Task 12)",
     "RESEARCH-4 S2 (working capital, funding gap), S3 (bear and bull, triggers), then one live publication",
     "eqos-pds3: check whether approved thesis versions were drafted by the unisolated client",
     "Owner: materiality extended to a third slice (eqos-7t96); Tijori macro charts and index widgets later (eqos-tyuk)"
   ],
   "log": [
+    {
+      "date": "2026-11-05",
+      "text": "Owner rule added to AGENTS.md and CLAUDE.md: code extracts only standard data; a model extracts company-specific data, code confirms each number at its location and a second model checks meaning."
+    },
+    {
+      "date": "2026-11-05",
+      "text": "RESEARCH-4 S1: Sol code round 5 approved fbc23416 and gate 5 passed, but the fresh closing review requested changes: 3 P1, 3 P2, 1 P3, overturning round 5's ruling on anchor traces."
+    },
     {
       "date": "2026-11-04",
       "text": "Owner granted RESEARCH-4 permissions A (projection record) and B (document figures as quotes). S1 implementation starts."
