@@ -12,6 +12,10 @@
   "log": [
     {
       "date": "2026-11-05",
+      "text": "Found a filed July 2026 presentation stating FY26 capacity for all three divisions. Intake had listed it but never fetched it because of its NSE category (bug filed). Earlier statement that no FY26 figure exists corrected."
+    },
+    {
+      "date": "2026-11-05",
       "text": "Owner rule added to AGENTS.md and CLAUDE.md: code extracts only standard data; a model extracts company-specific data, code confirms each number at its location and a second model checks meaning."
     },
     {

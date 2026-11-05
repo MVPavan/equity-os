@@ -86,7 +86,7 @@ it.
 | Capex plan, utilisation, volume and growth statements | FY26_Q4 transcript pp. 7, 10, 11, 15, 16 (blob `69aba177cad6`) | In the FY27_Q1 package through prior quotes (`run_draft.py:716`) |
 | Working-capital days statement | FY27_Q1 transcript p. 11 (blob `78a312c86f58`) | In the package |
 | Guidance quotes | `ledger.conductor_volume_growth.annual.consolidated`, `ledger.cables_revenue_growth.annual.consolidated`, `ledger.conductor_ebitda_per_mt.medium_term.consolidated`, `ledger.cables_ebitda_margin.annual.consolidated` | Claims in v23, already `MATCH` |
-| Absolute capacity | Amended 2026-11-05 after a wider search, quotes confirmed by code, meaning not yet reviewed. **V** Before the cutoff: the QIP placement document filed 29 Nov 2023 states capacity, production and utilisation by division to H1 FY24. FY24 and FY25 conductor and oil figures conflict across CARE and company statements. Nothing states an FY26 year-end figure | **Not established at the FY26 base date** |
+| Absolute capacity | Amended 2026-11-05 after a wider search, quotes confirmed by code, meaning not yet reviewed. **V** Before the cutoff: the QIP placement document filed 29 Nov 2023 states capacity, production and utilisation by division to H1 FY24. FY24 and FY25 conductor and oil figures conflict across CARE and company statements. The corporate presentation filed 27 Jul 2026 (NSE, category `Updates`, so intake listed it and never fetched it; read from BSE's copy) states FY26 installed capacity for all three divisions, on text-layer pages 8-10. Not yet retained or reviewed for meaning | **Stated for FY26; not yet in the book** |
 | Cable volumes | **V** The placement document states cable production in km to H1 FY24; nothing later found. The company said on its Q1 FY26 call that it does not report volume sold | **Missing** |
 | Unrestricted cash | **V** The FY25 notes state bank balance restrictions, with no restricted total. The FY26 annual report was filed 25 Aug 2026, after the cutoff | **Not established at the FY26 base date** (§5.5) |
 
@@ -139,8 +139,7 @@ The thesis gains `assumption.*`, `scenario.*`, `trigger.*` (self-cited `POLICY`,
 `import_mapping.py:595-623`) and `disclosure.*` (`SOURCE_QUOTE`; `_cited` binds the capture,
 `ledger/importer.py:356-358`).
 
-**Not delivered, each rendered as `NOT_ASSESSED` naming its source:** capacity × utilisation (no installed capacity established at
-the FY26 base date); cable volume split (volume sold is not reported); usable cash beyond cash and equivalents; competitive position (peers and industry
+**Not delivered, each rendered as `NOT_ASSESSED` naming its source:** capacity × utilisation (under review: FY26 installed capacity is now known, §1); cable volume split (volume sold is not reported); usable cash beyond cash and equivalents; competitive position (peers and industry
 missing, targets document:44-45); credibility adjustment (Apar's scored outcomes are `UNRESOLVED`, RESEARCH-3 §3);
 causes of past moves (RESEARCH-3 S3 closed unmet); prospective falsification (FY27_Q1 was known at sealing; §6.2, §10).
 
