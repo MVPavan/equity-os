@@ -82,8 +82,8 @@ mkdir -m 700 "$ROOT/secrets"
 ADMIN_PASSWORD=$(hex 24)
 (umask 077 && printf 'eqos_stage2_admin:%s\n' "$ADMIN_PASSWORD" >"$ROOT/secrets/eqos_admin.login" &&
   printf 'eqos_migrator:%s\n' "$(hex 24)" >"$ROOT/secrets/eqos_migrator.login")
-for file in $(uv run python -c 'from fundamentals.pg.role_secrets import LOGIN_SUFFIX
-from fundamentals.pg.settings import GROUP_ROLES
+for file in $(uv run python -c 'from equity_os.storage.database.role_secrets import LOGIN_SUFFIX
+from equity_os.storage.database.settings import GROUP_ROLES
 print(*(group + LOGIN_SUFFIX for group in GROUP_ROLES.values()))'); do
   (umask 077 && printf '%s_stage2:%s\n' "${file%.login}" "$(hex 24)" >"$ROOT/secrets/$file")
 done
@@ -122,7 +122,7 @@ assert (published["host_ip"], str(published["published"])) == ("127.0.0.1", port
 assert volume["source"] == data, "bind source"
 assert pg["environment"]["POSTGRES_DB"] == db, "POSTGRES_DB"' "$1" "$2" "$3" "$MAIN_DB" ||
     die "resolved compose config of $1"
-  [ "$(in_env "$1" uv run python -c 'from fundamentals.pg.settings import PgSettings
+  [ "$(in_env "$1" uv run python -c 'from equity_os.storage.database.settings import PgSettings
 s = PgSettings(); print(s.host, s.port, s.db, s.test_db_prefix)')" = "127.0.0.1 $2 $MAIN_DB eqos_test_" ] ||
     die "resolved PgSettings of $1"
 }
@@ -141,9 +141,9 @@ say "up $P on 127.0.0.1:$PORT"
 up "$P" "$PORT"
 
 # 2. Rehearse runbook steps 6-10 on a rehearsal database and copies under the owned root.
-D=$(in_env "$P" uv run fundamentals db create-test --suffix rehearsal)
+D=$(in_env "$P" uv run eqos db create-test --suffix rehearsal)
 renv() { in_env "$P" env "EQOS_PG_DB=$D" "$@"; }
-fundamentals() { renv uv run fundamentals "$@"; }
+eqos() { renv uv run eqos "$@"; }
 mkdir -m 700 "$ROOT/legacy" "$ROOT/inputs" "$ROOT/snap"
 cp data/store/aparinds.sqlite "$ROOT/legacy/aparinds.sqlite"
 cp -r "$APAR/nse" "$APAR/nse_pdf" "$ROOT/inputs/"
@@ -157,44 +157,44 @@ M="$ROOT/legacy_import_manifest.yaml"
 printf 'files:\n- label: aparinds\n  path: %s\n  sha256: %s\nsnapshot_root: %s\n' \
   "$ROOT/legacy/aparinds.sqlite" "$LEGACY_SHA" "$ROOT/snap" >"$M"
 approve "$M"
-fundamentals db bootstrap >/dev/null
-fundamentals db migrate >/dev/null
+eqos db bootstrap >/dev/null
+eqos db migrate >/dev/null
 renv uv run python -c 'import psycopg
 from pathlib import Path
-from fundamentals.pg.identity_seed import load_issuer_identity, seed_issuer_identity
-from fundamentals.pg.settings import PgRole, PgSettings
+from equity_os.companies.identity.identity_seed import load_issuer_identity, seed_issuer_identity
+from equity_os.storage.database.settings import PgRole, PgSettings
 with psycopg.connect(PgSettings().conninfo(PgRole.RUNTIME)) as conn:
-    seed_issuer_identity(conn, load_issuer_identity(Path("config/identity/aparinds.yaml")))'
+    seed_issuer_identity(conn, load_issuer_identity(Path("config/companies/identity/aparinds.yaml")))'
 for quarter_end in FY26_Q2:2025-09-30 FY26_Q3:2025-12-31 FY26_Q4:2026-03-31 FY27_Q1:2026-06-30; do
   quarter=${quarter_end%%:*} ingested=0
-  fundamentals evidence ingest --retrieval-manifest "$APAR/retrieval-manifest-v2.json" \
+  eqos evidence ingest --retrieval-manifest "$APAR/retrieval-manifest-v2.json" \
     --issuer APARINDS --quarter "$quarter" --period-end "${quarter_end#*:}" --basis consolidated \
     --raw-root "$ROOT/inputs" --snapshot-root "$ROOT/snap" --member xbrl=xbrl-consolidated \
-    --member pdf=results --issuer-config "config/aparinds-$(echo "$quarter" | tr 'A-Z_' 'a-z-').yaml" \
+    --member pdf=results --issuer-config "config/runs/aparinds-$(echo "$quarter" | tr 'A-Z_' 'a-z-').yaml" \
     >/dev/null || ingested=$?
   # Bindings need only the registered originals: other quarters may be INCOMPLETE (4).
   [ "$ingested" = 0 ] || { [ "$quarter" != FY26_Q2 ] && [ "$ingested" = 4 ]; } ||
     die "evidence ingest $quarter exit $ingested"
 done
 compared=0
-fundamentals compare run --entity APARINDS --period-end 2025-09-30 --basis consolidated >/dev/null ||
+eqos compare run --entity APARINDS --period-end 2025-09-30 --basis consolidated >/dev/null ||
   compared=$?
 [ "$compared" = 0 ] || [ "$compared" = 3 ] || die "compare run exit $compared"
-fundamentals legacy preflight --manifest "$M" --out "$ROOT/preflight.yaml" >/dev/null
+eqos legacy preflight --manifest "$M" --out "$ROOT/preflight.yaml" >/dev/null
 approve "$ROOT/preflight.yaml"
-fundamentals legacy import --manifest "$M" --preflight "$ROOT/preflight.yaml" >/dev/null
-fundamentals legacy reconcile --manifest "$M" --out "$ROOT/reconciliation.yaml" >/dev/null
+eqos legacy import --manifest "$M" --preflight "$ROOT/preflight.yaml" >/dev/null
+eqos legacy reconcile --manifest "$M" --out "$ROOT/reconciliation.yaml" >/dev/null
 cp "$ROOT/reconciliation.yaml" "$ROOT/reconciliation.payload"
 approve "$ROOT/reconciliation.yaml"
-legacy() { fundamentals legacy "$1" --manifest "$M" --report "$ROOT/reconciliation.yaml" >/dev/null; }
+legacy() { eqos legacy "$1" --manifest "$M" --report "$ROOT/reconciliation.yaml" >/dev/null; }
 legacy cutover
 legacy rollback
-fundamentals legacy status --manifest "$M" | grep -q ROLLED_BACK || die "status after rollback"
-fundamentals legacy reconcile --manifest "$M" --out "$ROOT/reconcile-again.yaml" >/dev/null
+eqos legacy status --manifest "$M" | grep -q ROLLED_BACK || die "status after rollback"
+eqos legacy reconcile --manifest "$M" --out "$ROOT/reconcile-again.yaml" >/dev/null
 cmp -s "$ROOT/reconcile-again.yaml" "$ROOT/reconciliation.payload" || die "re-reconcile differs"
 legacy cutover
 legacy reopen
-# `fundamentals run` is not rehearsed here: a shell run of Q2 FY26 refuses sources registered
+# `eqos run` is not rehearsed here: a shell run of Q2 FY26 refuses sources registered
 # after the quarter's knowledge cutoff (the committed approved-intake proof records exactly that
 # refusal), and this script never synthesizes possession evidence. Step 6's e2e covers the run.
 [ "$(sha data/store/aparinds.sqlite)" = "$LEGACY_SHA" ] || die "production SQLite changed"
@@ -202,8 +202,8 @@ say "rehearsal passed on $D"
 
 # 3-5. Identical deterministic inventory across down/up.
 inventory() {
-  fundamentals legacy reconcile --manifest "$M" --out "$ROOT/R$1.yaml" >/dev/null
-  fundamentals db backup --out "$ROOT/B$1" --snapshot-root "$ROOT/snap" | cut -f2
+  eqos legacy reconcile --manifest "$M" --out "$ROOT/R$1.yaml" >/dev/null
+  eqos db backup --out "$ROOT/B$1" --snapshot-root "$ROOT/snap" | cut -f2
 }
 B1=$(inventory 1)
 dc "$P" down >/dev/null || die "down $P"
@@ -217,14 +217,14 @@ assert (a["table_counts"], a["captures"]) == (b["table_counts"], b["captures"])'
 say "inventory identical across down/up"
 
 # 6. The e2e on this instance (harness main database eqos_stage2_main).
-in_env "$P" uv run pytest -q -p no:cacheprovider tests/fundamentals/test_data_stage2_e2e.py >&2
+in_env "$P" uv run pytest -q -p no:cacheprovider tests/equity_os/interface/workflows/test_data_stage2_e2e.py >&2
 
 # 7. Fresh instance: restore B1 with replay.
 say "up $F on 127.0.0.1:$FRESH_PORT"
 up "$F" "$FRESH_PORT"
-in_env "$F" uv run fundamentals db bootstrap >/dev/null  # group roles and the purge login
+in_env "$F" uv run eqos db bootstrap >/dev/null  # group roles and the purge login
 mkdir -m 700 "$ROOT/snap-fresh"  # empty; the store anchors an existing root under its owner
-in_env "$F" uv run fundamentals db restore --set "$B1" --database "eqos_test_fresh_$(hex 6)" \
+in_env "$F" uv run eqos db restore --set "$B1" --database "eqos_test_fresh_$(hex 6)" \
   --snapshot-root "$ROOT/snap-fresh" --live-snapshot-root "$ROOT/snap" --replay-runs >/dev/null ||
   die "fresh-instance restore"
 [ -z "$PAYLOAD_OUT" ] || cp -- "$ROOT/reconciliation.payload" "$PAYLOAD_OUT"

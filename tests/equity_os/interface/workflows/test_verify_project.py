@@ -1,0 +1,166 @@
+"""Project-verifier dispatch/control-flow proof, never phase acceptance evidence."""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+EXIT_TARGETS = (
+    ("D1a", "verification/comparison/test_compare_tracer.py"),
+    ("D1b", "interface/workflows/test_data_stage1_e2e.py"),
+    ("D2", "interface/workflows/test_data_stage2_e2e.py"),
+    ("D3", "interface/workflows/test_ledger_stage1_e2e.py"),
+    ("D3 export", "publication/approval/test_ledger_export.py"),
+    ("D4", "interface/workflows/test_ledger_stage2_e2e.py"),
+    ("D5", "interface/workflows/test_ledger_stage3_e2e.py"),
+    ("D6", "interface/workflows/test_data_stage4_e2e.py"),
+    ("D7", "interface/workflows/test_ledger_stage4_e2e.py"),
+    ("D8", "interface/workflows/test_data_stage3_e2e.py"),
+    ("D9", "interface/workflows/test_ledger_stage5_e2e.py"),
+    ("Frozen manifests", "interface/workflows/test_frozen_manifests.py"),
+    ("Amendment records", "interface/workflows/test_amendment_records.py"),
+)
+
+
+@pytest.fixture
+def verifier(tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    original = REPO_ROOT / "scripts/verify_project.sh"
+    assert original.is_file(), "the project verification command has not been built"
+    script = scripts / original.name
+    script.write_bytes(original.read_bytes())
+    script.chmod(original.stat().st_mode)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "calls.jsonl"
+    shim = bin_dir / "uv"
+    shim.write_text(
+        f"#!{sys.executable}\n"
+        "import json, os, sys\n"
+        "with open(os.environ['VERIFIER_TEST_CALLS'], 'a') as output:\n"
+        "    output.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "failed = json.loads(os.environ.get('VERIFIER_TEST_FAILURES', '[]'))\n"
+        "sys.exit(7 if sys.argv[1:] in failed else 0)\n"
+    )
+    shim.chmod(0o755)
+    environment = {
+        **os.environ,
+        "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+        "VERIFIER_TEST_CALLS": str(calls),
+    }
+    return script, environment, calls
+
+
+def _build_targets(script: Path) -> None:
+    test_dir = script.parent.parent / "tests/equity_os"
+    test_dir.mkdir(parents=True)
+    for _, name in EXIT_TARGETS:
+        (test_dir / name).parent.mkdir(parents=True, exist_ok=True)
+        (test_dir / name).touch()
+
+
+def _run(
+    verifier: tuple[Path, dict[str, str], Path],
+) -> tuple[subprocess.CompletedProcess[str], list]:
+    script, environment, calls = verifier
+    result = subprocess.run(
+        [str(script)], env=environment, capture_output=True, text=True, check=False
+    )
+    return result, [json.loads(line) for line in calls.read_text().splitlines()]
+
+
+def _statuses(result: subprocess.CompletedProcess[str]) -> dict[str, str]:
+    return {
+        line.split(" | ")[0]: line.split(" | ")[1]
+        for line in result.stdout.splitlines()
+        if " | " in line
+    }
+
+
+def test_missing_parts_are_named_not_built_and_fail_closed(verifier) -> None:
+    result, calls = _run(verifier)
+
+    assert result.returncode == 1
+    statuses = _statuses(result)
+    for label, _ in EXIT_TARGETS:
+        assert statuses[label] == "NOT BUILT"
+    assert statuses["Pilot"] == "NOT BUILT"
+    assert len(calls) == 5
+    assert all(statuses[label] == "PASS" for label in ("Pytest", "Mypy", "Ruff", "Ruff format"))
+
+
+def test_failed_parts_do_not_stop_remaining_exits_or_quality_gates(verifier) -> None:
+    script, environment, _ = verifier
+    _build_targets(script)
+    environment["VERIFIER_TEST_FAILURES"] = json.dumps(
+        [
+            ["run", "pytest", "tests/equity_os/verification/comparison/test_compare_tracer.py"],
+            ["run", "pytest", "tests/equity_os"],
+        ]
+    )
+
+    result, calls = _run(verifier)
+
+    assert result.returncode == 1
+    statuses = _statuses(result)
+    assert statuses["D1a"] == "FAIL"
+    assert statuses["Pytest"] == "FAIL"
+    assert statuses["D9"] == "PASS"
+    assert statuses["Amendment records"] == "PASS"
+    assert statuses["Ruff format"] == "PASS"
+    assert calls[-1] == ["run", "eqos", "db", "check-live"]
+
+
+def test_dispatch_uses_authoritative_targets_without_pg_or_retained_exclusions(verifier) -> None:
+    script, _, _ = verifier
+    _build_targets(script)
+
+    result, calls = _run(verifier)
+
+    assert calls == [["run", "pytest", f"tests/equity_os/{name}"] for _, name in EXIT_TARGETS] + [
+        ["run", "pytest", "tests/equity_os"],
+        ["run", "mypy", "--strict", "equity_os"],
+        ["run", "ruff", "check", "equity_os", "tests/equity_os"],
+        ["run", "ruff", "format", "--check", "equity_os", "tests/equity_os"],
+        ["run", "eqos", "db", "check-live"],
+    ]
+    assert result.returncode == 1
+    assert _statuses(result)["Pilot"] == "NOT BUILT"
+
+
+def test_built_pilot_with_every_part_passing_returns_zero(verifier) -> None:
+    script, _, _ = verifier
+    _build_targets(script)
+    # The registered pilot exit (PREP-7 Decision 8) exists only in this isolated copy.
+    (script.parent.parent / "tests/equity_os/interface/workflows/test_pilot_e2e.py").touch()
+
+    result, calls = _run(verifier)
+
+    assert result.returncode == 0
+    assert set(_statuses(result).values()) == {"PASS"}
+    assert ["run", "pytest", "tests/equity_os/interface/workflows/test_pilot_e2e.py"] in calls
+
+
+def test_present_phase_does_not_make_required_missing_export_pass(verifier) -> None:
+    script, _, _ = verifier
+    _build_targets(script)
+    (script.parent.parent / "tests/equity_os/publication/approval/test_ledger_export.py").unlink()
+
+    result, calls = _run(verifier)
+
+    assert result.returncode == 1
+    statuses = _statuses(result)
+    assert statuses["D3"] == "PASS"
+    assert statuses["D3 export"] == "NOT BUILT"
+    assert [
+        "run",
+        "pytest",
+        "tests/equity_os/publication/approval/test_ledger_export.py",
+    ] not in calls

@@ -68,9 +68,9 @@ capture_dirs() {
 # Authoritative commands: .claude/project/verification.md. Keep them identical
 # there and here — a gate that lints a different scope than the project claims
 # is a gate that lies.
-readonly SRC_SCOPE="src"
-readonly TEST_SCOPE="tests/fundamentals"
-readonly COV_SCOPE="src/fundamentals"
+readonly SRC_SCOPE="equity_os"
+readonly TEST_SCOPE="tests/equity_os"
+readonly COV_SCOPE="equity_os"
 
 # The full suite runs on xdist workers, one test file per worker so module
 # fixtures are built once. tmp_path lives outside /tmp and outside any checkout: the

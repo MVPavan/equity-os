@@ -7,7 +7,7 @@ set -uo pipefail
 
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # The pilot exit fixed by docs/plans/PREP-7.md (Decision 8); NOT BUILT until eqos-4j2.8 lands it.
-readonly PILOT_TARGET="tests/fundamentals/test_pilot_e2e.py"
+readonly PILOT_TARGET="tests/equity_os/interface/workflows/test_pilot_e2e.py"
 
 if [ "$#" -ne 0 ]; then
   printf 'usage: scripts/verify_project.sh\n' >&2
@@ -49,28 +49,28 @@ run_test() {
 }
 
 # Explicit required slots prevent unbuilt phases disappearing through discovery.
-run_test "D1a" "tests/fundamentals/test_compare_tracer.py"
-run_test "D1b" "tests/fundamentals/test_data_stage1_e2e.py"
-run_test "D2" "tests/fundamentals/test_data_stage2_e2e.py"
-run_test "D3" "tests/fundamentals/test_ledger_stage1_e2e.py"
-run_test "D3 export" "tests/fundamentals/test_ledger_export.py"
-run_test "D4" "tests/fundamentals/test_ledger_stage2_e2e.py"
-run_test "D5" "tests/fundamentals/test_ledger_stage3_e2e.py"
-run_test "D6" "tests/fundamentals/test_data_stage4_e2e.py"
-run_test "D7" "tests/fundamentals/test_ledger_stage4_e2e.py"
-run_test "D8" "tests/fundamentals/test_data_stage3_e2e.py"
-run_test "D9" "tests/fundamentals/test_ledger_stage5_e2e.py"
-run_test "Frozen manifests" "tests/fundamentals/test_frozen_manifests.py"
-run_test "Amendment records" "tests/fundamentals/test_amendment_records.py"
+run_test "D1a" "tests/equity_os/verification/comparison/test_compare_tracer.py"
+run_test "D1b" "tests/equity_os/interface/workflows/test_data_stage1_e2e.py"
+run_test "D2" "tests/equity_os/interface/workflows/test_data_stage2_e2e.py"
+run_test "D3" "tests/equity_os/interface/workflows/test_ledger_stage1_e2e.py"
+run_test "D3 export" "tests/equity_os/publication/approval/test_ledger_export.py"
+run_test "D4" "tests/equity_os/interface/workflows/test_ledger_stage2_e2e.py"
+run_test "D5" "tests/equity_os/interface/workflows/test_ledger_stage3_e2e.py"
+run_test "D6" "tests/equity_os/interface/workflows/test_data_stage4_e2e.py"
+run_test "D7" "tests/equity_os/interface/workflows/test_ledger_stage4_e2e.py"
+run_test "D8" "tests/equity_os/interface/workflows/test_data_stage3_e2e.py"
+run_test "D9" "tests/equity_os/interface/workflows/test_ledger_stage5_e2e.py"
+run_test "Frozen manifests" "tests/equity_os/interface/workflows/test_frozen_manifests.py"
+run_test "Amendment records" "tests/equity_os/interface/workflows/test_amendment_records.py"
 run_test "Pilot" "${PILOT_TARGET}"
 
 # Authoritative full scope: .codex/project/verification.md. No PG/retained exclusions.
-run_command "Pytest" uv run pytest tests/fundamentals
-run_command "Mypy" uv run mypy --strict src
-run_command "Ruff" uv run ruff check src tests/fundamentals
-run_command "Ruff format" uv run ruff format --check src tests/fundamentals
+run_command "Pytest" uv run pytest tests/equity_os
+run_command "Mypy" uv run mypy --strict equity_os
+run_command "Ruff" uv run ruff check equity_os tests/equity_os
+run_command "Ruff format" uv run ruff format --check equity_os tests/equity_os
 # Live DB (bead eqos-px2): tests above use only eqos_test_* databases; this reads EQOS_PG_DB.
-run_command "Live DB" uv run fundamentals db check-live
+run_command "Live DB" uv run eqos db check-live
 
 if [ "${failed}" -ne 0 ] || [ "${not_built}" -ne 0 ]; then
   printf 'Project incomplete: %s failed, %s not built.\n' "${failed}" "${not_built}"

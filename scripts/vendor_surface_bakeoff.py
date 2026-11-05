@@ -13,16 +13,16 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, SecretStr
 
-from fundamentals.canon.dictionary import load_dictionary
-from fundamentals.ingest.screener_session_models import Basis
-from fundamentals.ingest.vendor_surface_cells import LabelSample, label_samples
-from fundamentals.ingest.vendor_surface_claims import SYSTEM as SPAN_SYSTEM
-from fundamentals.ingest.vendor_surface_claims import source_text, validate_spans
-from fundamentals.ingest.vendor_surface_fetch import Site
-from fundamentals.ingest.vendor_surface_labels import SYSTEM as LABEL_SYSTEM
-from fundamentals.ingest.vendor_surface_labels import accept
-from fundamentals.ingest.vendor_surface_model import ChatCompletionsModel, LabelModel
-from fundamentals.ingest.vendor_surface_parse import PARSERS, Body, ParseContext
+from equity_os.extraction.model.vendor_surface_claims import SYSTEM as SPAN_SYSTEM
+from equity_os.extraction.model.vendor_surface_claims import source_text, validate_spans
+from equity_os.extraction.model.vendor_surface_labels import SYSTEM as LABEL_SYSTEM
+from equity_os.extraction.model.vendor_surface_labels import accept
+from equity_os.extraction.model.vendor_surface_model import ChatCompletionsModel, LabelModel
+from equity_os.extraction.surfaces.vendor_surface_cells import LabelSample, label_samples
+from equity_os.extraction.surfaces.vendor_surface_parse import PARSERS, Body, ParseContext
+from equity_os.extraction.vendors.screener.screener_session_models import Basis
+from equity_os.normalisation.dictionary.dictionary import load_dictionary
+from equity_os.sourcing.surfaces.vendor_surface_fetch import Site
 
 
 class LabelScore(BaseModel):
@@ -72,8 +72,8 @@ Passage = tuple[str, int, str]
 def inputs() -> tuple[list[dict[str, Any]], list[LabelSample], list[Passage], set[SpanKey]]:
     """Read hash-verified references; build label evidence as cell_labels does, without a
     database, and cut each keyed region out of its normalised source."""
-    keys = yaml.safe_load(Path("config/vendor_surface/label_key.yaml").read_text())
-    regions = yaml.safe_load(Path("config/vendor_surface/span_key.yaml").read_text())
+    keys = yaml.safe_load(Path("config/sourcing/vendor_surface/label_key.yaml").read_text())
+    regions = yaml.safe_load(Path("config/sourcing/vendor_surface/span_key.yaml").read_text())
     captures = {r["capture"] for r in regions}
     index = []
     for name in ("kinds-index.json", "snapshots-index.json"):
@@ -146,7 +146,7 @@ def inputs() -> tuple[list[dict[str, Any]], list[LabelSample], list[Passage], se
 def evaluate(candidates: Sequence[tuple[LabelModel, Decimal, Decimal]]) -> str:
     """Score accepted answers and aggregate token costs in currency per million tokens."""
     keys, samples, passages, expected = inputs()
-    dictionary = load_dictionary(Path("config/dictionary"), "v3")
+    dictionary = load_dictionary(Path("config/normalisation/dictionary"), "v3")
     fields = {r.canonical_id: r.value_kind for r in dictionary.rows}
     key = [r["field"] for r in keys]
     baseline = score_labels([None] * len(key), key)
