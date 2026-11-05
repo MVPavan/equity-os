@@ -17,20 +17,20 @@ health gate is **structural** — do not invent commands.
 
 ## Fundamentals product (`pyproject.toml` at repo root)
 
-The `fundamentals` uv project (Python 3.12+) landed with Slice 0. Its gate:
+The `equity-os` uv project (Python 3.12+; package `equity_os/`, commands `eqos` and `eqos-operator`) landed with Slice 0 as `fundamentals` and was renamed by RESTRUCTURE-1. Its gate:
 
 - `uv sync`
-- `uv run ruff check src tests/fundamentals` and
-  `uv run ruff format --check src tests/fundamentals`
-- `uv run mypy --strict src`
-- `uv run pytest tests/fundamentals -n 24 --dist loadfile` (xdist, 24 workers: owner 2026-11-05, use the CPUs; the gate also sets
+- `uv run ruff check equity_os tests/equity_os` and
+  `uv run ruff format --check equity_os tests/equity_os`
+- `uv run mypy --strict equity_os`
+- `uv run pytest tests/equity_os -n 24 --dist loadfile` (xdist, 24 workers: owner 2026-11-05, use the CPUs; the gate also sets
   `PYTEST_DEBUG_TEMPROOT` outside `/tmp` — see `scripts/verify.sh` `suite_pytest`)
 
 Scope ruff/pytest to owned paths: a bare `uv run ruff check` / `uv run pytest`
-also scans pre-existing non-`fundamentals` files (`.codex/`, `scripts/`, and
+also scans pre-existing non-product files (`.codex/`, `scripts/`, and
 the `equity_os_blueprint` ledger tests, which have a known content hash-drift
 failure) that are outside this product's scope. The structural gate above still
-applies to non-Python and non-`fundamentals` changes.
+applies to non-Python and non-product changes.
 
 `scripts/verify.sh gate <slice>` runs exactly these four commands plus the
 red-proof, skip-guard, diff-coverage, and security-rail checks, and prints a
@@ -56,10 +56,10 @@ Two pytest markers gate what the suite needs beyond the checkout:
 A missing service, incomplete settings, a missing original or a hash mismatch **fails** the
 test; nothing skips. The only opt-outs are `-m "not pg"` and `-m "not retained"` — say so
 when reporting a run that used them, because the D1a Verify cells require both green.
-`uv run pytest tests/fundamentals` and `scripts/verify.sh gate` therefore need the compose
+`uv run pytest tests/equity_os` and `scripts/verify.sh gate` therefore need the compose
 service up.
 
-`uv run fundamentals db check-live` (the `Live DB` row of `scripts/verify_project.sh`) is the
+`uv run eqos db check-live` (the `Live DB` row of `scripts/verify_project.sh`) is the
 read-only live check: it fails naming the check unless `EQOS_PG_DB` (never `eqos_test_*`) has every
 migration recorded with its sha256, the APARINDS fiscal setting and an `OPEN` legacy store.
 
@@ -74,12 +74,12 @@ rehearses runbook steps 6–9 on copies (step 10's report run is covered by the 
 ### Panel and owner credentials (D3)
 
 `0012_report_ledger.sql` grants to two NOLOGIN group roles, `eqos_panel` and `eqos_owner`, which
-`fundamentals db bootstrap` creates if missing (run it before `db migrate` applies 0012). Ledger
+`eqos db bootstrap` creates if missing (run it before `db migrate` applies 0012). Ledger
 commands, `compare queue dispose` and `db bootstrap` read the member logins from 0600 files
 outside every runtime config, in `${EQOS_SECRETS_DIR:-~/.secrets}`: `eqos_panel.login` and
 `eqos_owner.login`, each one line
 `<login>:<password>` (login `[a-z_][a-z0-9_]*`; the file owned by you, no group or other
-permission bits). After creating them, re-run `fundamentals db bootstrap` to create the logins;
+permission bits). After creating them, re-run `eqos db bootstrap` to create the logins;
 a missing file skips that login and refuses only the commands that need it. Tests create their
 own randomized logins and files in a temporary directory and never read `~/.secrets`.
 

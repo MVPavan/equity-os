@@ -23,9 +23,10 @@ commitments, calculations, uncertainties, and thesis.
 - **Phase 0A gate cleared** (bead eqos-3ps closed 2026-08-21); Phase 0.5 product
   code is authorized and shipping. Beads, not this brief, are the source of
   truth for gate and task status.
-- **Code:** ~58k lines under `src/fundamentals/` (`ingest`, `store`, `extract`,
-  `reconcile`, `thesis`, `news`, `output`, `verify`, `entity`, `api`, `contracts`)
-  with tests under `tests/`. Sources: NSE/BSE filings, Screener, Tijori, Upstox.
+- **Code:** ~109k lines under `equity_os/` in 11 buckets (`contracts`, `storage`, `coverage`,
+  `companies`, `sourcing`, `extraction`, `normalisation`, `verification`, `analysis`,
+  `publication`, `interface`), each with a README; tests under `tests/equity_os/`. Sources:
+  `config/sourcing/sources.yaml`.
 - **Pilot company:** Apar Industries (epic eqos-4j2), not INFY.
 - **Product verdict:** `PILOT_PROVEN: YES` (Apar pilot PASS 2026-10-22:
   `docs/evidence/pilot/report.md`), `CORE_RESEARCH_RELEASE: NO`,
@@ -42,8 +43,8 @@ commitments, calculations, uncertainties, and thesis.
 - Python 3.12+ managed with `uv`; Pydantic models; ruff / mypy --strict / pytest;
   structlog — matching `.claude/rules/python/`.
 - SQLite fact store plus append-only snapshot and protected source-intake stores
-  (`src/fundamentals/store/`). Parquet price panels are planned, not built.
-- The only direct LLM client is `src/fundamentals/thesis/claude_client.py`.
+  (`equity_os/storage/`). Parquet price panels are planned, not built.
+- The only direct LLM client is `equity_os/analysis/thesis_models/claude_client.py`.
 - Agent framework, memory engine (GBrain vs Git/Markdown/SQL), and quant
   tooling are still **deliberately undecided** (blueprint §9) — do not pick them
   implicitly.

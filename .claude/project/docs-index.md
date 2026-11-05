@@ -9,6 +9,7 @@ Authoritative docs and when to read them.
 | `docs/blueprint/funda-blueprint-final-consolidated-review.md` | Product/architecture rationale — approved direction, doctrine, first-release contract (§7); narrative only, does **not** override the v2 register |
 | `docs/blueprint/funda-third-order-review-disposition-report.md` | Why v2 says what it says — disposition of the third-order audit (accepted/modified/rejected findings, document strategy) |
 | `docs/blueprint/funda-blueprint-implementation-decision-register.md` | Superseded v1 register — historical reference only; use v2 |
+| `scripts/restructure/moves.tsv` | **Finding where an old path went.** RESTRUCTURE-1's move map: every pre-move path (the old `src/` package, flat `config/` files, the old test folder) and its place under `equity_os/`, `config/<bucket>/` or `tests/equity_os/`. Historical specs, plans and evidence keep the old paths; read them through this map |
 | `CONTEXT.md` | Naming anything — the domain glossary; use its terms, avoid its listed synonyms |
 | `.beads/beads.md` | Beads workflow, agent context profiles, session-completion protocol |
 | `.claude/project/brief.md` → `verification.md` → `invariants.md` | Orienting in a new session (standard read order) |

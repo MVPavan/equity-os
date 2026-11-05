@@ -1,0 +1,317 @@
+# Every source the code knows today, by source id. No product code reads this file.
+# tests/equity_os/contracts/sourcing/test_source_list.py holds it equal to the code's own registries:
+#   catalog        BUILTIN_SOURCES in equity_os/contracts/sourcing/source_catalog.py (class/evidence role)
+#   surfaces       VENDOR_SURFACES in the same module (surface: role of a result side)
+#   capture_specs  config/sourcing/vendor_surface/surfaces.yaml (raw-first vendor capture specs)
+#   routes         ROUTES in equity_os/sourcing/vendors/upstox/upstox_source.py
+# A source with no `catalog` key is not in BUILTIN_SOURCES; describing it there raises UnknownSourceError.
+#
+# role, assigned from those declarations:
+#   first-party         issuer or exchange data; catalog class first_party, or exchange identity surfaces
+#   vendor cross-check  derived aggregator whose values are compared with first-party values
+#   diagnostic          read or retained, never a vote (catalog diagnostic_only, or SourceRole DIAGNOSTIC)
+#   reference           not evidence of a value: news metadata, owner config, internal stores, definitions
+# status: active = code acquires or reads it today; planned = named by the owner, no code yet.
+#
+# config_declared: per-issuer sources declared in config/sourcing/fundamentals.yaml blocks and added to
+# the catalog at the composition root; their ids are issuer-specific, so the blocks are listed instead.
+
+sources:
+- id: bse-xbrl
+  role: first-party
+  status: active
+  catalog: first_party/reconcilable
+- id: bse-summary
+  role: first-party
+  status: active
+  catalog: first_party/reconcilable
+- id: bse-results-pdf
+  role: first-party
+  status: active
+  catalog: first_party/reconcilable
+- id: nse-indas-xbrl-consolidated
+  role: first-party
+  status: active
+  catalog: first_party/reconcilable
+  surfaces:
+    NSE_XBRL_INSTANCE: first_party
+- id: nse-shareholding-xbrl
+  role: first-party
+  status: active
+  catalog: first_party/reconcilable
+  surfaces:
+    NSE_SHP_XBRL: first_party
+- id: bse-announcements
+  role: first-party
+  status: active
+  note: namespace; one id per announcement
+  catalog: first_party/reconcilable
+- id: nse-announcements
+  role: first-party
+  status: active
+  note: namespace; one id per announcement
+  catalog: first_party/reconcilable
+- id: sec-edgar-
+  role: first-party
+  status: active
+  note: namespace; one retrospective annual cross-check adapter
+  catalog: first_party/reconcilable
+- id: nse
+  role: first-party
+  status: active
+  note: 'exchange listings, master and taxonomy: identity surfaces, never interpreted'
+  surfaces:
+    EQUITY_L: identity
+    FINANCIAL_RESULTS_LISTING: identity
+    INTEGRATED_FILING_LISTING: identity
+    SHAREHOLDING_LISTING: identity
+    SHP_TAXONOMY: identity
+    ANNOUNCEMENTS_LISTING: identity
+    BOARD_MEETINGS_LISTING: identity
+    ANNUAL_REPORTS_LISTING: identity
+- id: bse
+  role: first-party
+  status: active
+  note: 'peer search: an identity surface, never interpreted'
+  surfaces:
+    PEER_SMART_SEARCH: identity
+- id: nse-documents
+  role: diagnostic
+  status: active
+  note: first-party documents retained, never interpreted
+  catalog: first_party/diagnostic_only
+  surfaces:
+    NSE_TRANSCRIPT: identity
+    NSE_PRESENTATION: identity
+    NSE_ANNUAL_REPORT: identity
+    NSE_CREDIT_RATING: identity
+    NSE_RESULTS: identity
+- id: bse-documents
+  role: diagnostic
+  status: active
+  note: first-party documents retained, never interpreted
+  catalog: first_party/diagnostic_only
+  surfaces:
+    BSE_TRANSCRIPT: identity
+    BSE_PRESENTATION: identity
+    BSE_ANNUAL_REPORT: identity
+    BSE_CREDIT_RATING: identity
+    BSE_RESULTS: identity
+- id: upstox
+  role: diagnostic
+  status: active
+  note: not in BUILTIN_SOURCES on purpose, so a leak into reconciliation raises
+  surfaces:
+    income-statement: diagnostic
+    balance-sheet: diagnostic
+    cash-flow: diagnostic
+    key-ratios: diagnostic
+    instruments: identity
+    share-holdings: diagnostic
+  routes:
+  - instruments
+  - candles
+  - corporate-actions
+  - share-holdings
+  - holidays
+  - fii-dii
+  - income-statement
+  - balance-sheet
+  - cash-flow
+  - key-ratios
+- id: screener
+  role: vendor cross-check
+  status: active
+  catalog: derived/reconcilable
+  surfaces:
+    SCREENER_DOCS: identity
+- id: screener-subscriber
+  role: vendor cross-check
+  status: active
+  catalog: derived/reconcilable
+  surfaces:
+    SCREENER_FINANCIALS: independent_vendor
+    SCREENER_SCHEDULE: independent_vendor
+    SCREENER_SEARCH: identity
+    SCREEN_EXPORT: identity
+    SCREEN_DEFINITION: identity
+    SCREENER_SHAREHOLDING: independent_vendor
+    SCREENER_INVESTORS: independent_vendor
+  capture_specs:
+  - company-page
+  - chart-api
+  - section-documents
+  - company-trades
+  - company-announcements
+  - results-latest
+  - upcoming-results
+  - concalls-feed
+  - annual-reports-feed
+  - announcements-feed
+  - market-pulse
+  - corporate-actions-feed
+  - trades-feed
+  - ipo
+  - ratings-feed
+  - market-level
+  - index-page
+  - person-page
+  - screen-raw
+  - quick-ratios-api
+  - peers-api
+  - schedules-api
+  - investors-api
+  - segments-api
+  - forecasts
+  - related-party
+  - corporate-actions-modal
+  - commentary-modal
+  - company-compare
+  - company-search-api
+  - ratio-search-api
+  - explore
+  - screens-list
+  - screen-page
+  - sectors-filter-api
+  - market-overview
+  - people-search
+  - fii-page
+  - fii-api
+  - insider-summary
+  - product-prices
+  - hs-search-api
+  - commodity-page
+  - hs-data-api
+  - ratio-gallery
+  - user-public-profile
+  - capsule
+  - changelog
+  - features
+  - guides
+  - support
+  - sitemap
+  - robots
+- id: tijori
+  role: vendor cross-check
+  status: active
+  catalog: derived/reconcilable
+  surfaces:
+    financials: independent_vendor
+    company_search: identity
+    screen_results: identity
+    shareholding: independent_vendor
+    overview: independent_vendor
+    TIJORI_ANNUAL_REPORT: diagnostic
+    TIJORI_TRANSCRIPT: diagnostic
+    TIJORI_PRESENTATION: diagnostic
+    TIJORI_RESULTS: diagnostic
+  capture_specs:
+  - overview-company-filings
+  - overview-customers
+  - overview-suppliers
+  - overview-brands
+  - overview-connections
+  - shareholding-overview
+  - shareholding-trend
+  - quarterly-results-api
+  - upcoming-events-api
+  - raw-materials
+  - company-overview
+  - company-financials
+  - financials-popup-chart-api
+  - financial-statement-compare-api
+  - company-shareholding
+  - shareholding-detail-chart-api
+  - company-reports
+  - chartdata-price-api
+  - chartdata-valuation-api
+  - chartdata-median-pe-api
+  - capex-api
+  - debt-api
+  - fund-flow-api
+  - cash-flow-waterfall-api
+  - balance-sheet-snapshot-api
+  - op-metrics-api
+  - revenue-mix-history-api
+  - market-share-peer-companies-api
+  - company-timeline-api
+  - company-search-api
+  - financial-company-search-api
+  - universal-search-api
+  - search-page
+  - markets
+  - macro
+  - macro-chart-api
+  - sector-page
+  - sector-ms-chart-api
+  - sector-company-opm-api
+  - sector-area-chart-api
+  - index-data-api
+  - filter
+  - filter-popular-queries
+  - filter-popular-queries-api
+  - filter-public-queries
+  - filter-public-queries-api
+  - filter-field-catalog-api
+  - filter-advanced-search-api
+  - ideas-dashboard
+  - quarterly-results
+  - upcoming-events
+  - concall-monitor
+  - reports-store
+  - features
+  - faq
+  - whats-new
+  - sitemap
+  - robots
+  - llms-txt
+  - policy-pages
+  - markets-indices-widget-api
+- id: et-markets-rss
+  role: reference
+  status: active
+  note: namespace; news metadata only, declared derived in the catalog
+  catalog: derived/reconcilable
+- id: watchlist-config
+  role: reference
+  status: active
+  note: owner configuration, not evidence
+  catalog: derived/reconcilable
+- id: news-store
+  role: reference
+  status: active
+  note: internal store, not evidence
+  catalog: derived/reconcilable
+- id: sebi
+  role: reference
+  status: active
+  note: regulation text captured as a definitional reference
+  surfaces:
+    REGULATION_TEXT: identity
+
+config_declared:
+- block: results_pdf
+  role: first-party
+- block: transcript_pdf
+  role: first-party
+
+# The "online" category (equity_os/sourcing/online): named by the owner, no code. Not checked by the test.
+planned:
+- id: dws
+  category: online
+  status: planned
+  note: the owner's deep web search tool (.claude/project/tools.md); no product code calls it
+- id: web-search
+  category: online
+  status: planned
+- id: rating-agencies
+  category: online
+  status: planned
+- id: regulators
+  category: online
+  status: planned
+  note: beyond the one SEBI regulation text captured today
+- id: peer-offer-documents
+  category: online
+  status: planned
+  note: peers' offer documents

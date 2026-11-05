@@ -1,7 +1,6 @@
 # Repository Map
 
-Top-level layout and how to navigate. The repo is pre-code: harness + blueprint
-docs only.
+Top-level layout and how to navigate.
 
 | Path | What it is |
 |---|---|
@@ -12,9 +11,15 @@ docs only.
 | `.agents/` | bd-generated OpenAI-agent beads skill — not hand-maintained |
 | `CLAUDE.md` / `AGENTS.md` | Always-loaded entry points (harness-installed) |
 | `CONTEXT.md` | Domain glossary — use its terms in issues, docs, and code |
+| `equity_os/` | The product package in 11 buckets (`contracts`, `storage`, `coverage`, `companies`, `sourcing`, `extraction`, `normalisation`, `verification`, `analysis`, `publication`, `interface`). Every bucket and sub-bucket has a `README.md` saying what it handles; start there. Commands: `eqos`, `eqos-operator` |
+| `config/` | Product config, one folder per bucket (`config/<bucket>/...`); `config/runs/` holds per-run configs. `config/sourcing/sources.yaml` lists every source |
+| `tests/equity_os/` | Tests mirroring `equity_os/<bucket>/<sub-bucket>/`; shared helpers in `tests/equity_os/support/`. Fixtures stay at `tests/fundamentals/fixtures/` (frozen manifests name those paths) |
+| `migrations/` | Ordered PostgreSQL migrations |
+| `scripts/` | `verify.sh` (the gate), `verify_project.sh`, `render_dashboard.py`; `restructure/` holds the RESTRUCTURE-1 move map and script until the `research-4` replay |
 
-Not yet present (expected as work starts): first-party `src/`, `pyproject.toml`,
-tests, `docs/specs/`, `docs/workstreams/`, `scratchpad/`.
+Paths before RESTRUCTURE-1 (the old `src/` package, flat `config/` files, the old test folder) map to
+today's through `scripts/restructure/moves.tsv`; historical specs, plans and evidence keep the
+old paths.
 
 ## Orientation
 

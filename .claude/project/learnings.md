@@ -29,8 +29,8 @@ Format per entry:
 - Observed: extracting `RequestPacer` (eqos-zfu) gave `wait_for_slot` the
   signature `sleep: Callable[[float], None] = time.sleep`. Python evaluates a
   default at function-definition time, so the real `time.sleep` was captured at
-  import. `tests/fundamentals/test_screener_session.py` patches
-  `fundamentals.ingest.screener_session.time.sleep` — that patch mutates the
+  import. `tests/equity_os/extraction/vendors/screener/test_screener_session.py` patches
+  `equity_os.sourcing.vendors.screener.screener_session.time.sleep` — that patch mutates the
   shared `time` module and had worked for years, but it could not reach an
   already-bound default. The suite really slept 1.5 s and the spacing assertion
   failed (2.28 s run, down to 0.74 s after the fix).
@@ -265,16 +265,16 @@ Format per entry:
   and must be excluded from `concepts.cross_check` for that quarter with a comment.
 
 ## 2026-09-07 — Codex implementer sandbox and the full-suite gate
-- The Codex `--role implement` sandbox has no network, so `tests/fundamentals/test_sec.py`
+- The Codex `--role implement` sandbox has no network, so `tests/equity_os/sourcing/exchange/test_sec.py`
   reports 7 "SEC EDGAR unreachable" skips and `scripts/verify.sh gate` prints
   `skips FAIL 15 > baseline 8 / ROUTE: CONTRACT`. Tell the implementer up front that this
   exact signature is environmental; the orchestrator re-runs the gate with network before
   committing. Any other new skip is real.
 - The gate runs the whole suite, so a second slice's red acceptance file in
-  `tests/fundamentals/` pollutes the running implementer's gate. Record the red proof at the
+  `tests/equity_os/` pollutes the running implementer's gate. Record the red proof at the
   tree path (a few seconds), then park the file in `scratchpad/phase05/staged/` until that
   slice is dispatched; moving it back restores the proof hash. Test authors write to the
-  staged path directly and locate the repo root by walking up to `config/fundamentals.yaml`.
+  staged path directly and locate the repo root by walking up to `config/sourcing/fundamentals.yaml`.
 
 ## Live smoke before any one-shot live run  (2026-10-16)
 - Observed: D6 attempt 1 was frozen with every test green, then the live acquisition hit
@@ -329,7 +329,7 @@ Format per entry:
   lists tables, and the targeted suites were green.
 - Why it matters: the regressions surface only in the full suite, after the phase review.
 - Apply: a migration that adds a table also adds it to a family set in
-  `tests/fundamentals/ledger_support.py` (or its family's support module). Run the full suite
+  `tests/equity_os/support/ledger_support.py` (or its family's support module). Run the full suite
   before the phase review, not after it.
 
 ## Docker Desktop can bind the PG data dir to empty VM storage after a WSL restart  (2026-10-23)
@@ -410,3 +410,14 @@ Format per entry:
 - Observed: RESEARCH-3 S3's rehearsal passed with orchestrator-written verdicts on every draft. The first real panel rounds on ordinary drafts came in the live run, and all three FY26_Q2 drafts were rejected, permanently on the ledger.
 - Why it matters: a rehearsal proves the route, not that the output passes its reviewer. Rejections cost permanent versions and panel rounds.
 - Apply: when model output must pass a model reviewer before a permanent write, run real review rounds on a restored copy first, and state any stop rule before seeing the results.
+
+## A moved pinned file keeps its stored pin only through `MOVED_PINS`  (2026-11-05)
+- Observed: RESTRUCTURE-1 moved the files a source pin hashes, and the pin hashes each file's
+  path and bytes, so every moved pin got a new digest. `MOVED_PINS` in
+  `equity_os/verification/comparison/run_config.py` maps each moved digest to the digest already
+  stored (one row per version and source set), so stored runs and replays stay valid.
+- Why it matters: a row matches only those exact moved bytes at that version. Editing a pinned
+  file, or moving one again, gives a digest with no row and raises `VersionContentDriftError`.
+- Apply: never edit a pinned file to tidy it; bump its version instead, and delete that
+  version's `MOVED_PINS` row once nothing stored still needs it. A later move needs a new row,
+  generated and proved the same way (spec `docs/specs/2026-11-05-restructure.md` §1).

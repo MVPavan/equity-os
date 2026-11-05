@@ -75,7 +75,7 @@ _Avoid_: single source of truth (there are several, by role)
 
 **Watchlist (covered)**:
 The stocks the owner has chosen to cover with reports: an owner-only `ADD`/`REMOVE` decision with verbatim reason, sealed on a verified identity and a completed capture batch. Only watchlisted stocks get drafted reports; a new member's first report is a `BOOTSTRAP_THESIS` (amendment 1).
-_Avoid_: the universe registry (every listed stock, no coverage implied), captured stocks (data captured by a batch, not covered), `config/watchlist.yaml` (the data spec's comparison set)
+_Avoid_: the universe registry (every listed stock, no coverage implied), captured stocks (data captured by a batch, not covered), `config/coverage/watchlist.yaml` (the data spec's comparison set)
 
 **Onboarding outcome**:
 The result of onboarding a company from its identifier alone: `ONBOARDED` (run `COMPLETE`), `PARTIAL` (run `INCOMPLETE`, listing exactly the excluded verification units), `IDENTITY_CONFLICT` or `UNSUPPORTED`. `NOT_AUTHORISED` is a per-unit state, not an outcome. Defined in the D6 plan.

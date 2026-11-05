@@ -1,7 +1,7 @@
 # Verification
 
-The `fundamentals` uv project (`pyproject.toml` at the repo root) has a real test gate,
-below. The structural gate still applies to non-Python and non-`fundamentals` changes.
+The `equity-os` uv project (`pyproject.toml` at the repo root) has a real test gate,
+below. The structural gate still applies to non-Python and non-product changes.
 
 ## Structural gate (run what applies to your change)
 
@@ -21,10 +21,10 @@ below. The structural gate still applies to non-Python and non-`fundamentals` ch
 ## Fundamentals product (`pyproject.toml` at repo root)
 
 - `uv sync`
-- `uv run ruff check src tests/fundamentals` and
-  `uv run ruff format --check src tests/fundamentals`
-- `uv run mypy --strict src`
-- `uv run pytest tests/fundamentals`
+- `uv run ruff check equity_os tests/equity_os` and
+  `uv run ruff format --check equity_os tests/equity_os`
+- `uv run mypy --strict equity_os`
+- `uv run pytest tests/equity_os`
 
 Scope ruff/pytest to owned paths; `scripts/verify.sh gate <slice>` runs these four plus the
 pipeline checks. The authoritative copy is `.claude/project/verification.md`.
@@ -44,7 +44,7 @@ Two pytest markers gate what the suite needs beyond the checkout:
 A missing service, incomplete settings, a missing original or a hash mismatch **fails** the
 test; nothing skips. The only opt-outs are `-m "not pg"` and `-m "not retained"` — say so
 when reporting a run that used them, because the D1a Verify cells require both green.
-`uv run pytest tests/fundamentals` and `scripts/verify.sh gate` therefore need the compose
+`uv run pytest tests/equity_os` and `scripts/verify.sh gate` therefore need the compose
 service up.
 
 No completion claim without fresh evidence: run the command, read the output
