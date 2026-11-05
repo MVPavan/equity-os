@@ -1,7 +1,7 @@
 # RESEARCH-4 — Forward view — Spec
 
 **Status:** approved r6 (2026-11-03): approver gpt-6.1-sol, `APPROVE` on r5's re-review after its fresh closing review, and on r6's amendments with the S1 plan. Amendment: OD-9, §6.2 rule 3, §7.3's capture identity, S1 cases 1 and 4, §10 and the total estimate (§9, last row). The owner granted permissions A and B in §7.1 on 2026-11-04. No implementation, rehearsal or live result is established.
-**Amendment r7 (drafted 2026-11-05, not yet reviewed; r6 stands until gpt-6.1-sol approves it):** FY26 installed capacity, in §1, §3, §4, §6.2 (closed list, rules 3 and 4), §6.3 (rules 2 and 7), §8 S1, §9 and §10. No model line, block, migration or registry assumption changes.
+**Amendment r7 (drafted 2026-11-05, one review's findings fixed, not yet approved; r6 stands until gpt-6.1-sol approves it):** FY26 installed capacity as an as-printed disclosure, conditional on the meaning round, in §1, §3, §4, §6.2 (closed list, rules 3 and 4), §6.3 (rules 2 and 7), §7.2, §8 S1, §9 and §10. No model line, block, migration or registry assumption changes.
 **Origin:** bead `eqos-3v3w`; binding requirements `docs/specs/2026-10-27-research-3-thesis-analysis.md` §7; owner
 direction `docs/goals/2026-10-27-research-report-targets.md`.
 **Implementer:** Opus. **Boundaries:** E-01 stays deferred
@@ -87,7 +87,7 @@ it.
 | Capex plan, utilisation, volume and growth statements | FY26_Q4 transcript pp. 7, 10, 11, 15, 16 (blob `69aba177cad6`) | In the FY27_Q1 package through prior quotes (`run_draft.py:716`) |
 | Working-capital days statement | FY27_Q1 transcript p. 11 (blob `78a312c86f58`) | In the package |
 | Guidance quotes | `ledger.conductor_volume_growth.annual.consolidated`, `ledger.cables_revenue_growth.annual.consolidated`, `ledger.conductor_ebitda_per_mt.medium_term.consolidated`, `ledger.cables_ebitda_margin.annual.consolidated` | Claims in v23, already `MATCH` |
-| Absolute capacity | Amended 2026-11-05 after a wider search, quotes confirmed by code, meaning not yet reviewed. **V** Before the cutoff: the QIP placement document filed 29 Nov 2023 states capacity, production and utilisation by division to H1 FY24. FY24 and FY25 conductor and oil figures conflict across CARE and company statements. The corporate presentation filed 27 Jul 2026 (NSE, category `Updates`, so intake listed it and never fetched it; read from BSE's copy) states FY26 installed capacity for all three divisions, on text-layer pages 8-10. **V** NSE's and BSE's copies are the same bytes (blob `193aa8f298db`), and NSE's observation is 904, with no attempt yet. Not yet retained or reviewed for meaning (§6.3 rule 2). The deck names no plants, geography or product scope, and prints oil capacity in MT where oil volume is in KL. **Only FY26 is used.** FY21-FY23 oil capacity conflicts between the offer document and company decks, and those years enter nothing; the deck's FY26 oil figure equals the offer document's for those years, which the meaning round must weigh. No capacity after FY26 is established | **Stated for FY26; three closed-list ids (§6.2), not yet in a book** |
+| Absolute capacity | Amended 2026-11-05 after a wider search, quotes confirmed by code, meaning not yet reviewed. **V** Before the cutoff: the QIP placement document filed 29 Nov 2023 states capacity, production and utilisation by division to H1 FY24. FY24 and FY25 conductor and oil figures conflict across CARE and company statements. The corporate presentation filed 27 Jul 2026 (NSE, category `Updates`, so intake listed it and never fetched it; read from BSE's copy) states FY26 installed capacity for all three divisions, on text-layer pages 8-10. **V** NSE's and BSE's copies are the same bytes (blob `193aa8f298db`), and NSE's observation is 904, with no attempt yet. Not yet retained or reviewed for meaning (§6.3 rule 2). The deck names no plants, geography or product scope, and prints oil capacity in MT where oil volume is in KL. **Only FY26 is used.** FY21-FY23 oil capacity conflicts between the offer document and company decks, and those years enter nothing; the deck's FY26 oil figure equals the offer document's for those years, which the meaning round must weigh. No capacity after FY26 is established | **Stated for FY26; three candidate ids (§6.2), each entering the closed list only if the meaning round holds it; none yet in a book** |
 | Cable volumes | **V** The placement document states cable production in km to H1 FY24; nothing later found. The company said on its Q1 FY26 call that it does not report volume sold | **Missing** |
 | Unrestricted cash | **V** The FY25 notes state bank balance restrictions, with no restricted total. The FY26 annual report was filed 25 Aug 2026, after the cutoff | **Not established at the FY26 base date** (§5.5) |
 
@@ -130,7 +130,7 @@ Gold goal questions (`docs/goals/equity-os-product-completion-gold.md:13-17`), p
 | FY26 anchors: EBITDA, PPE, rates, cash | 1 | computed | `fcst.base.*`, `CALCULATION`: traces via `_Binder.evaluate`, `child`, `_total` (`run_traces.py:320-379`; `risk_probe.py:624-632`); identity traces through `conclude` |
 | Named disclosures, with quote | 1, 3 | observed (stated past), forecast (forward statement) | `fcst.d.*`, `SOURCE_QUOTE` |
 | Five-year revenue, EBITDA, margin, PAT; revenue by driver and bridge; unit economics; working capital and funding gap | 2, 5 | forecast; FY26 rows computed | `fcst.<scenario>.<line>.<period>`, **`PROJECTION`** |
-| Conductor and oil volume paths against FY26 installed capacity, held flat | 2, 5 | forecast beside observed; each label computed | No new claim and nothing in `compute`: the existing volume claims and `fcst.d.*`. Each year's volume renders `ABOVE` or `WITHIN`, picked by code from exact values, as "largest driver" and `INSIDE` are. A check recomputes the volumes and reads the capacity's span, not the label. No percentage is shown: a future year's would read as a utilisation forecast. Cables stay out, since cable volume sold is not reported |
+| Each admitted FY26 installed capacity, as printed | 2, 5 | observed, beside a forecast path | `fcst.d.*`, `SOURCE_QUOTE`, with its printed unit and quote, beside its division's existing volume row. No new kind of claim and nothing in `compute`. The reader compares: code draws no conclusion on whether a path exceeds capacity, and shows no label, percentage or utilisation |
 | Each assumption | 5 | opinion, always; its relation to guidance is a separate computed status | `fcst.a.<scope>.<id>.<y1,y5>`, `THESIS_CLAIM` on `assumption.…`; `scope` is `all` or the scenario |
 | Rationale per assumption | 2 | opinion | Book text, verbatim |
 | Scenario probabilities | 4, 5 | opinion | `fcst.p.<scenario>`, `THESIS_CLAIM` on `scenario.…` |
@@ -141,19 +141,22 @@ The thesis gains `assumption.*`, `scenario.*`, `trigger.*` (self-cited `POLICY`,
 `import_mapping.py:595-623`) and `disclosure.*` (`SOURCE_QUOTE`; `_cited` binds the capture,
 `ledger/importer.py:356-358`).
 
-**Not delivered, each rendered as `NOT_ASSESSED` naming its source:** a capacity or utilisation forecast (installed capacity is stated for FY26 only, and no later capacity is established, §1); cable volume split (volume sold is not reported); usable cash beyond cash and equivalents; competitive position (peers and industry
+**Not delivered, each rendered as `NOT_ASSESSED` naming its source:** capacity × utilisation (volume paths are assumptions, not built from these; installed capacity is stated for FY26 at most, and no later capacity is established, §1); any capacity id the meaning round refuses, naming the reason; cable volume split (volume sold is not reported); usable cash beyond cash and equivalents; competitive position (peers and industry
 missing, targets document:44-45); credibility adjustment (Apar's scored outcomes are `UNRESOLVED`, RESEARCH-3 §3);
 causes of past moves (RESEARCH-3 S3 closed unmet); prospective falsification (FY27_Q1 was known at sealing; §6.2, §10).
 
-**Stated prominently beside the headline, code-built:** the conductor and oil volume paths are shown against FY26
-installed capacity held flat; capacity after FY26 has not been established, so a path above that figure depends on
-delivery this view does not establish; and cable growth has no physical-volume decomposition.
+**Stated prominently beside the headline, code-built, once any capacity id is admitted:** future capacity delivery is
+not established, sold volume can differ from production capacity, and cable growth has no physical-volume
+decomposition. `capacity_delivery` stays a required watch item (§6.2). If the meaning round refuses all three ids, no code
+changes: the section keeps r6's sentence, that the volume paths depend on capacity delivery that has not been
+established and cable growth has no physical-volume decomposition, and no capacity row.
 
-**Stated beside the comparison, code-built:** it compares and forecasts neither capacity nor utilisation; volume is sold
-volume, not production; and the source states no plants, geography or product scope for capacity, so the two may differ
-in scope. Oil's row also says that the source prints MT and that the comparison reads the figure as KL, on the ruling of
-§6.3 rule 2. A division that ruling refuses renders `NOT_ASSESSED`, naming the reason, in place of its row. So does a
-missing capacity disclosure or volume path; neither fails a block.
+**Stated with the capacity rows, code-built:** each figure is as printed, for FY26 only, and is not compared with the
+path beside it; volume is sold volume, not production; and the source names no plants, geography or product scope for
+capacity. Where a printed unit differs from the unit of the volume path beside it, as oil's MT does from oil's KL, the
+row reads `NOT_COMPARABLE`, says the units differ and were not converted, and the report states no reading of the
+printed unit. Cable has no volume path, and its row says so. An admitted id with no confirmed disclosure renders
+`NOT_ASSESSED`, naming it, and no block fails. A refused id has no row; its reason is in the not-assessed list.
 
 ## 4. Inputs
 
@@ -170,7 +173,7 @@ is confirmed by Task 0. A missing input fails only its block (§5.6).
 | Other bank balances, excluded from funding | `fcst.base.other_bank`, identity trace | Line mapped | Row names it not available; no block fails |
 | Rate anchors | `fcst.base.da_rate_pct`, `.finance_rate_pct`, `.etr_pct`, `.payout_pct`, `.materials_pct`; display only, not model inputs (§5.7) | Lines mapped | Anchor shown as not available |
 | Division revenue, volume, EBITDA | `fcst.d.*`, `SOURCE_QUOTE` | Spans exist; claims new | Driver rows; `REVENUE` block |
-| FY26 installed capacity | `fcst.d.conductor_installed_capacity_fy26`, `.oil_installed_capacity_fy26`, `.cable_installed_capacity_fy26`, `SOURCE_QUOTE`; not model inputs | Spans exist; capture not retained | Comparison row `NOT_ASSESSED`; no block fails |
+| FY26 installed capacity, admitted ids only | `fcst.d.conductor_installed_capacity_fy26`, `.oil_installed_capacity_fy26`, `.cable_installed_capacity_fy26`, `SOURCE_QUOTE`; not model inputs | Spans exist; meaning round pending; capture not retained | Its row `NOT_ASSESSED`; no block fails |
 | Forward statements | Existing `ledger.*` claims; new `fcst.d.capex_fy27`, `.conductor_utilisation`, `.working_capital_days` | Mixed | Assumption shows no comparison |
 | Assumptions and probabilities | `fcst.a.*`, `fcst.p.*`, `THESIS_CLAIM` | **Missing:** a new thesis successor | Section `NOT_ASSESSED` |
 
@@ -429,8 +432,9 @@ disclosure's one value is both bounds) and renders `INSIDE`, `BELOW` or `ABOVE`;
      the quote or a `PERIOD` span holds the required period; the quote or `SUBJECT` and `UNIT` spans hold the closed
      list's subject and unit text. Where the closed list pins `cells_anchor`, `row_anchor` and `row_text`, the quote's
      anchor equals `cells_anchor` and a `SUBJECT` span at `row_anchor` holds `row_text` (`ROW_BINDING`), as for `TABLE`.
-     The capacity ids pin them: conductor and oil both print MT and no filed figure tells them apart, so one division's
-     quote could otherwise pass under another's id. `capex_fy27` pins none, so its behaviour does not change.
+     An admitted capacity id pins them: conductor and oil both print MT and no filed figure tells them apart, so one
+     division's quote could otherwise pass under another's id. `capex_fy27` pins none, so its behaviour does not change.
+     With no capacity id admitted, this branch is not added.
 4. **Cross-foot against filed figures**, tolerance one crore (the presentation rounds to crore): each division's
    revenue against its `segment_revenue` interpretation; the division table's total PAT against filed
    `profit_for_period`. Against each other: `EBITDA` against `EBITDA per unit × volume`. A forward statement, a
@@ -443,10 +447,11 @@ disclosure's one value is both bounds) and renders `INSIDE`, `BELOW` or `ABOVE`;
    of exactly that pinned observation's payload; never reselected from evolving intake, and labelled a source claim as
    the run's heading already states. Ordinary run: first-seen, through `check_blobs` as today.
 
-**Installed-capacity ids (r7), all `PROSE`, metadata only.** Each quote is the exact span that stops before any
-comparative year, so it holds one number; the span's `FY26` is its required period. `value_kind` is `COUNT`, so `KM`
-joins `_VOLUME_UNITS`. The contract states the unit as printed: a source is never corrected in the closed list, so oil's
-reading as KL lives only in the comparison's ruling and sentence (§3).
+**Installed-capacity ids (r7), candidates, all `PROSE`, metadata only.** An id enters the closed list only if the
+meaning round holds its statement (§6.3 rule 2); a refused id never enters, and a book naming it refuses (`CONTRACT`).
+Each quote is the exact span that stops before any comparative year, so it holds one number; the span's `FY26` is its
+required period. `value_kind` is `COUNT`, so `KM` joins `_VOLUME_UNITS` if the cable id is admitted. The contract states
+the unit as printed: a source is never corrected in the closed list, and no reading of oil's unit enters it.
 
 | Id | Contract: metric, scope, horizon, unit | `cells_anchor` | `row_anchor`, `row_text`, which is also `subject_text` |
 |---|---|---|---|
@@ -454,18 +459,24 @@ reading as KL lives only in the comparison's ruling and sentence (§3).
 | `oil_installed_capacity_fy26` | `installed_capacity`, `oil`, `FY26`, `MT` | `p9.b6.0:43` | `p9.b3.0:30`, `TRANSFORMER AND SPECIALTY OILS` |
 | `cable_installed_capacity_fy26` | `installed_capacity`, `cable`, `FY26`, `KM` | `p10.b6.0:38` | `p10.b3.0:6`, `CABLES` |
 
-`published.observation_id` is 904 for all three. **V** The anchors resolve through the loader on the deck's bytes, and
+`published.observation_id` is 904 for each admitted id. **V** The anchors resolve through the loader on the deck's bytes, and
 the three spans pass today's `_prose` unchanged; `validate_book` gains only the `ROW_BINDING` branch in rule 3. Rules 1,
 2, 5 and 6 apply as written. Rule 5 needs an `OK` attempt on the pinned observation, which is why the capture is retained
 from NSE's copy and not BSE's.
 
-**Retention must precede the seal.** **V** A capture's first-seen is the store clock at its registration
-(`src/fundamentals/entity/discovery.py`), and a thesis twin's cutoff is its `decided_on` (§7.2), which must be on or after it. Registering
-the deck on live at the live close, after the book's seal, would leave its first-seen after the sealed cutoff and fail
-live. So the deck is registered **once, on live, by the intake route, before the book is sealed**. This is an intake write
-of the kind the scheduled job makes, needs no 0046 and touches no ledger row. Every later restore then carries it, so the
-rehearsal and the live close need no retention step. The plan's Task 9c names the route. Fixing `eqos-3ndm` is separate:
-the attempt is already `OK` when that fix reaches this observation, so intake skips it.
+**Retention must precede the seal, if any id is admitted.** **V** A capture's first-seen is the store clock at its
+registration (`src/fundamentals/entity/discovery.py`), and a thesis twin's cutoff is `cutoff_instant(decided_on)` (§7.2),
+24:00 IST on that date, which is 18:30 UTC (`ledger/claim_check.py`). Registering the deck on live at the live close, after
+the book's seal, would leave its first-seen after the sealed cutoff and fail live. So the deck is registered **once, on
+live, by the intake route, before the book is sealed**, and only the bytes the meaning round read can commit (plan Task
+9c). This is an intake write of the kind the scheduled job makes, needs no 0046 and touches no ledger row. Every later
+restore then carries it, so the rehearsal and the live close need no retention step. Before any seal commit, code checks
+that the selected capture's first-seen is at or before `cutoff_instant(thesis_successor.cutoff)` (plan Task 10). A date
+alone does not settle this: a deck registered after 18:30 UTC cannot be sealed under that UTC date. Fixing `eqos-3ndm` is
+separate: the attempt is already `OK` when that fix reaches this observation, so intake skips it.
+
+**If the meaning round refuses all three,** the amendment costs no write and no code: the deck is not retained, the closed
+list and the code stay as at `0858fc89`, and S1 proceeds with capacity left `NOT_ASSESSED`.
 
 **Provenance survives citation.** Disclosures reach the run as `SOURCE_QUOTE` claims on the capture, not through
 `THESIS_CLAIM`, and the row renders the quote through `{{c:<key>|quote}}`. Assumption rows name their reference.
@@ -528,10 +539,13 @@ Rehearsal verdicts written by the orchestrator measured nothing. **Rules:**
    successor 2 (`config/ledger_import.yaml:20-29`). **The three capacity statements get their second-model check in a
    separate, earlier Sol round**, because its answer decides code, and code is gated before the book exists (plan Task
    9a). A refusal found only in the book round would cost a code change, a gate and a repeated book round. That round
-   rules, per statement, on unit, scale (Indian digit grouping), period and scope, and for conductor and oil on whether
-   the comparison of §3 stands. Its brief also holds the pre-cutoff first-party statements on rod counting and on oil's
-   unit, and the FY21-FY23 conflict as a question to weigh; none of those years' values enters the book. The book round
-   then checks that the sealed spans are the ones ruled on and does not reopen the ruling. Stored with its source and
+   rules `HOLDS` or `REFUSES`, per statement as printed, on unit, scale (Indian digit grouping), period and scope. `HOLDS`
+   admits the id as an as-printed disclosure and `REFUSES` keeps it out. Each is independent of any comparison, because
+   there is none. The round also records a reviewed note, with reviewer, evidence and date, of its view on oil's unit,
+   the repeated earlier figure and conductor's scope; the note does not reach the report. Its brief also holds the
+   pre-cutoff first-party statements on rod counting and on oil's unit, and the FY21-FY23 conflict as a question to weigh;
+   none of those years' values enters the book. The book round then checks that the sealed source, spans and contracts
+   are the ones ruled on, and reuses the ruling; if any differs, a fresh meaning round rules. Stored with its source and
    date and reused, per the extraction rule.
 3. **Report round on `eqos_test_r4`.** A faithful restore, 0046, the book's import, the FY27_Q1 run, then `ledger
    check`, `submit`, `panel` with a real Sol verdict on the export: readable as analysis; labels honest; assumption
@@ -609,9 +623,9 @@ a future year would need a synthetic measurement id (`0012_report_ledger.sql:88`
 Section `forward_view`, joining `DERIVED`, after `management_credibility` (`run_draft.py:397`). Rework then skips it;
 §7.6 gives its rejection route. Claims and citation kinds are in §3.
 
-**The twin's knowledge cutoff** is the new entry's `thesis_successor.cutoff` (`importer.py:315`), set to the book's
-`decided_on`, on or after the first-seen of every disclosure's capture. The book's `as_of` stays the bound on
-evidence.
+**The twin's knowledge cutoff** is `cutoff_instant` of the new entry's `thesis_successor.cutoff` (`importer.py:315`, `:344`),
+set to the book's `decided_on`. The first-seen of every disclosure's selected capture must be at or before that instant.
+The book's `as_of` stays the bound on evidence.
 
 **Pre-approval check.** Inside `_persist`'s transaction, after `create_version` and before the seal
 (`importer.py:321-324`), a twin with `forward` runs `validate_book` and `check_version` on the same cursor. `map_q0`
@@ -781,9 +795,9 @@ disclosures, thesis successor 1.3.0, `forward_view` with: headline; base-case ta
 unit economics by division; assumption table; rate anchors; the `NOT_ASSESSED` list.
 
 **Reader sees:** a code-built sentence stating the base-case revenue and PAT path, which driver contributes most and
-how much of it is volume against price, the margin path, the capacity and cable limits, each conductor and oil volume
-path against FY26 installed capacity, then each assumption labelled opinion, with its comparison to guidance, quote and
-FY26 anchor beside it.
+how much of it is volume against price, the margin path, the capacity and cable limits, each admitted FY26 installed
+capacity as printed beside its division's volume path, then each assumption labelled opinion, with its comparison to
+guidance, quote and FY26 anchor beside it.
 
 **Estimate (r5, historical; the current figures are in the total below).** About 780-950 production lines, 50 SQL, 370-480 test lines.
 
@@ -802,8 +816,8 @@ FY26 anchor beside it.
    negative cell quoted under a positive value** (signed cell, reached with all else valid); oil's row labelled conductor (segment cross-foot); unit KL under an MT metric (contract); a period label
    not matching the contract; a number absent from the quote; a quote not at its anchor; a presentation of another
    issuer (observation). `PROSE`: a quote holding two numbers; a statement of another target period; `lower_bound`, or
-   `columns` on a prose id (field set); **one division's capacity quote under another's id, values copied** (row
-   binding); a capacity span running on to its comparative year (two numbers). Valid controls pass: a prose statement of one number and its required period, with
+   `columns` on a prose id (field set); with any capacity id admitted, **one division's capacity quote under another's
+   id, values copied** (row binding), and a capacity span running on to its comparative year (two numbers). Valid controls pass: a prose statement of one number and its required period, with
    no column; a label in another block; two rows in one block; a `(Note 1)` label; column `Total` under its FY26 heading.
 5. Time: a disclosure of the 2026-10-29 presentation refuses, by publication against `as_of`, and FY27_Q2 appears
    nowhere in the rendered section's sources. `published.at` differing from the pinned observation refuses. A book
@@ -812,9 +826,13 @@ FY26 anchor beside it.
    annual claim; `thesis_impact`, `observable_falsifiers` and `risk_probe` equal their current heads' under §7.5's
    identity replacement.
 6. Fail closed: a missing `cwip` fails `PROFIT` and later blocks and emits no number for them, while revenue renders
-   and the version writes; a missing disclosure fails its block and names it. A missing capacity disclosure renders its
-   comparison row `NOT_ASSESSED`, and no block fails. A year above capacity renders `ABOVE` and one at it `WITHIN`, on
-   exact values, and no cable row appears.
+   and the version writes; a missing disclosure fails its block and names it. **Capacity, by the admitted set.** Any id
+   admitted: its row stands beside its division's volume path, a printed unit differing from the path's reads
+   `NOT_COMPARABLE` with no conversion, the capacity rows hold no label of a path against capacity, percentage or
+   utilisation, and a missing capacity disclosure renders `NOT_ASSESSED` while no block fails. Some refused: a refused id
+   refuses at `validate_book` (`CONTRACT`) and has no row, its reason is listed, and the admitted rows still render. All
+   refused: the closed list and code are `0858fc89`'s, the section holds no capacity row or claim, observation 904 has no
+   attempt, and `capacity_delivery` stays required.
 7. Book guards: a digit or number word in a rationale; "target price"; an unknown assumption id; an extra field
    `revenue_fy31`; a bound breach; bear above base; **`FY31 PAT is {{c:fcst.base.revenue.FY31|unit}} .`**, a valid
    `{{e:opinion}}` and a `{{s:…|…}}`, each in a rationale and in every other statement field. Each refuses at import
@@ -938,7 +956,7 @@ written (§2, §5.3). No question here is the owner's financial judgement; §7.1
 | r4-5 | A `PROJECTION` must equal the canonical rounded result exactly at row 5 | §7.3 step 5; §7.4 Tamper; §10 |
 | r4-6 | Loss-year dividend case follows the prior-year formula, both directions | S2 case 4 |
 | S1 plan review r1 (C-1 to C-6) | r6: OD-9; retained header order; column separate from period; row binding and signed cells; realisation conditional on Task 0; capture identity explicit | §6.2 rule 3; §7.3; S1 cases 1, 4; §8 total; §10 |
-| Capacity search, 2026-11-05 | r7: a filed deck states FY26 capacity, so "not delivered" and "stated prominently" were wrong; three ids; meaning round; a code-picked comparison; retention before the seal | §1, §3, §4, §6.2, §6.3; S1 cases 4, 6; §10 |
+| Capacity search, 2026-11-05 | r7: a filed deck states FY26 capacity; three candidate ids, each admitted by a meaning round; retention before the seal, checked against `cutoff_instant`. Review 1: comparison labels, percentage and any reading of oil's unit removed, so the reader compares as-printed figures; every step conditional on the admitted set | §1, §3, §4, §6.2, §6.3, §7.2; S1 cases 4, 6; §10 |
 
 ## 10. Notes for the plan
 
@@ -973,4 +991,4 @@ written (§2, §5.3). No question here is the owner's financial judgement; §7.1
 | `ledger/rework.py:233-249` | A branch for `fcst.*` keys (§7.6) |
 | `ledger/narrate.py:233` | Refuses a version holding any `fcst.` claim, before any model call (OD-9) |
 | `ledger/forward_model.py`, `ledger/forward.py` (new) | Pure model and `MODELS`, `OUTPUTS`; binding, `validate_book`, trigger evaluator, parity and code-built section |
-| r7, on `research-4` after `0858fc89`: `contracts/forward_book.py`, `ledger/forward_validate.py`, `ledger/import_mapping.py`, `ledger/forward.py` | Three ids; the `ROW_BINDING` branch; `KM`; the comparison rows and corrected `_LIMITS` and `_NOT_DELIVERED`. `forward_model.py` and `forward_binding.py` do not change. The code change re-runs the gate (plan Task 9b) |
+| r7, on `research-4` after `0858fc89`, only if an id is admitted: `contracts/forward_book.py`, `ledger/forward_validate.py`, `ledger/import_mapping.py`, `ledger/forward.py` | The admitted ids; the `ROW_BINDING` branch; `KM` if cable is admitted; the as-printed capacity rows and corrected `_LIMITS`. `forward_model.py` and `forward_binding.py` do not change. The code change re-runs the gate (plan Task 9b) |
