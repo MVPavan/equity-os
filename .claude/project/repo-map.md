@@ -18,7 +18,7 @@ Top-level layout and how to navigate.
 | `scripts/` | `verify.sh` (the gate), `verify_project.sh`, `render_dashboard.py`; `restructure/` holds the RESTRUCTURE-1 move map and script until the `research-4` replay |
 
 Paths before RESTRUCTURE-1 (the old `src/` package, flat `config/` files, the old test folder) map to
-today's through `scripts/restructure/moves.tsv`; historical specs, plans and evidence keep the
+today's through `docs/history/restructure-1-moves.tsv`; historical specs, plans and evidence keep the
 old paths.
 
 ## Orientation

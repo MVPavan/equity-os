@@ -224,8 +224,8 @@ failing files. Keep a full gate for the last pass. A fix to `scripts/restructure
 next gate uses that new recorded `P`.
 
 Verification: Spec §10 items 3–7 and each step's expected result. The log names each database, and it
-matches `eqos_test_*`. `test_frozen_manifests.py` including `-k stage4_holdout`,
-`test_stage4_manifest.py`, and `test_approved_payload_preceded_its_e2e` appear by name in the gate
+matches `eqos_test_*`. `test_frozen_manifests.py`, `test_stage4_manifest.py`,
+`test_stage4_holdout_git.py`, and `test_approved_payload_preceded_its_e2e` appear by name in the gate
 log.
 
 Test seams: the CLI commands, not internals, apart from `replay_one.py`.

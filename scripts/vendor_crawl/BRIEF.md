@@ -22,7 +22,7 @@ Describe surfaces; do not collect data.
    gateway refuses a call or reports a STOP, stop crawling that site at once and record it in
    your notes.
 4. **Independence.** Do not read the following:
-   - the repo's `src/`, `tests/` or `docs/`;
+   - the repo's `equity_os/`, `src/`, `tests/` or `docs/`;
    - `scratchpad/` outside your own output directory, except this brief, `fetch.py` and
      `picks.json`;
    - `scratchpad/vendor-crawl/cache/` and `requests.jsonl`;

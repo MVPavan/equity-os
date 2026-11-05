@@ -1,0 +1,791 @@
+kind	old	new	flag
+init	src/fundamentals/__init__.py	(docstring goes to the new README)	
+init	src/fundamentals/api/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/api/adjudication_cli.py	equity_os/interface/commands/publication/adjudication_cli.py	judgement
+module	src/fundamentals/api/artifact_writer.py	equity_os/interface/commands/sourcing/artifact_writer.py	judgement
+module	src/fundamentals/api/cli.py	equity_os/interface/entry/cli.py	
+module	src/fundamentals/api/cli_parser.py	equity_os/interface/entry/cli_parser.py	
+module	src/fundamentals/api/comparatives.py	equity_os/interface/workflows/comparatives.py	
+module	src/fundamentals/api/compare_cli.py	equity_os/interface/commands/verification/compare_cli.py	
+module	src/fundamentals/api/config.py	equity_os/interface/entry/config.py	
+module	src/fundamentals/api/coverage_cli.py	equity_os/interface/commands/sourcing/coverage_cli.py	judgement
+module	src/fundamentals/api/db_cli.py	equity_os/interface/commands/storage/db_cli.py	
+module	src/fundamentals/api/documents_cli.py	equity_os/interface/commands/sourcing/documents_cli.py	
+module	src/fundamentals/api/entity_map_cli.py	equity_os/interface/commands/companies/entity_map_cli.py	
+module	src/fundamentals/api/env_credentials.py	equity_os/interface/entry/env_credentials.py	
+module	src/fundamentals/api/evidence_cli.py	equity_os/interface/commands/extraction/evidence_cli.py	
+module	src/fundamentals/api/goal_runner.py	equity_os/interface/workflows/goal_runner.py	
+module	src/fundamentals/api/ledger_cli.py	equity_os/interface/commands/publication/ledger_cli.py	
+module	src/fundamentals/api/legacy_cli.py	equity_os/interface/commands/storage/legacy_cli.py	
+module	src/fundamentals/api/news_cli.py	equity_os/interface/commands/sourcing/news_cli.py	
+module	src/fundamentals/api/onboard_cli.py	equity_os/interface/commands/companies/onboard_cli.py	
+module	src/fundamentals/api/operator_cli.py	equity_os/interface/entry/operator_cli.py	
+module	src/fundamentals/api/pipeline.py	equity_os/interface/workflows/pipeline.py	
+module	src/fundamentals/api/pipeline_steps.py	equity_os/interface/workflows/pipeline_steps.py	
+module	src/fundamentals/api/report_builder.py	equity_os/interface/workflows/report_builder.py	
+module	src/fundamentals/api/report_cli.py	equity_os/interface/commands/publication/report_cli.py	
+module	src/fundamentals/api/retention_cli.py	equity_os/interface/commands/storage/retention_cli.py	
+module	src/fundamentals/api/review_cli.py	equity_os/interface/commands/publication/review_cli.py	
+module	src/fundamentals/api/run_comparatives.py	equity_os/interface/workflows/run_comparatives.py	
+module	src/fundamentals/api/screener_cli_dispatch.py	equity_os/interface/commands/sourcing/screener_cli_dispatch.py	
+module	src/fundamentals/api/screener_company_cli.py	equity_os/interface/commands/sourcing/screener_company_cli.py	
+module	src/fundamentals/api/screener_financials_cli.py	equity_os/interface/commands/sourcing/screener_financials_cli.py	
+module	src/fundamentals/api/screener_page_cli.py	equity_os/interface/commands/sourcing/screener_page_cli.py	
+module	src/fundamentals/api/screener_watchlist_cli.py	equity_os/interface/commands/sourcing/screener_watchlist_cli.py	
+module	src/fundamentals/api/screener_watchlist_corroborate_cli.py	equity_os/interface/commands/verification/screener_watchlist_corroborate_cli.py	judgement
+module	src/fundamentals/api/shareholding_cli.py	equity_os/interface/commands/sourcing/shareholding_cli.py	
+module	src/fundamentals/api/source_admission.py	equity_os/interface/commands/sourcing/source_admission.py	judgement
+module	src/fundamentals/api/source_intake.py	equity_os/interface/commands/sourcing/source_intake.py	judgement
+module	src/fundamentals/api/thesis_cli.py	equity_os/interface/commands/publication/thesis_cli.py	judgement
+module	src/fundamentals/api/three_source_cli.py	equity_os/interface/commands/verification/three_source_cli.py	
+module	src/fundamentals/api/tijori_analysis_cli.py	equity_os/interface/commands/sourcing/tijori_analysis_cli.py	
+module	src/fundamentals/api/tijori_cli_dispatch.py	equity_os/interface/commands/sourcing/tijori_cli_dispatch.py	
+module	src/fundamentals/api/tijori_events_cli.py	equity_os/interface/commands/sourcing/tijori_events_cli.py	
+module	src/fundamentals/api/tijori_overview_cli.py	equity_os/interface/commands/sourcing/tijori_overview_cli.py	
+module	src/fundamentals/api/tijori_shareholding_cli.py	equity_os/interface/commands/sourcing/tijori_shareholding_cli.py	
+module	src/fundamentals/api/tijori_tables_cli.py	equity_os/interface/commands/sourcing/tijori_tables_cli.py	
+module	src/fundamentals/api/upstox_cli.py	equity_os/interface/commands/sourcing/upstox_cli.py	
+module	src/fundamentals/api/upstox_crosscheck_cli.py	equity_os/interface/commands/verification/upstox_crosscheck_cli.py	
+module	src/fundamentals/api/upstox_sensitivity_cli.py	equity_os/interface/commands/verification/upstox_sensitivity_cli.py	
+module	src/fundamentals/api/validate_cli.py	equity_os/interface/commands/verification/validate_cli.py	
+module	src/fundamentals/api/vendor_surface_cli.py	equity_os/interface/commands/sourcing/vendor_surface_cli.py	
+module	src/fundamentals/api/watchlist_config.py	equity_os/interface/entry/watchlist_config.py	judgement
+module	src/fundamentals/api/wave_selection.py	equity_os/interface/entry/wave_selection.py	judgement
+init	src/fundamentals/canon/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/canon/applicability.py	equity_os/normalisation/dictionary/applicability.py	
+module	src/fundamentals/canon/dictionary.py	equity_os/normalisation/dictionary/dictionary.py	
+module	src/fundamentals/canon/dictionary_validation.py	equity_os/normalisation/dictionary/dictionary_validation.py	
+module	src/fundamentals/canon/formula.py	equity_os/normalisation/derivation/formula.py	
+module	src/fundamentals/canon/interval.py	equity_os/normalisation/derivation/interval.py	
+module	src/fundamentals/canon/period_aggregation.py	equity_os/normalisation/derivation/period_aggregation.py	
+module	src/fundamentals/canon/role_translation.py	equity_os/normalisation/dictionary/role_translation.py	
+init	src/fundamentals/compare/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/compare/definitions.py	equity_os/verification/comparison/definitions.py	
+module	src/fundamentals/compare/engine.py	equity_os/verification/comparison/engine.py	
+module	src/fundamentals/compare/engine_attempts.py	equity_os/verification/comparison/engine_attempts.py	
+module	src/fundamentals/compare/engine_context.py	equity_os/verification/comparison/engine_context.py	
+module	src/fundamentals/compare/engine_formula.py	equity_os/verification/comparison/engine_formula.py	
+module	src/fundamentals/compare/engine_rows.py	equity_os/verification/comparison/engine_rows.py	
+module	src/fundamentals/compare/point_check.py	equity_os/verification/comparison/point_check.py	
+module	src/fundamentals/compare/policy.py	equity_os/verification/comparison/policy.py	
+module	src/fundamentals/compare/queue.py	equity_os/verification/review_queue/queue.py	
+module	src/fundamentals/compare/report.py	equity_os/verification/comparison/report.py	
+module	src/fundamentals/compare/resolve.py	equity_os/verification/comparison/resolve.py	
+module	src/fundamentals/compare/resolve_loader.py	equity_os/verification/comparison/resolve_loader.py	
+module	src/fundamentals/compare/resolve_models.py	equity_os/verification/comparison/resolve_models.py	
+module	src/fundamentals/compare/routing.py	equity_os/verification/review_queue/routing.py	
+module	src/fundamentals/compare/run.py	equity_os/verification/comparison/run.py	
+module	src/fundamentals/compare/run_config.py	equity_os/verification/comparison/run_config.py	
+module	src/fundamentals/compare/run_family.py	equity_os/verification/comparison/run_family.py	
+module	src/fundamentals/compare/run_models.py	equity_os/verification/comparison/run_models.py	
+module	src/fundamentals/compare/run_store.py	equity_os/verification/comparison/run_store.py	
+module	src/fundamentals/compare/tables.py	equity_os/verification/comparison/tables.py	
+module	src/fundamentals/compare/triage.py	equity_os/verification/review_queue/triage.py	
+module	src/fundamentals/compare/trust.py	equity_os/verification/review_queue/trust.py	judgement
+module	src/fundamentals/compare/vendor_sides.py	equity_os/verification/comparison/vendor_sides.py	
+init	src/fundamentals/contracts/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/contracts/acquisition_outcome.py	equity_os/contracts/sourcing/acquisition_outcome.py	
+module	src/fundamentals/contracts/basis_status.py	equity_os/contracts/companies/basis_status.py	
+module	src/fundamentals/contracts/canonical.py	equity_os/contracts/measurement/canonical.py	
+module	src/fundamentals/contracts/comparative.py	equity_os/contracts/verification/comparative.py	
+module	src/fundamentals/contracts/comparison.py	equity_os/contracts/verification/comparison.py	
+module	src/fundamentals/contracts/config_versions.py	equity_os/contracts/verification/config_versions.py	judgement
+module	src/fundamentals/contracts/entity_identity.py	equity_os/contracts/companies/entity_identity.py	
+module	src/fundamentals/contracts/evidence.py	equity_os/contracts/measurement/evidence.py	judgement
+module	src/fundamentals/contracts/evidence_tier.py	equity_os/contracts/measurement/evidence_tier.py	
+module	src/fundamentals/contracts/fact.py	equity_os/contracts/measurement/fact.py	
+module	src/fundamentals/contracts/forward_book.py	equity_os/contracts/publication/forward_book.py	replay-only
+module	src/fundamentals/contracts/guidance_claim.py	equity_os/contracts/measurement/guidance_claim.py	judgement
+module	src/fundamentals/contracts/interval.py	equity_os/contracts/measurement/interval.py	
+module	src/fundamentals/contracts/ledger.py	equity_os/contracts/publication/ledger.py	
+module	src/fundamentals/contracts/measurement_key.py	equity_os/contracts/measurement/measurement_key.py	
+module	src/fundamentals/contracts/memory.py	equity_os/contracts/storage/memory.py	
+module	src/fundamentals/contracts/news.py	equity_os/contracts/sourcing/news.py	
+module	src/fundamentals/contracts/observation.py	equity_os/contracts/measurement/observation.py	
+module	src/fundamentals/contracts/onboarding.py	equity_os/contracts/companies/onboarding.py	
+module	src/fundamentals/contracts/period.py	equity_os/contracts/measurement/period.py	
+module	src/fundamentals/contracts/provenance.py	equity_os/contracts/measurement/provenance.py	
+module	src/fundamentals/contracts/qualification.py	equity_os/contracts/measurement/qualification.py	judgement
+module	src/fundamentals/contracts/retention.py	equity_os/contracts/storage/retention.py	
+module	src/fundamentals/contracts/retention_purge.py	equity_os/contracts/storage/retention_purge.py	
+module	src/fundamentals/contracts/review_queue.py	equity_os/contracts/verification/review_queue.py	
+module	src/fundamentals/contracts/role.py	equity_os/contracts/measurement/role.py	
+module	src/fundamentals/contracts/snapshot.py	equity_os/contracts/sourcing/snapshot.py	
+module	src/fundamentals/contracts/source_catalog.py	equity_os/contracts/sourcing/source_catalog.py	
+module	src/fundamentals/contracts/source_registration.py	equity_os/contracts/sourcing/source_registration.py	
+module	src/fundamentals/contracts/versioning.py	equity_os/contracts/verification/versioning.py	judgement
+init	src/fundamentals/coverage/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/coverage/registry.py	equity_os/coverage/universe/registry.py	
+module	src/fundamentals/coverage/screen_review.py	equity_os/coverage/screens/screen_review.py	
+module	src/fundamentals/coverage/screens.py	equity_os/coverage/screens/screens.py	
+init	src/fundamentals/entity/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/entity/derived_settings.py	equity_os/companies/onboarding/derived_settings.py	
+module	src/fundamentals/entity/discovery.py	equity_os/companies/onboarding/discovery.py	
+module	src/fundamentals/entity/discovery_origins.py	equity_os/companies/onboarding/discovery_origins.py	
+module	src/fundamentals/entity/entity_map.py	equity_os/companies/identity/entity_map.py	
+module	src/fundamentals/entity/entity_map_sources.py	equity_os/companies/identity/entity_map_sources.py	
+module	src/fundamentals/entity/identity_layers.py	equity_os/companies/identity/identity_layers.py	
+module	src/fundamentals/entity/upstox_entity_source.py	equity_os/companies/identity/upstox_entity_source.py	
+module	src/fundamentals/entity/verification.py	equity_os/companies/onboarding/verification.py	
+init	src/fundamentals/evidence/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/evidence/admission.py	equity_os/verification/admission/admission.py	
+module	src/fundamentals/evidence/alignment.py	equity_os/normalisation/mapping/alignment.py	judgement
+module	src/fundamentals/evidence/capture_intake.py	equity_os/extraction/packages/capture_intake.py	
+module	src/fundamentals/evidence/capture_interpretation.py	equity_os/normalisation/mapping/capture_interpretation.py	judgement
+module	src/fundamentals/evidence/capture_retention.py	equity_os/storage/raw_files/capture_retention.py	
+module	src/fundamentals/evidence/derived.py	equity_os/normalisation/derivation/derived.py	
+module	src/fundamentals/evidence/discovery_gate.py	equity_os/companies/onboarding/discovery_gate.py	judgement
+module	src/fundamentals/evidence/first_party_extract.py	equity_os/extraction/packages/first_party_extract.py	
+module	src/fundamentals/evidence/first_party_ingest.py	equity_os/extraction/packages/first_party_ingest.py	
+module	src/fundamentals/evidence/interpret.py	equity_os/normalisation/mapping/interpret.py	
+module	src/fundamentals/evidence/mapping.py	equity_os/normalisation/mapping/mapping.py	
+module	src/fundamentals/evidence/mapping_models.py	equity_os/normalisation/mapping/mapping_models.py	
+module	src/fundamentals/evidence/member_identity.py	equity_os/extraction/packages/member_identity.py	
+module	src/fundamentals/evidence/pdf_adapter.py	equity_os/extraction/results_pdf/pdf_adapter.py	
+module	src/fundamentals/evidence/presence.py	equity_os/extraction/packages/presence.py	
+module	src/fundamentals/evidence/repository.py	equity_os/storage/records/repository.py	
+module	src/fundamentals/evidence/repository_calc.py	equity_os/storage/records/repository_calc.py	
+module	src/fundamentals/evidence/repository_rows.py	equity_os/storage/records/repository_rows.py	
+module	src/fundamentals/evidence/selection.py	equity_os/verification/comparison/selection.py	judgement
+module	src/fundamentals/evidence/shareholding_filing.py	equity_os/extraction/xbrl/shareholding_filing.py	
+module	src/fundamentals/evidence/shareholding_ingest.py	equity_os/extraction/packages/shareholding_ingest.py	
+module	src/fundamentals/evidence/vendor_ingest.py	equity_os/extraction/surfaces/vendor_ingest.py	judgement
+module	src/fundamentals/evidence/vendor_screener.py	equity_os/extraction/vendors/screener/vendor_screener.py	
+module	src/fundamentals/evidence/vendor_shareholding.py	equity_os/extraction/surfaces/vendor_shareholding.py	judgement
+module	src/fundamentals/evidence/vendor_tijori.py	equity_os/extraction/vendors/tijori/vendor_tijori.py	
+module	src/fundamentals/evidence/vendor_upstox.py	equity_os/extraction/vendors/upstox/vendor_upstox.py	
+module	src/fundamentals/evidence/xbrl_adapter.py	equity_os/extraction/xbrl/xbrl_adapter.py	
+init	src/fundamentals/extract/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/extract/guidance_extractor.py	equity_os/extraction/guidance/guidance_extractor.py	
+module	src/fundamentals/extract/pdf_column_geometry.py	equity_os/extraction/results_pdf/pdf_column_geometry.py	
+module	src/fundamentals/extract/pdf_figure_columns.py	equity_os/extraction/results_pdf/pdf_figure_columns.py	
+module	src/fundamentals/extract/pdf_header_text.py	equity_os/extraction/results_pdf/pdf_header_text.py	
+module	src/fundamentals/extract/pdf_number_parser.py	equity_os/extraction/results_pdf/pdf_number_parser.py	
+module	src/fundamentals/extract/pdf_ocr_recovery.py	equity_os/extraction/results_pdf/pdf_ocr_recovery.py	
+module	src/fundamentals/extract/pdf_printed_unit.py	equity_os/extraction/results_pdf/pdf_printed_unit.py	
+module	src/fundamentals/extract/pdf_statement_pages.py	equity_os/extraction/results_pdf/pdf_statement_pages.py	
+module	src/fundamentals/extract/xbrl_dimensions.py	equity_os/extraction/xbrl/xbrl_dimensions.py	
+module	src/fundamentals/extract/xbrl_parser.py	equity_os/extraction/xbrl/xbrl_parser.py	
+module	src/fundamentals/extract/xbrl_taxonomies.py	equity_os/extraction/xbrl/xbrl_taxonomies.py	
+init	src/fundamentals/ingest/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/ingest/bse_pdf_source.py	equity_os/sourcing/exchange/bse_pdf_source.py	
+module	src/fundamentals/ingest/bse_source.py	equity_os/sourcing/exchange/bse_source.py	
+module	src/fundamentals/ingest/comparator_cache.py	equity_os/sourcing/exchange/comparator_cache.py	
+module	src/fundamentals/ingest/first_party_documents.py	equity_os/sourcing/documents/first_party_documents.py	
+module	src/fundamentals/ingest/http_session.py	equity_os/sourcing/transport/http_session.py	
+module	src/fundamentals/ingest/news_bse.py	equity_os/sourcing/news/news_bse.py	
+module	src/fundamentals/ingest/news_common.py	equity_os/sourcing/news/news_common.py	
+module	src/fundamentals/ingest/news_et.py	equity_os/sourcing/news/news_et.py	
+module	src/fundamentals/ingest/news_nse.py	equity_os/sourcing/news/news_nse.py	
+module	src/fundamentals/ingest/nse_filings.py	equity_os/sourcing/exchange/nse_filings.py	
+module	src/fundamentals/ingest/ocr_engine.py	equity_os/extraction/results_pdf/ocr_engine.py	judgement
+module	src/fundamentals/ingest/pdf_source.py	equity_os/extraction/results_pdf/pdf_source.py	judgement
+module	src/fundamentals/ingest/screen_export.py	equity_os/coverage/screens/screen_export.py	judgement
+module	src/fundamentals/ingest/screener_company.py	equity_os/sourcing/vendors/screener/screener_company.py	
+module	src/fundamentals/ingest/screener_company_artifacts.py	equity_os/extraction/vendors/screener/screener_company_artifacts.py	
+module	src/fundamentals/ingest/screener_company_discovery.py	equity_os/extraction/vendors/screener/screener_company_discovery.py	
+module	src/fundamentals/ingest/screener_company_fragments.py	equity_os/extraction/vendors/screener/screener_company_fragments.py	
+module	src/fundamentals/ingest/screener_company_models.py	equity_os/extraction/vendors/screener/screener_company_models.py	
+module	src/fundamentals/ingest/screener_company_parts.py	equity_os/sourcing/vendors/screener/screener_company_parts.py	
+module	src/fundamentals/ingest/screener_company_sweep.py	equity_os/sourcing/vendors/screener/screener_company_sweep.py	
+module	src/fundamentals/ingest/screener_crosscheck.py	equity_os/verification/diagnostics/screener_crosscheck.py	judgement
+module	src/fundamentals/ingest/screener_documents.py	equity_os/sourcing/documents/screener_documents.py	
+module	src/fundamentals/ingest/screener_financials.py	equity_os/sourcing/vendors/screener/screener_financials.py	
+module	src/fundamentals/ingest/screener_financials_models.py	equity_os/extraction/vendors/screener/screener_financials_models.py	
+module	src/fundamentals/ingest/screener_financials_nested.py	equity_os/extraction/vendors/screener/screener_financials_nested.py	
+module	src/fundamentals/ingest/screener_financials_schedules.py	equity_os/extraction/vendors/screener/screener_financials_schedules.py	
+module	src/fundamentals/ingest/screener_financials_shapes.py	equity_os/extraction/vendors/screener/screener_financials_shapes.py	
+module	src/fundamentals/ingest/screener_financials_tables.py	equity_os/extraction/vendors/screener/screener_financials_tables.py	
+module	src/fundamentals/ingest/screener_segments.py	equity_os/extraction/vendors/screener/screener_segments.py	
+module	src/fundamentals/ingest/screener_session.py	equity_os/sourcing/vendors/screener/screener_session.py	
+module	src/fundamentals/ingest/screener_session_models.py	equity_os/extraction/vendors/screener/screener_session_models.py	
+module	src/fundamentals/ingest/screener_session_page.py	equity_os/extraction/vendors/screener/screener_session_page.py	
+module	src/fundamentals/ingest/screener_shareholding.py	equity_os/extraction/vendors/screener/screener_shareholding.py	
+module	src/fundamentals/ingest/screener_source.py	equity_os/sourcing/vendors/screener/screener_source.py	
+module	src/fundamentals/ingest/screener_watchlist.py	equity_os/sourcing/vendors/screener/screener_watchlist.py	
+module	src/fundamentals/ingest/screener_watchlist_corroborate.py	equity_os/verification/diagnostics/screener_watchlist_corroborate.py	judgement
+module	src/fundamentals/ingest/screener_watchlist_crosscheck.py	equity_os/verification/diagnostics/screener_watchlist_crosscheck.py	judgement
+module	src/fundamentals/ingest/screener_watchlist_models.py	equity_os/sourcing/vendors/screener/screener_watchlist_models.py	judgement
+module	src/fundamentals/ingest/sec_source.py	equity_os/sourcing/exchange/sec_source.py	judgement
+module	src/fundamentals/ingest/shareholding_filing.py	equity_os/sourcing/exchange/shareholding_filing.py	
+module	src/fundamentals/ingest/tijori_analysis.py	equity_os/extraction/vendors/tijori/tijori_analysis.py	
+module	src/fundamentals/ingest/tijori_analysis_models.py	equity_os/extraction/vendors/tijori/tijori_analysis_models.py	
+module	src/fundamentals/ingest/tijori_capture.py	equity_os/sourcing/vendors/tijori/tijori_capture.py	
+module	src/fundamentals/ingest/tijori_common.py	equity_os/extraction/vendors/tijori/tijori_common.py	
+module	src/fundamentals/ingest/tijori_documents.py	equity_os/sourcing/documents/tijori_documents.py	
+module	src/fundamentals/ingest/tijori_events.py	equity_os/extraction/vendors/tijori/tijori_events.py	
+module	src/fundamentals/ingest/tijori_events_common.py	equity_os/extraction/vendors/tijori/tijori_events_common.py	
+module	src/fundamentals/ingest/tijori_events_company.py	equity_os/extraction/vendors/tijori/tijori_events_company.py	
+module	src/fundamentals/ingest/tijori_events_html.py	equity_os/extraction/vendors/tijori/tijori_events_html.py	
+module	src/fundamentals/ingest/tijori_events_models.py	equity_os/extraction/vendors/tijori/tijori_events_models.py	
+module	src/fundamentals/ingest/tijori_overview.py	equity_os/sourcing/vendors/tijori/tijori_overview.py	judgement
+module	src/fundamentals/ingest/tijori_overview_common.py	equity_os/extraction/vendors/tijori/tijori_overview_common.py	
+module	src/fundamentals/ingest/tijori_overview_company.py	equity_os/extraction/vendors/tijori/tijori_overview_company.py	
+module	src/fundamentals/ingest/tijori_overview_models.py	equity_os/extraction/vendors/tijori/tijori_overview_models.py	
+module	src/fundamentals/ingest/tijori_overview_revenue_mix.py	equity_os/extraction/vendors/tijori/tijori_overview_revenue_mix.py	
+module	src/fundamentals/ingest/tijori_overview_sections.py	equity_os/extraction/vendors/tijori/tijori_overview_sections.py	
+module	src/fundamentals/ingest/tijori_page.py	equity_os/extraction/vendors/tijori/tijori_page.py	
+module	src/fundamentals/ingest/tijori_pl.py	equity_os/extraction/vendors/tijori/tijori_pl.py	
+module	src/fundamentals/ingest/tijori_retention.py	equity_os/sourcing/vendors/tijori/tijori_retention.py	
+module	src/fundamentals/ingest/tijori_screen_fetch.py	equity_os/coverage/screens/tijori_screen_fetch.py	judgement
+module	src/fundamentals/ingest/tijori_series.py	equity_os/extraction/vendors/tijori/tijori_series.py	
+module	src/fundamentals/ingest/tijori_shareholding.py	equity_os/extraction/vendors/tijori/tijori_shareholding.py	
+module	src/fundamentals/ingest/tijori_shareholding_breakup.py	equity_os/extraction/vendors/tijori/tijori_shareholding_breakup.py	
+module	src/fundamentals/ingest/tijori_shareholding_table.py	equity_os/extraction/vendors/tijori/tijori_shareholding_table.py	
+module	src/fundamentals/ingest/tijori_source.py	equity_os/sourcing/vendors/tijori/tijori_source.py	
+module	src/fundamentals/ingest/tijori_tables.py	equity_os/extraction/vendors/tijori/tijori_tables.py	
+module	src/fundamentals/ingest/upstox_candle_retention.py	equity_os/sourcing/vendors/upstox/upstox_candle_retention.py	judgement
+module	src/fundamentals/ingest/upstox_crosscheck.py	equity_os/verification/diagnostics/upstox_crosscheck.py	judgement
+module	src/fundamentals/ingest/upstox_instruments.py	equity_os/sourcing/vendors/upstox/upstox_instruments.py	judgement
+module	src/fundamentals/ingest/upstox_retention.py	equity_os/sourcing/vendors/upstox/upstox_retention.py	
+module	src/fundamentals/ingest/upstox_source.py	equity_os/sourcing/vendors/upstox/upstox_source.py	
+module	src/fundamentals/ingest/upstox_statements.py	equity_os/extraction/vendors/upstox/upstox_statements.py	
+module	src/fundamentals/ingest/vendor_surface_canary.py	equity_os/sourcing/surfaces/vendor_surface_canary.py	judgement
+module	src/fundamentals/ingest/vendor_surface_capture.py	equity_os/sourcing/surfaces/vendor_surface_capture.py	
+module	src/fundamentals/ingest/vendor_surface_cells.py	equity_os/extraction/surfaces/vendor_surface_cells.py	
+module	src/fundamentals/ingest/vendor_surface_claims.py	equity_os/extraction/model/vendor_surface_claims.py	
+module	src/fundamentals/ingest/vendor_surface_due.py	equity_os/sourcing/surfaces/vendor_surface_due.py	
+module	src/fundamentals/ingest/vendor_surface_expand.py	equity_os/sourcing/surfaces/vendor_surface_expand.py	
+module	src/fundamentals/ingest/vendor_surface_fetch.py	equity_os/sourcing/surfaces/vendor_surface_fetch.py	
+module	src/fundamentals/ingest/vendor_surface_labels.py	equity_os/extraction/model/vendor_surface_labels.py	
+module	src/fundamentals/ingest/vendor_surface_market.py	equity_os/sourcing/surfaces/vendor_surface_market.py	
+module	src/fundamentals/ingest/vendor_surface_model.py	equity_os/extraction/model/vendor_surface_model.py	
+module	src/fundamentals/ingest/vendor_surface_parse.py	equity_os/extraction/surfaces/vendor_surface_parse.py	
+module	src/fundamentals/ingest/vendor_surface_readers.py	equity_os/extraction/surfaces/vendor_surface_readers.py	
+module	src/fundamentals/ingest/vendor_surface_series.py	equity_os/extraction/surfaces/vendor_surface_series.py	
+module	src/fundamentals/ingest/vendor_surface_specs.py	equity_os/sourcing/surfaces/vendor_surface_specs.py	
+module	src/fundamentals/ingest/vendor_surface_tables.py	equity_os/extraction/surfaces/vendor_surface_tables.py	
+module	src/fundamentals/ingest/vendor_surface_topology.py	equity_os/extraction/surfaces/vendor_surface_topology.py	judgement
+module	src/fundamentals/ingest/xbrl_identity.py	equity_os/extraction/xbrl/xbrl_identity.py	
+module	src/fundamentals/ingest/xbrl_source.py	equity_os/sourcing/exchange/xbrl_source.py	
+init	src/fundamentals/ledger/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/ledger/citations.py	equity_os/publication/checking/citations.py	
+module	src/fundamentals/ledger/claim_check.py	equity_os/publication/checking/claim_check.py	
+module	src/fundamentals/ledger/credibility.py	equity_os/analysis/lenses/credibility/credibility.py	
+module	src/fundamentals/ledger/display.py	equity_os/publication/drafting/display.py	judgement
+module	src/fundamentals/ledger/evidence_bundle.py	equity_os/publication/narration/evidence_bundle.py	
+module	src/fundamentals/ledger/export.py	equity_os/publication/export/export.py	
+module	src/fundamentals/ledger/falsifier_status.py	equity_os/analysis/lenses/thesis_tests/falsifier_status.py	
+module	src/fundamentals/ledger/forward.py	equity_os/analysis/lenses/forward/forward.py	replay-only
+module	src/fundamentals/ledger/forward_binding.py	equity_os/analysis/lenses/forward/forward_binding.py	replay-only
+module	src/fundamentals/ledger/forward_model.py	equity_os/analysis/lenses/forward/forward_model.py	replay-only
+module	src/fundamentals/ledger/forward_validate.py	equity_os/analysis/lenses/forward/forward_validate.py	replay-only
+module	src/fundamentals/ledger/guidance_targets.py	equity_os/analysis/lenses/credibility/guidance_targets.py	judgement
+module	src/fundamentals/ledger/import_mapping.py	equity_os/publication/revision/import_mapping.py	judgement
+module	src/fundamentals/ledger/importer.py	equity_os/publication/revision/importer.py	judgement
+module	src/fundamentals/ledger/lifecycle.py	equity_os/publication/approval/lifecycle.py	
+module	src/fundamentals/ledger/narrate.py	equity_os/publication/narration/narrate.py	
+module	src/fundamentals/ledger/narrate_checks.py	equity_os/publication/narration/narrate_checks.py	
+module	src/fundamentals/ledger/numeral_scan.py	equity_os/publication/checking/numeral_scan.py	
+module	src/fundamentals/ledger/panel.py	equity_os/publication/approval/panel.py	
+module	src/fundamentals/ledger/probe_operands.py	equity_os/analysis/lenses/risk/probe_operands.py	
+module	src/fundamentals/ledger/recorded_reviewer.py	equity_os/publication/approval/recorded_reviewer.py	
+module	src/fundamentals/ledger/review.py	equity_os/publication/approval/review.py	
+module	src/fundamentals/ledger/rework.py	equity_os/publication/revision/rework.py	
+module	src/fundamentals/ledger/risk_probe.py	equity_os/analysis/lenses/risk/risk_probe.py	
+module	src/fundamentals/ledger/run_draft.py	equity_os/publication/drafting/run_draft.py	
+module	src/fundamentals/ledger/run_sources.py	equity_os/publication/drafting/run_sources.py	replay-only
+module	src/fundamentals/ledger/run_traces.py	equity_os/analysis/calculations/run_traces.py	judgement
+module	src/fundamentals/ledger/store.py	equity_os/storage/records/store.py	judgement
+init	src/fundamentals/memory/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/memory/export.py	equity_os/storage/memory/export.py	
+module	src/fundamentals/memory/pg_store.py	equity_os/storage/memory/pg_store.py	
+module	src/fundamentals/memory/retrieval.py	equity_os/storage/memory/retrieval.py	
+module	src/fundamentals/memory/status.py	equity_os/storage/memory/status.py	
+module	src/fundamentals/memory/store.py	equity_os/storage/memory/store.py	
+init	src/fundamentals/news/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/news/entity.py	equity_os/extraction/news/entity.py	
+module	src/fundamentals/news/events.py	equity_os/extraction/news/events.py	
+module	src/fundamentals/news/health.py	equity_os/sourcing/news/health.py	judgement
+module	src/fundamentals/news/store.py	equity_os/storage/records/news_store.py	judgement
+init	src/fundamentals/output/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/output/earnings_update.py	equity_os/publication/drafting/earnings_update.py	judgement
+module	src/fundamentals/output/management_ledger.py	equity_os/publication/drafting/management_ledger.py	judgement
+module	src/fundamentals/output/pnl_lines.py	equity_os/publication/drafting/pnl_lines.py	judgement
+init	src/fundamentals/pg/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/pg/approvals.py	equity_os/storage/database/approvals.py	judgement
+module	src/fundamentals/pg/backup.py	equity_os/storage/backup/backup.py	
+module	src/fundamentals/pg/cutover.py	equity_os/storage/facts/cutover.py	judgement
+module	src/fundamentals/pg/document_intake.py	equity_os/storage/records/document_intake.py	judgement
+module	src/fundamentals/pg/identity_seed.py	equity_os/companies/identity/identity_seed.py	judgement
+module	src/fundamentals/pg/legacy_import.py	equity_os/storage/facts/legacy_import.py	judgement
+module	src/fundamentals/pg/live_check.py	equity_os/storage/database/live_check.py	
+module	src/fundamentals/pg/migrations.py	equity_os/storage/database/migrations.py	
+module	src/fundamentals/pg/pool.py	equity_os/storage/database/pool.py	
+module	src/fundamentals/pg/restore_check.py	equity_os/storage/backup/restore_check.py	
+module	src/fundamentals/pg/retention_io.py	equity_os/storage/retention/retention_io.py	
+module	src/fundamentals/pg/role_secrets.py	equity_os/storage/database/role_secrets.py	
+module	src/fundamentals/pg/settings.py	equity_os/storage/database/settings.py	
+module	src/fundamentals/pg/test_databases.py	equity_os/storage/database/test_databases.py	
+init	src/fundamentals/reconcile/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/reconcile/agreement.py	equity_os/verification/comparison/agreement.py	judgement
+module	src/fundamentals/reconcile/fact_view.py	equity_os/verification/comparison/fact_view.py	judgement
+module	src/fundamentals/reconcile/gold_file.py	equity_os/verification/diagnostics/gold_file.py	
+module	src/fundamentals/reconcile/report.py	equity_os/verification/diagnostics/report.py	judgement
+init	src/fundamentals/retention/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/retention/eligibility.py	equity_os/storage/retention/eligibility.py	
+module	src/fundamentals/retention/holds.py	equity_os/storage/retention/holds.py	
+module	src/fundamentals/retention/purge.py	equity_os/storage/retention/purge.py	
+module	src/fundamentals/retention/purge_first.py	equity_os/storage/retention/purge_first.py	
+module	src/fundamentals/retention/refetch.py	equity_os/storage/retention/refetch.py	
+init	src/fundamentals/store/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/store/capture_local.py	equity_os/storage/raw_files/capture_local.py	
+module	src/fundamentals/store/descriptor_tree.py	equity_os/storage/raw_files/descriptor_tree.py	
+module	src/fundamentals/store/fact_store.py	equity_os/storage/facts/fact_store.py	
+module	src/fundamentals/store/no_clobber.py	equity_os/storage/raw_files/no_clobber.py	
+module	src/fundamentals/store/pg_fact_store.py	equity_os/storage/facts/pg_fact_store.py	
+module	src/fundamentals/store/snapshot_store.py	equity_os/storage/raw_files/snapshot_store.py	
+module	src/fundamentals/store/source_intake_store.py	equity_os/storage/raw_files/source_intake_store.py	
+module	src/fundamentals/store/vendor_values_store.py	equity_os/storage/records/vendor_values_store.py	judgement
+init	src/fundamentals/thesis/__init__.py	equity_os/analysis/thesis_models/__init__.py	
+module	src/fundamentals/thesis/adapters.py	equity_os/analysis/thesis_models/adapters.py	
+module	src/fundamentals/thesis/adjudication.py	equity_os/analysis/thesis_models/adjudication.py	
+module	src/fundamentals/thesis/claude_client.py	equity_os/analysis/thesis_models/claude_client.py	
+module	src/fundamentals/thesis/client.py	equity_os/analysis/thesis_models/client.py	
+module	src/fundamentals/thesis/codex_client.py	equity_os/analysis/thesis_models/codex_client.py	
+module	src/fundamentals/thesis/contracts.py	equity_os/analysis/thesis_models/contracts.py	
+module	src/fundamentals/thesis/draft_parser.py	equity_os/analysis/thesis_models/draft_parser.py	
+module	src/fundamentals/thesis/pipeline.py	equity_os/analysis/thesis_models/pipeline.py	
+module	src/fundamentals/thesis/prompt.py	equity_os/analysis/thesis_models/prompt.py	
+module	src/fundamentals/thesis/render.py	equity_os/analysis/thesis_models/render.py	
+module	src/fundamentals/thesis/settings.py	equity_os/analysis/thesis_models/settings.py	
+module	src/fundamentals/thesis/subprocess_runner.py	equity_os/analysis/thesis_models/subprocess_runner.py	
+module	src/fundamentals/thesis/verifier.py	equity_os/analysis/thesis_models/verifier.py	
+init	src/fundamentals/verify/__init__.py	(docstring goes to the new README)	
+module	src/fundamentals/verify/comparison_key.py	equity_os/verification/comparison/comparison_key.py	judgement
+module	src/fundamentals/verify/cross_check.py	equity_os/verification/comparison/cross_check.py	judgement
+module	src/fundamentals/verify/crossfoot.py	equity_os/verification/comparison/crossfoot.py	judgement
+module	src/fundamentals/verify/laneb_sensitivity.py	equity_os/verification/diagnostics/laneb_sensitivity.py	
+module	src/fundamentals/verify/laneb_sensitivity_model.py	equity_os/verification/diagnostics/laneb_sensitivity_model.py	
+module	src/fundamentals/verify/laneb_triage.py	equity_os/verification/diagnostics/laneb_triage.py	
+module	src/fundamentals/verify/quote_anchor.py	equity_os/publication/checking/quote_anchor.py	
+module	src/fundamentals/verify/thesis_predicates.py	equity_os/analysis/lenses/thesis_tests/thesis_predicates.py	judgement
+module	src/fundamentals/verify/three_source.py	equity_os/verification/diagnostics/three_source.py	
+module	src/fundamentals/verify/three_source_inputs.py	equity_os/verification/diagnostics/three_source_inputs.py	
+module	src/fundamentals/verify/three_source_map.py	equity_os/verification/diagnostics/three_source_map.py	
+config	config/aparinds-fy26-q2.yaml	config/runs/aparinds-fy26-q2.yaml	
+config	config/aparinds-fy26-q3.yaml	config/runs/aparinds-fy26-q3.yaml	
+config	config/aparinds-fy26-q4-pg.yaml	config/runs/aparinds-fy26-q4-pg.yaml	
+config	config/aparinds-fy26-q4.yaml	config/runs/aparinds-fy26-q4.yaml	
+config	config/aparinds-fy27-q1-pg.yaml	config/runs/aparinds-fy27-q1-pg.yaml	
+config	config/aparinds-fy27-q1.yaml	config/runs/aparinds-fy27-q1.yaml	
+config	config/comparison_policy/v1.yaml	config/verification/comparison_policy/v1.yaml	
+config	config/definition_sets/v1.yaml	config/verification/definition_sets/v1.yaml	
+config	config/dictionary/v1/applicability.yaml	config/normalisation/dictionary/v1/applicability.yaml	
+config	config/dictionary/v1/balance_sheet.yaml	config/normalisation/dictionary/v1/balance_sheet.yaml	
+config	config/dictionary/v1/cash_flow.yaml	config/normalisation/dictionary/v1/cash_flow.yaml	
+config	config/dictionary/v1/derived.yaml	config/normalisation/dictionary/v1/derived.yaml	
+config	config/dictionary/v1/metadata.yaml	config/normalisation/dictionary/v1/metadata.yaml	
+config	config/dictionary/v1/pl.yaml	config/normalisation/dictionary/v1/pl.yaml	
+config	config/dictionary/v1/segment.yaml	config/normalisation/dictionary/v1/segment.yaml	
+config	config/dictionary/v1/shareholding.yaml	config/normalisation/dictionary/v1/shareholding.yaml	
+config	config/dictionary/v1/templates.yaml	config/normalisation/dictionary/v1/templates.yaml	
+config	config/dictionary/v2/applicability.yaml	config/normalisation/dictionary/v2/applicability.yaml	
+config	config/dictionary/v2/balance_sheet.yaml	config/normalisation/dictionary/v2/balance_sheet.yaml	
+config	config/dictionary/v2/cash_flow.yaml	config/normalisation/dictionary/v2/cash_flow.yaml	
+config	config/dictionary/v2/derived.yaml	config/normalisation/dictionary/v2/derived.yaml	
+config	config/dictionary/v2/metadata.yaml	config/normalisation/dictionary/v2/metadata.yaml	
+config	config/dictionary/v2/pl.yaml	config/normalisation/dictionary/v2/pl.yaml	
+config	config/dictionary/v2/segment.yaml	config/normalisation/dictionary/v2/segment.yaml	
+config	config/dictionary/v2/shareholding.yaml	config/normalisation/dictionary/v2/shareholding.yaml	
+config	config/dictionary/v2/templates.yaml	config/normalisation/dictionary/v2/templates.yaml	
+config	config/dictionary/v3/applicability.yaml	config/normalisation/dictionary/v3/applicability.yaml	
+config	config/dictionary/v3/balance_sheet.yaml	config/normalisation/dictionary/v3/balance_sheet.yaml	
+config	config/dictionary/v3/cash_flow.yaml	config/normalisation/dictionary/v3/cash_flow.yaml	
+config	config/dictionary/v3/derived.yaml	config/normalisation/dictionary/v3/derived.yaml	
+config	config/dictionary/v3/metadata.yaml	config/normalisation/dictionary/v3/metadata.yaml	
+config	config/dictionary/v3/pl.yaml	config/normalisation/dictionary/v3/pl.yaml	
+config	config/dictionary/v3/segment.yaml	config/normalisation/dictionary/v3/segment.yaml	
+config	config/dictionary/v3/shareholding.yaml	config/normalisation/dictionary/v3/shareholding.yaml	
+config	config/dictionary/v3/templates.yaml	config/normalisation/dictionary/v3/templates.yaml	
+config	config/fundamentals.yaml	config/sourcing/fundamentals.yaml	
+config	config/guidance_targets/aparinds.yaml	config/analysis/guidance_targets/aparinds.yaml	judgement
+config	config/identity/aparinds.yaml	config/companies/identity/aparinds.yaml	
+config	config/identity/sonacoms.yaml	config/companies/identity/sonacoms.yaml	
+config	config/laneb_triage.yaml	config/verification/laneb_triage.yaml	
+config	config/ledger_import.yaml	config/publication/ledger_import.yaml	judgement
+config	config/legacy_import_manifest.yaml	config/storage/legacy_import_manifest.yaml	judgement
+config	config/mappings/alignment/v1.yaml	config/normalisation/mappings/alignment/v1.yaml	
+config	config/mappings/alignment/v2.yaml	config/normalisation/mappings/alignment/v2.yaml	
+config	config/mappings/constructions/v1.yaml	config/normalisation/mappings/constructions/v1.yaml	
+config	config/mappings/constructions/v2.yaml	config/normalisation/mappings/constructions/v2.yaml	
+config	config/mappings/pdf/v1/results_layout.yaml	config/normalisation/mappings/pdf/v1/results_layout.yaml	
+config	config/mappings/pdf/v2/results_layout.yaml	config/normalisation/mappings/pdf/v2/results_layout.yaml	
+config	config/mappings/screener/v2/constructions.yaml	config/normalisation/mappings/screener/v2/constructions.yaml	
+config	config/mappings/screener/v2/financials.yaml	config/normalisation/mappings/screener/v2/financials.yaml	
+config	config/mappings/screener/v3/shareholding.yaml	config/normalisation/mappings/screener/v3/shareholding.yaml	
+config	config/mappings/shareholding_filing/v1/shp.yaml	config/normalisation/mappings/shareholding_filing/v1/shp.yaml	
+config	config/mappings/shareholding_filing/v2/shp.yaml	config/normalisation/mappings/shareholding_filing/v2/shp.yaml	
+config	config/mappings/statement_anchors/v1.yaml	config/normalisation/mappings/statement_anchors/v1.yaml	
+config	config/mappings/statement_anchors/v2.yaml	config/normalisation/mappings/statement_anchors/v2.yaml	
+config	config/mappings/tijori/v1/display.yaml	config/normalisation/mappings/tijori/v1/display.yaml	
+config	config/mappings/tijori/v1/financials.yaml	config/normalisation/mappings/tijori/v1/financials.yaml	
+config	config/mappings/tijori/v3/financials.yaml	config/normalisation/mappings/tijori/v3/financials.yaml	
+config	config/mappings/tijori/v4/shareholding.yaml	config/normalisation/mappings/tijori/v4/shareholding.yaml	
+config	config/mappings/upstox/v1/full_statement.yaml	config/normalisation/mappings/upstox/v1/full_statement.yaml	
+config	config/mappings/upstox/v1/summary.yaml	config/normalisation/mappings/upstox/v1/summary.yaml	
+config	config/mappings/upstox/v2/full_statement.yaml	config/normalisation/mappings/upstox/v2/full_statement.yaml	
+config	config/mappings/upstox/v2/summary.yaml	config/normalisation/mappings/upstox/v2/summary.yaml	
+config	config/mappings/upstox/v3/shareholding.yaml	config/normalisation/mappings/upstox/v3/shareholding.yaml	
+config	config/mappings/v1.yaml	config/normalisation/mappings/v1.yaml	
+config	config/mappings/v2.yaml	config/normalisation/mappings/v2.yaml	
+config	config/mappings/v3.yaml	config/normalisation/mappings/v3.yaml	
+config	config/mappings/v4.yaml	config/normalisation/mappings/v4.yaml	
+config	config/mappings/v5.yaml	config/normalisation/mappings/v5.yaml	
+config	config/mappings/v6.yaml	config/normalisation/mappings/v6.yaml	
+config	config/mappings/v7.yaml	config/normalisation/mappings/v7.yaml	
+config	config/mappings/v8.yaml	config/normalisation/mappings/v8.yaml	
+config	config/mappings/xbrl/v1/in_bse_fin.yaml	config/normalisation/mappings/xbrl/v1/in_bse_fin.yaml	
+config	config/mappings/xbrl/v1/in_capmkt.yaml	config/normalisation/mappings/xbrl/v1/in_capmkt.yaml	
+config	config/mappings/xbrl/v3/in_bse_fin.yaml	config/normalisation/mappings/xbrl/v3/in_bse_fin.yaml	
+config	config/mappings/xbrl/v5/in_capmkt.yaml	config/normalisation/mappings/xbrl/v5/in_capmkt.yaml	
+config	config/narrate.yaml	config/publication/narrate.yaml	judgement
+config	config/normalisation_policy/v1.yaml	config/normalisation/normalisation_policy/v1.yaml	
+config	config/normalisation_policy/v2.yaml	config/normalisation/normalisation_policy/v2.yaml	
+config	config/retention/holds.yaml	config/storage/retention/holds.yaml	
+config	config/rounding_policy/v1.yaml	config/normalisation/rounding_policy/v1.yaml	
+config	config/screens.yaml	config/coverage/screens.yaml	
+config	config/vendor_surface/label_key.yaml	config/sourcing/vendor_surface/label_key.yaml	
+config	config/vendor_surface/model.yaml	config/sourcing/vendor_surface/model.yaml	
+config	config/vendor_surface/span_key.yaml	config/sourcing/vendor_surface/span_key.yaml	
+config	config/vendor_surface/surfaces.yaml	config/sourcing/vendor_surface/surfaces.yaml	
+config	config/watchlist.yaml	config/coverage/watchlist.yaml	
+test	tests/fundamentals/canon_formula_support.py	tests/equity_os/support/canon_formula_support.py	
+test	tests/fundamentals/compare_tables_support.py	tests/equity_os/support/compare_tables_support.py	
+test	tests/fundamentals/conftest.py	tests/equity_os/conftest.py	
+test	tests/fundamentals/coverage_support.py	tests/equity_os/support/coverage_support.py	
+test	tests/fundamentals/credibility_support.py	tests/equity_os/support/credibility_support.py	
+test	tests/fundamentals/derived_support.py	tests/equity_os/support/derived_support.py	
+test	tests/fundamentals/entity_map_fixtures.py	tests/equity_os/support/entity_map_fixtures.py	
+test	tests/fundamentals/evidence_support.py	tests/equity_os/support/evidence_support.py	
+test	tests/fundamentals/forward_support.py	tests/equity_os/support/forward_support.py	replay-only
+test	tests/fundamentals/laneb_sensitivity_fixtures.py	tests/equity_os/support/laneb_sensitivity_fixtures.py	
+test	tests/fundamentals/ledger_cited_support.py	tests/equity_os/support/ledger_cited_support.py	
+test	tests/fundamentals/ledger_stage4_check.py	tests/equity_os/support/ledger_stage4_check.py	
+test	tests/fundamentals/ledger_stage5_check.py	tests/equity_os/support/ledger_stage5_check.py	
+test	tests/fundamentals/ledger_support.py	tests/equity_os/support/ledger_support.py	
+test	tests/fundamentals/legacy_support.py	tests/equity_os/support/legacy_support.py	
+test	tests/fundamentals/manifest_locators.py	tests/equity_os/support/manifest_locators.py	
+test	tests/fundamentals/manifest_support.py	tests/equity_os/support/manifest_support.py	
+test	tests/fundamentals/memory_support.py	tests/equity_os/support/memory_support.py	
+test	tests/fundamentals/narrate_support.py	tests/equity_os/support/narrate_support.py	
+test	tests/fundamentals/onboarding_support.py	tests/equity_os/support/onboarding_support.py	
+test	tests/fundamentals/pg_evidence_schema_support.py	tests/equity_os/support/pg_evidence_schema_support.py	
+test	tests/fundamentals/pg_support.py	tests/equity_os/support/pg_support.py	
+test	tests/fundamentals/pilot_e2e_support.py	tests/equity_os/support/pilot_e2e_support.py	
+test	tests/fundamentals/pilot_manifest_check.py	tests/equity_os/support/pilot_manifest_check.py	
+test	tests/fundamentals/prep2b_support.py	tests/equity_os/support/prep2b_support.py	
+test	tests/fundamentals/prep5_support.py	tests/equity_os/support/prep5_support.py	
+test	tests/fundamentals/purge_support.py	tests/equity_os/support/purge_support.py	
+test	tests/fundamentals/restore_support.py	tests/equity_os/support/restore_support.py	
+test	tests/fundamentals/retained_support.py	tests/equity_os/support/retained_support.py	
+test	tests/fundamentals/retention_support.py	tests/equity_os/support/retention_support.py	
+test	tests/fundamentals/revision_support.py	tests/equity_os/support/revision_support.py	
+test	tests/fundamentals/run_support.py	tests/equity_os/support/run_support.py	
+test	tests/fundamentals/screen_export_support.py	tests/equity_os/support/screen_export_support.py	
+test	tests/fundamentals/screener_company_support.py	tests/equity_os/support/screener_company_support.py	
+test	tests/fundamentals/screener_financials_support.py	tests/equity_os/support/screener_financials_support.py	
+test	tests/fundamentals/screener_watchlist_fixtures.py	tests/equity_os/support/screener_watchlist_fixtures.py	
+test	tests/fundamentals/screener_watchlist_markup.py	tests/equity_os/support/screener_watchlist_markup.py	
+test	tests/fundamentals/selection_support.py	tests/equity_os/support/selection_support.py	
+test	tests/fundamentals/source_intake_process_support.py	tests/equity_os/support/source_intake_process_support.py	
+test	tests/fundamentals/stage1_e2e_support.py	tests/equity_os/support/stage1_e2e_support.py	
+test	tests/fundamentals/stage1_provenance.py	tests/equity_os/support/stage1_provenance.py	
+test	tests/fundamentals/stage3_data_support.py	tests/equity_os/support/stage3_data_support.py	
+test	tests/fundamentals/stage4_cases.py	tests/equity_os/support/stage4_cases.py	
+test	tests/fundamentals/stage4_filings.py	tests/equity_os/support/stage4_filings.py	
+test	tests/fundamentals/stage4_support.py	tests/equity_os/support/stage4_support.py	
+test	tests/fundamentals/stage5_checks.py	tests/equity_os/support/stage5_checks.py	
+test	tests/fundamentals/stage5_support.py	tests/equity_os/support/stage5_support.py	
+test	tests/fundamentals/temporal_fixture_support.py	tests/equity_os/support/temporal_fixture_support.py	
+test	tests/fundamentals/test_admission.py	tests/equity_os/verification/admission/test_admission.py	
+test	tests/fundamentals/test_ambiguous_candidate_selection.py	tests/equity_os/normalisation/mapping/test_ambiguous_candidate_selection.py	
+test	tests/fundamentals/test_amendment_records.py	tests/equity_os/interface/workflows/test_amendment_records.py	judgement
+test	tests/fundamentals/test_audit_gold.py	tests/equity_os/interface/workflows/test_audit_gold.py	
+test	tests/fundamentals/test_audit_location_eligibility.py	tests/equity_os/publication/approval/test_audit_location_eligibility.py	judgement
+test	tests/fundamentals/test_audit_numeral_emitted_ids.py	tests/equity_os/publication/checking/test_audit_numeral_emitted_ids.py	
+test	tests/fundamentals/test_audit_numeral_scan.py	tests/equity_os/publication/checking/test_audit_numeral_scan.py	
+test	tests/fundamentals/test_audit_numeral_version.py	tests/equity_os/publication/checking/test_audit_numeral_version.py	
+test	tests/fundamentals/test_audit_r1_amount_tokens.py	tests/equity_os/interface/workflows/test_audit_r1_amount_tokens.py	judgement
+test	tests/fundamentals/test_audit_r1_falsifier_ids.py	tests/equity_os/publication/checking/test_audit_r1_falsifier_ids.py	
+test	tests/fundamentals/test_audit_r1_judgments.py	tests/equity_os/interface/workflows/test_audit_r1_judgments.py	judgement
+test	tests/fundamentals/test_audit_r1_location_sql.py	tests/equity_os/publication/checking/test_audit_r1_location_sql.py	
+test	tests/fundamentals/test_audit_thesis_numbers.py	tests/equity_os/interface/workflows/test_audit_thesis_numbers.py	judgement
+test	tests/fundamentals/test_backup_restore.py	tests/equity_os/storage/backup/test_backup_restore.py	
+test	tests/fundamentals/test_bse.py	tests/equity_os/sourcing/exchange/test_bse.py	
+test	tests/fundamentals/test_bse_pdf.py	tests/equity_os/extraction/results_pdf/test_bse_pdf.py	judgement
+test	tests/fundamentals/test_canon_applicability.py	tests/equity_os/normalisation/dictionary/test_canon_applicability.py	
+test	tests/fundamentals/test_canon_calculation_state.py	tests/equity_os/normalisation/derivation/test_canon_calculation_state.py	
+test	tests/fundamentals/test_canon_dictionary_load.py	tests/equity_os/normalisation/dictionary/test_canon_dictionary_load.py	
+test	tests/fundamentals/test_canon_formula.py	tests/equity_os/normalisation/derivation/test_canon_formula.py	
+test	tests/fundamentals/test_canon_interval.py	tests/equity_os/normalisation/derivation/test_canon_interval.py	
+test	tests/fundamentals/test_canon_period_aggregation.py	tests/equity_os/normalisation/derivation/test_canon_period_aggregation.py	
+test	tests/fundamentals/test_cli.py	tests/equity_os/interface/entry/test_cli.py	judgement
+test	tests/fundamentals/test_cli_temporal_admission.py	tests/equity_os/interface/commands/sourcing/test_cli_temporal_admission.py	
+test	tests/fundamentals/test_comparatives.py	tests/equity_os/interface/workflows/test_comparatives.py	
+test	tests/fundamentals/test_compare_attempt_context.py	tests/equity_os/extraction/packages/test_compare_attempt_context.py	judgement
+test	tests/fundamentals/test_compare_config_pins.py	tests/equity_os/verification/comparison/test_compare_config_pins.py	
+test	tests/fundamentals/test_compare_continuing_pat_qualified.py	tests/equity_os/verification/comparison/test_compare_continuing_pat_qualified.py	
+test	tests/fundamentals/test_compare_corroboration.py	tests/equity_os/verification/comparison/test_compare_corroboration.py	
+test	tests/fundamentals/test_compare_diagnostic.py	tests/equity_os/verification/comparison/test_compare_diagnostic.py	
+test	tests/fundamentals/test_compare_extraction_tables.py	tests/equity_os/verification/comparison/test_compare_extraction_tables.py	
+test	tests/fundamentals/test_compare_integration_boundaries.py	tests/equity_os/verification/comparison/test_compare_integration_boundaries.py	
+test	tests/fundamentals/test_compare_queue.py	tests/equity_os/verification/comparison/test_compare_queue.py	
+test	tests/fundamentals/test_compare_routing.py	tests/equity_os/verification/comparison/test_compare_routing.py	
+test	tests/fundamentals/test_compare_routing_drafts.py	tests/equity_os/verification/comparison/test_compare_routing_drafts.py	
+test	tests/fundamentals/test_compare_run_rules.py	tests/equity_os/verification/comparison/test_compare_run_rules.py	
+test	tests/fundamentals/test_compare_runs.py	tests/equity_os/verification/comparison/test_compare_runs.py	
+test	tests/fundamentals/test_compare_tracer.py	tests/equity_os/verification/comparison/test_compare_tracer.py	
+test	tests/fundamentals/test_compare_unmapped_diagnostic.py	tests/equity_os/verification/review_queue/test_compare_unmapped_diagnostic.py	
+test	tests/fundamentals/test_compare_vendor_runs.py	tests/equity_os/verification/comparison/test_compare_vendor_runs.py	
+test	tests/fundamentals/test_condition_proof.py	tests/equity_os/normalisation/mapping/test_condition_proof.py	
+test	tests/fundamentals/test_coverage_batch.py	tests/equity_os/coverage/screens/test_coverage_batch.py	
+test	tests/fundamentals/test_coverage_registry.py	tests/equity_os/companies/identity/test_coverage_registry.py	
+test	tests/fundamentals/test_coverage_watchlist.py	tests/equity_os/publication/approval/test_coverage_watchlist.py	judgement
+test	tests/fundamentals/test_credibility.py	tests/equity_os/extraction/results_pdf/test_credibility.py	judgement
+test	tests/fundamentals/test_credibility_binding.py	tests/equity_os/interface/entry/test_credibility_binding.py	
+test	tests/fundamentals/test_credibility_edges.py	tests/equity_os/analysis/calculations/test_credibility_edges.py	judgement
+test	tests/fundamentals/test_cutover_rollback.py	tests/equity_os/storage/facts/test_cutover_rollback.py	
+test	tests/fundamentals/test_data_stage1_e2e.py	tests/equity_os/interface/workflows/test_data_stage1_e2e.py	
+test	tests/fundamentals/test_data_stage2_e2e.py	tests/equity_os/interface/workflows/test_data_stage2_e2e.py	
+test	tests/fundamentals/test_data_stage3_e2e.py	tests/equity_os/interface/workflows/test_data_stage3_e2e.py	
+test	tests/fundamentals/test_data_stage4_e2e.py	tests/equity_os/interface/workflows/test_data_stage4_e2e.py	
+test	tests/fundamentals/test_derived_regressions.py	tests/equity_os/normalisation/derivation/test_derived_regressions.py	
+test	tests/fundamentals/test_derived_settings.py	tests/equity_os/verification/comparison/test_derived_settings.py	
+test	tests/fundamentals/test_document_intake.py	tests/equity_os/companies/onboarding/test_document_intake.py	
+test	tests/fundamentals/test_documents_daily.py	tests/equity_os/sourcing/documents/test_documents_daily.py	
+test	tests/fundamentals/test_entity_map.py	tests/equity_os/interface/workflows/test_entity_map.py	judgement
+test	tests/fundamentals/test_entity_map_advisories.py	tests/equity_os/interface/workflows/test_entity_map_advisories.py	judgement
+test	tests/fundamentals/test_entity_map_cli.py	tests/equity_os/interface/entry/test_entity_map_cli.py	
+test	tests/fundamentals/test_entity_map_review_fixes.py	tests/equity_os/sourcing/vendors/screener/test_entity_map_review_fixes.py	
+test	tests/fundamentals/test_entity_map_sources.py	tests/equity_os/contracts/measurement/test_entity_map_sources.py	
+test	tests/fundamentals/test_entity_map_verify_fixes.py	tests/equity_os/interface/commands/sourcing/test_entity_map_verify_fixes.py	judgement
+test	tests/fundamentals/test_evidence_contract_boundaries.py	tests/equity_os/normalisation/mapping/test_evidence_contract_boundaries.py	
+test	tests/fundamentals/test_evidence_first_party.py	tests/equity_os/extraction/packages/test_evidence_first_party.py	judgement
+test	tests/fundamentals/test_evidence_interpretation_keys.py	tests/equity_os/contracts/measurement/test_evidence_interpretation_keys.py	
+test	tests/fundamentals/test_evidence_mapping.py	tests/equity_os/normalisation/mapping/test_evidence_mapping.py	
+test	tests/fundamentals/test_evidence_pdf_ingest.py	tests/equity_os/extraction/results_pdf/test_evidence_pdf_ingest.py	judgement
+test	tests/fundamentals/test_evidence_refusals.py	tests/equity_os/extraction/packages/test_evidence_refusals.py	
+test	tests/fundamentals/test_evidence_reprocessing.py	tests/equity_os/extraction/packages/test_evidence_reprocessing.py	judgement
+test	tests/fundamentals/test_evidence_selection.py	tests/equity_os/verification/comparison/test_evidence_selection.py	
+test	tests/fundamentals/test_evidence_vendor.py	tests/equity_os/normalisation/mapping/test_evidence_vendor.py	
+test	tests/fundamentals/test_evidence_vendor_screener.py	tests/equity_os/normalisation/mapping/test_evidence_vendor_screener.py	
+test	tests/fundamentals/test_extraction_integrity.py	tests/equity_os/extraction/results_pdf/test_extraction_integrity.py	judgement
+test	tests/fundamentals/test_fact_store_baseline.py	tests/equity_os/storage/facts/test_fact_store_baseline.py	
+test	tests/fundamentals/test_falsifier_status.py	tests/equity_os/analysis/lenses/thesis_tests/test_falsifier_status.py	
+test	tests/fundamentals/test_file_content_pins.py	tests/equity_os/normalisation/dictionary/test_file_content_pins.py	judgement
+test	tests/fundamentals/test_forward_binding.py	tests/equity_os/publication/revision/test_forward_binding.py	replay-only
+test	tests/fundamentals/test_forward_book.py	tests/equity_os/publication/revision/test_forward_book.py	replay-only
+test	tests/fundamentals/test_forward_meaning.py	tests/equity_os/analysis/lenses/forward/test_forward_meaning.py	replay-only
+test	tests/fundamentals/test_forward_model.py	tests/equity_os/analysis/lenses/forward/test_forward_model.py	replay-only
+test	tests/fundamentals/test_forward_prose.py	tests/equity_os/analysis/lenses/forward/test_forward_prose.py	replay-only
+test	tests/fundamentals/test_forward_traces.py	tests/equity_os/analysis/calculations/test_forward_traces.py	judgement,replay-only
+test	tests/fundamentals/test_forward_view.py	tests/equity_os/publication/drafting/test_forward_view.py	replay-only
+test	tests/fundamentals/test_frozen_manifests.py	tests/equity_os/interface/workflows/test_frozen_manifests.py	judgement
+test	tests/fundamentals/test_generalization.py	tests/equity_os/interface/entry/test_generalization.py	
+test	tests/fundamentals/test_goal_runner.py	tests/equity_os/interface/workflows/test_goal_runner.py	
+test	tests/fundamentals/test_guidance_review_identity.py	tests/equity_os/publication/drafting/test_guidance_review_identity.py	
+test	tests/fundamentals/test_hardening.py	tests/equity_os/interface/entry/test_hardening.py	judgement
+test	tests/fundamentals/test_http_session.py	tests/equity_os/sourcing/transport/test_http_session.py	
+test	tests/fundamentals/test_identity_layers.py	tests/equity_os/companies/identity/test_identity_layers.py	
+test	tests/fundamentals/test_identity_namespace.py	tests/equity_os/extraction/packages/test_identity_namespace.py	
+test	tests/fundamentals/test_laneb_sensitivity.py	tests/equity_os/verification/diagnostics/test_laneb_sensitivity.py	
+test	tests/fundamentals/test_laneb_sensitivity_render.py	tests/equity_os/verification/diagnostics/test_laneb_sensitivity_render.py	
+test	tests/fundamentals/test_laneb_sensitivity_report.py	tests/equity_os/interface/commands/verification/test_laneb_sensitivity_report.py	judgement
+test	tests/fundamentals/test_laneb_triage.py	tests/equity_os/verification/diagnostics/test_laneb_triage.py	
+test	tests/fundamentals/test_laneb_triage_cli.py	tests/equity_os/interface/commands/verification/test_laneb_triage_cli.py	
+test	tests/fundamentals/test_laneb_triage_config.py	tests/equity_os/verification/diagnostics/test_laneb_triage_config.py	
+test	tests/fundamentals/test_ledger_claim_check.py	tests/equity_os/publication/checking/test_ledger_claim_check.py	
+test	tests/fundamentals/test_ledger_display.py	tests/equity_os/publication/drafting/test_ledger_display.py	
+test	tests/fundamentals/test_ledger_export.py	tests/equity_os/publication/approval/test_ledger_export.py	judgement
+test	tests/fundamentals/test_ledger_import.py	tests/equity_os/publication/revision/test_ledger_import.py	
+test	tests/fundamentals/test_ledger_integrity.py	tests/equity_os/storage/database/test_ledger_integrity.py	
+test	tests/fundamentals/test_ledger_lifecycle.py	tests/equity_os/publication/approval/test_ledger_lifecycle.py	
+test	tests/fundamentals/test_ledger_panel.py	tests/equity_os/verification/review_queue/test_ledger_panel.py	
+test	tests/fundamentals/test_ledger_panel_cli.py	tests/equity_os/interface/entry/test_ledger_panel_cli.py	judgement
+test	tests/fundamentals/test_ledger_stage1_e2e.py	tests/equity_os/interface/workflows/test_ledger_stage1_e2e.py	
+test	tests/fundamentals/test_ledger_stage2_e2e.py	tests/equity_os/interface/workflows/test_ledger_stage2_e2e.py	
+test	tests/fundamentals/test_ledger_stage3_e2e.py	tests/equity_os/interface/workflows/test_ledger_stage3_e2e.py	
+test	tests/fundamentals/test_ledger_stage4_e2e.py	tests/equity_os/interface/workflows/test_ledger_stage4_e2e.py	
+test	tests/fundamentals/test_ledger_stage5_e2e.py	tests/equity_os/interface/workflows/test_ledger_stage5_e2e.py	
+test	tests/fundamentals/test_ledger_submit_cli.py	tests/equity_os/interface/commands/sourcing/test_ledger_submit_cli.py	
+test	tests/fundamentals/test_legacy_import.py	tests/equity_os/storage/database/test_legacy_import.py	judgement
+test	tests/fundamentals/test_live_check.py	tests/equity_os/storage/database/test_live_check.py	
+test	tests/fundamentals/test_manifest_approval.py	tests/equity_os/interface/workflows/test_manifest_approval.py	judgement
+test	tests/fundamentals/test_memory_projection.py	tests/equity_os/storage/database/test_memory_projection.py	judgement,replay-only
+test	tests/fundamentals/test_memory_promotion.py	tests/equity_os/publication/approval/test_memory_promotion.py	judgement
+test	tests/fundamentals/test_memory_races.py	tests/equity_os/publication/drafting/test_memory_races.py	
+test	tests/fundamentals/test_memory_retrieval.py	tests/equity_os/storage/memory/test_memory_retrieval.py	
+test	tests/fundamentals/test_memory_status.py	tests/equity_os/storage/database/test_memory_status.py	judgement
+test	tests/fundamentals/test_memory_store.py	tests/equity_os/interface/commands/sourcing/test_memory_store.py	
+test	tests/fundamentals/test_narrate_checks.py	tests/equity_os/publication/checking/test_narrate_checks.py	judgement
+test	tests/fundamentals/test_narrate_flow.py	tests/equity_os/analysis/thesis_models/test_narrate_flow.py	
+test	tests/fundamentals/test_narrate_refusals.py	tests/equity_os/analysis/thesis_models/test_narrate_refusals.py	judgement
+test	tests/fundamentals/test_news.py	tests/equity_os/sourcing/news/test_news.py	
+test	tests/fundamentals/test_news_filing_dedup.py	tests/equity_os/extraction/news/test_news_filing_dedup.py	
+test	tests/fundamentals/test_nse_documents.py	tests/equity_os/sourcing/documents/test_nse_documents.py	
+test	tests/fundamentals/test_onboarding_acquisition.py	tests/equity_os/companies/onboarding/test_onboarding_acquisition.py	
+test	tests/fundamentals/test_onboarding_admission.py	tests/equity_os/companies/onboarding/test_onboarding_admission.py	
+test	tests/fundamentals/test_onboarding_verification.py	tests/equity_os/companies/onboarding/test_onboarding_verification.py	
+test	tests/fundamentals/test_operator_cli.py	tests/equity_os/interface/commands/sourcing/test_operator_cli.py	
+test	tests/fundamentals/test_pdf.py	tests/equity_os/extraction/results_pdf/test_pdf.py	
+test	tests/fundamentals/test_pdf_derived.py	tests/equity_os/extraction/results_pdf/test_pdf_derived.py	
+test	tests/fundamentals/test_pdf_figure_columns.py	tests/equity_os/extraction/results_pdf/test_pdf_figure_columns.py	
+test	tests/fundamentals/test_pdf_ocr.py	tests/equity_os/extraction/results_pdf/test_pdf_ocr.py	
+test	tests/fundamentals/test_pdf_scope.py	tests/equity_os/extraction/results_pdf/test_pdf_scope.py	
+test	tests/fundamentals/test_pdf_statement_pages.py	tests/equity_os/extraction/results_pdf/test_pdf_statement_pages.py	
+test	tests/fundamentals/test_pg_evidence_schema.py	tests/equity_os/companies/identity/test_pg_evidence_schema.py	
+test	tests/fundamentals/test_pg_fact_store.py	tests/equity_os/storage/facts/test_pg_fact_store.py	
+test	tests/fundamentals/test_pg_migrations.py	tests/equity_os/storage/database/test_pg_migrations.py	
+test	tests/fundamentals/test_pg_trace_selection_provenance.py	tests/equity_os/storage/database/test_pg_trace_selection_provenance.py	
+test	tests/fundamentals/test_phase05_issuer_config.py	tests/equity_os/extraction/results_pdf/test_phase05_issuer_config.py	
+test	tests/fundamentals/test_phase05_management_ledger.py	tests/equity_os/publication/drafting/test_phase05_management_ledger.py	
+test	tests/fundamentals/test_phase05_nse_integrated.py	tests/equity_os/extraction/xbrl/test_phase05_nse_integrated.py	
+test	tests/fundamentals/test_phase05_report_artifact.py	tests/equity_os/interface/entry/test_phase05_report_artifact.py	
+test	tests/fundamentals/test_phase05_run_comparatives.py	tests/equity_os/extraction/xbrl/test_phase05_run_comparatives.py	judgement
+test	tests/fundamentals/test_phase05_scope_regression.py	tests/equity_os/extraction/xbrl/test_phase05_scope_regression.py	judgement
+test	tests/fundamentals/test_phase05_thesis_impact.py	tests/equity_os/analysis/lenses/thesis_tests/test_phase05_thesis_impact.py	
+test	tests/fundamentals/test_phase3_cli.py	tests/equity_os/extraction/vendors/screener/test_phase3_cli.py	judgement
+test	tests/fundamentals/test_phase3_compare.py	tests/equity_os/extraction/vendors/screener/test_phase3_compare.py	
+test	tests/fundamentals/test_phase3_map.py	tests/equity_os/verification/diagnostics/test_phase3_map.py	
+test	tests/fundamentals/test_phase3_outcomes.py	tests/equity_os/sourcing/vendors/upstox/test_phase3_outcomes.py	
+test	tests/fundamentals/test_phase3_snapshot.py	tests/equity_os/storage/raw_files/test_phase3_snapshot.py	
+test	tests/fundamentals/test_phase3_tijori_retention.py	tests/equity_os/sourcing/vendors/tijori/test_phase3_tijori_retention.py	
+test	tests/fundamentals/test_pilot_alignment.py	tests/equity_os/normalisation/mapping/test_pilot_alignment.py	
+test	tests/fundamentals/test_pilot_citations.py	tests/equity_os/publication/drafting/test_pilot_citations.py	
+test	tests/fundamentals/test_pilot_e2e.py	tests/equity_os/interface/workflows/test_pilot_e2e.py	
+test	tests/fundamentals/test_pilot_manifest_check.py	tests/equity_os/interface/workflows/test_pilot_manifest_check.py	judgement
+test	tests/fundamentals/test_pilot_memory.py	tests/equity_os/interface/entry/test_pilot_memory.py	
+test	tests/fundamentals/test_pipeline_e2e.py	tests/equity_os/interface/workflows/test_pipeline_e2e.py	
+test	tests/fundamentals/test_pipeline_temporal_admission.py	tests/equity_os/interface/commands/sourcing/test_pipeline_temporal_admission.py	
+test	tests/fundamentals/test_prep1_capmkt_2026.py	tests/equity_os/normalisation/dictionary/test_prep1_capmkt_2026.py	judgement
+test	tests/fundamentals/test_prep2_pilot_pg.py	tests/equity_os/storage/facts/test_prep2_pilot_pg.py	
+test	tests/fundamentals/test_prep2b_admission.py	tests/equity_os/interface/entry/test_prep2b_admission.py	
+test	tests/fundamentals/test_prep2b_citations.py	tests/equity_os/storage/facts/test_prep2b_citations.py	
+test	tests/fundamentals/test_prep2b_cutoffs.py	tests/equity_os/extraction/packages/test_prep2b_cutoffs.py	judgement
+test	tests/fundamentals/test_prep2b_run_draft.py	tests/equity_os/publication/drafting/test_prep2b_run_draft.py	
+test	tests/fundamentals/test_prep2b_traces.py	tests/equity_os/analysis/calculations/test_prep2b_traces.py	
+test	tests/fundamentals/test_prep3_resume.py	tests/equity_os/publication/approval/test_prep3_resume.py	judgement
+test	tests/fundamentals/test_prep5_corrected_filing.py	tests/equity_os/interface/entry/test_prep5_corrected_filing.py	
+test	tests/fundamentals/test_prep5_rework.py	tests/equity_os/analysis/calculations/test_prep5_rework.py	
+test	tests/fundamentals/test_prep6_review.py	tests/equity_os/publication/approval/test_prep6_review.py	
+test	tests/fundamentals/test_prep6_review_flow.py	tests/equity_os/publication/approval/test_prep6_review_flow.py	
+test	tests/fundamentals/test_provenance_config_pin.py	tests/equity_os/contracts/measurement/test_provenance_config_pin.py	
+test	tests/fundamentals/test_reconcile.py	tests/equity_os/verification/comparison/test_reconcile.py	judgement
+test	tests/fundamentals/test_report_builder.py	tests/equity_os/interface/workflows/test_report_builder.py	
+test	tests/fundamentals/test_report_export_gaps.py	tests/equity_os/publication/drafting/test_report_export_gaps.py	
+test	tests/fundamentals/test_retention_classes.py	tests/equity_os/companies/onboarding/test_retention_classes.py	
+test	tests/fundamentals/test_retention_deletion.py	tests/equity_os/storage/raw_files/test_retention_deletion.py	judgement
+test	tests/fundamentals/test_retention_eligibility.py	tests/equity_os/storage/retention/test_retention_eligibility.py	
+test	tests/fundamentals/test_retention_holds.py	tests/equity_os/storage/retention/test_retention_holds.py	
+test	tests/fundamentals/test_retention_protocol.py	tests/equity_os/storage/retention/test_retention_protocol.py	
+test	tests/fundamentals/test_retention_purge.py	tests/equity_os/storage/retention/test_retention_purge.py	
+test	tests/fundamentals/test_retention_readers.py	tests/equity_os/companies/onboarding/test_retention_readers.py	
+test	tests/fundamentals/test_retention_recovery.py	tests/equity_os/storage/retention/test_retention_recovery.py	
+test	tests/fundamentals/test_retention_refetch.py	tests/equity_os/storage/retention/test_retention_refetch.py	judgement
+test	tests/fundamentals/test_retention_restore.py	tests/equity_os/storage/retention/test_retention_restore.py	
+test	tests/fundamentals/test_risk_probe.py	tests/equity_os/analysis/lenses/thesis_tests/test_risk_probe.py	
+test	tests/fundamentals/test_risk_probe_binding.py	tests/equity_os/analysis/calculations/test_risk_probe_binding.py	
+test	tests/fundamentals/test_scaffold.py	tests/equity_os/interface/workflows/test_scaffold.py	judgement
+test	tests/fundamentals/test_screen_export.py	tests/equity_os/coverage/screens/test_screen_export.py	
+test	tests/fundamentals/test_screen_review.py	tests/equity_os/coverage/screens/test_screen_review.py	
+test	tests/fundamentals/test_screener.py	tests/equity_os/sourcing/vendors/screener/test_screener.py	
+test	tests/fundamentals/test_screener_company.py	tests/equity_os/extraction/vendors/screener/test_screener_company.py	
+test	tests/fundamentals/test_screener_company_cli.py	tests/equity_os/interface/commands/sourcing/test_screener_company_cli.py	
+test	tests/fundamentals/test_screener_company_documents.py	tests/equity_os/extraction/vendors/screener/test_screener_company_documents.py	
+test	tests/fundamentals/test_screener_company_hardening.py	tests/equity_os/extraction/vendors/screener/test_screener_company_hardening.py	
+test	tests/fundamentals/test_screener_crosscheck.py	tests/equity_os/verification/diagnostics/test_screener_crosscheck.py	
+test	tests/fundamentals/test_screener_documents.py	tests/equity_os/sourcing/documents/test_screener_documents.py	
+test	tests/fundamentals/test_screener_financials.py	tests/equity_os/extraction/vendors/screener/test_screener_financials.py	
+test	tests/fundamentals/test_screener_financials_cli.py	tests/equity_os/extraction/vendors/screener/test_screener_financials_cli.py	
+test	tests/fundamentals/test_screener_financials_nested.py	tests/equity_os/extraction/vendors/screener/test_screener_financials_nested.py	judgement
+test	tests/fundamentals/test_screener_financials_nested_calls.py	tests/equity_os/extraction/vendors/screener/test_screener_financials_nested_calls.py	
+test	tests/fundamentals/test_screener_selector_construction.py	tests/equity_os/normalisation/mapping/test_screener_selector_construction.py	
+test	tests/fundamentals/test_screener_session.py	tests/equity_os/extraction/vendors/screener/test_screener_session.py	
+test	tests/fundamentals/test_screener_session_cli.py	tests/equity_os/interface/commands/sourcing/test_screener_session_cli.py	
+test	tests/fundamentals/test_screener_watchlist.py	tests/equity_os/extraction/vendors/screener/test_screener_watchlist.py	
+test	tests/fundamentals/test_screener_watchlist_acquire.py	tests/equity_os/extraction/vendors/screener/test_screener_watchlist_acquire.py	
+test	tests/fundamentals/test_screener_watchlist_cli.py	tests/equity_os/interface/commands/sourcing/test_screener_watchlist_cli.py	
+test	tests/fundamentals/test_screener_watchlist_corroborate.py	tests/equity_os/verification/diagnostics/test_screener_watchlist_corroborate.py	
+test	tests/fundamentals/test_screener_watchlist_corroborate_report.py	tests/equity_os/interface/commands/verification/test_screener_watchlist_corroborate_report.py	judgement
+test	tests/fundamentals/test_screener_watchlist_crosscheck.py	tests/equity_os/contracts/measurement/test_screener_watchlist_crosscheck.py	
+test	tests/fundamentals/test_sec.py	tests/equity_os/sourcing/exchange/test_sec.py	
+test	tests/fundamentals/test_selection_regressions.py	tests/equity_os/verification/comparison/test_selection_regressions.py	
+test	tests/fundamentals/test_shareholding_compare.py	tests/equity_os/verification/comparison/test_shareholding_compare.py	
+test	tests/fundamentals/test_shareholding_filing.py	tests/equity_os/companies/onboarding/test_shareholding_filing.py	judgement
+test	tests/fundamentals/test_shareholding_point_check.py	tests/equity_os/verification/comparison/test_shareholding_point_check.py	
+test	tests/fundamentals/test_shareholding_revisions.py	tests/equity_os/sourcing/exchange/test_shareholding_revisions.py	judgement
+test	tests/fundamentals/test_shareholding_vendor.py	tests/equity_os/verification/comparison/test_shareholding_vendor.py	
+test	tests/fundamentals/test_source_catalog.py	tests/equity_os/companies/onboarding/test_source_catalog.py	
+test	tests/fundamentals/test_source_intake_cli.py	tests/equity_os/interface/commands/sourcing/test_source_intake_cli.py	
+test	tests/fundamentals/test_source_intake_store.py	tests/equity_os/storage/raw_files/test_source_intake_store.py	
+test	tests/fundamentals/test_stage1_review_fixes.py	tests/equity_os/verification/review_queue/test_stage1_review_fixes.py	
+test	tests/fundamentals/test_stage4_holdout_git.py	tests/equity_os/interface/workflows/test_stage4_holdout_git.py	judgement
+test	tests/fundamentals/test_stage4_manifest.py	tests/equity_os/interface/entry/test_stage4_manifest.py	
+test	tests/fundamentals/test_store.py	tests/equity_os/storage/facts/test_store.py	
+test	tests/fundamentals/test_store_clock.py	tests/equity_os/companies/identity/test_store_clock.py	judgement
+test	tests/fundamentals/test_store_temporal.py	tests/equity_os/storage/facts/test_store_temporal.py	
+test	tests/fundamentals/test_thesis.py	tests/equity_os/analysis/thesis_models/test_thesis.py	judgement
+test	tests/fundamentals/test_thesis_adjudication.py	tests/equity_os/interface/commands/publication/test_thesis_adjudication.py	
+test	tests/fundamentals/test_thesis_cli.py	tests/equity_os/verification/comparison/test_thesis_cli.py	
+test	tests/fundamentals/test_tijori.py	tests/equity_os/sourcing/vendors/tijori/test_tijori.py	
+test	tests/fundamentals/test_tijori_analysis.py	tests/equity_os/extraction/vendors/tijori/test_tijori_analysis.py	
+test	tests/fundamentals/test_tijori_analysis_cli.py	tests/equity_os/sourcing/vendors/tijori/test_tijori_analysis_cli.py	
+test	tests/fundamentals/test_tijori_documents.py	tests/equity_os/sourcing/documents/test_tijori_documents.py	
+test	tests/fundamentals/test_tijori_events.py	tests/equity_os/extraction/vendors/tijori/test_tijori_events.py	
+test	tests/fundamentals/test_tijori_events_cli.py	tests/equity_os/sourcing/vendors/tijori/test_tijori_events_cli.py	
+test	tests/fundamentals/test_tijori_overview.py	tests/equity_os/extraction/vendors/tijori/test_tijori_overview.py	
+test	tests/fundamentals/test_tijori_overview_cli.py	tests/equity_os/extraction/vendors/tijori/test_tijori_overview_cli.py	
+test	tests/fundamentals/test_tijori_page.py	tests/equity_os/extraction/vendors/tijori/test_tijori_page.py	
+test	tests/fundamentals/test_tijori_shareholding.py	tests/equity_os/extraction/vendors/tijori/test_tijori_shareholding.py	
+test	tests/fundamentals/test_tijori_shareholding_cli.py	tests/equity_os/sourcing/vendors/tijori/test_tijori_shareholding_cli.py	
+test	tests/fundamentals/test_tijori_tables.py	tests/equity_os/extraction/vendors/tijori/test_tijori_tables.py	
+test	tests/fundamentals/test_tijori_tables_cli.py	tests/equity_os/sourcing/vendors/tijori/test_tijori_tables_cli.py	
+test	tests/fundamentals/test_transcript_admission.py	tests/equity_os/extraction/packages/test_transcript_admission.py	
+test	tests/fundamentals/test_transcript_cli.py	tests/equity_os/extraction/packages/test_transcript_cli.py	judgement
+test	tests/fundamentals/test_upstox_capture_integration.py	tests/equity_os/sourcing/vendors/upstox/test_upstox_capture_integration.py	
+test	tests/fundamentals/test_upstox_cli.py	tests/equity_os/interface/commands/sourcing/test_upstox_cli.py	
+test	tests/fundamentals/test_upstox_crosscheck_cli.py	tests/equity_os/interface/commands/verification/test_upstox_crosscheck_cli.py	
+test	tests/fundamentals/test_upstox_crosscheck_replay.py	tests/equity_os/interface/commands/verification/test_upstox_crosscheck_replay.py	
+test	tests/fundamentals/test_upstox_entity_source.py	tests/equity_os/companies/identity/test_upstox_entity_source.py	
+test	tests/fundamentals/test_upstox_instruments.py	tests/equity_os/sourcing/vendors/upstox/test_upstox_instruments.py	
+test	tests/fundamentals/test_upstox_retention.py	tests/equity_os/sourcing/vendors/upstox/test_upstox_retention.py	
+test	tests/fundamentals/test_upstox_scope_guards.py	tests/equity_os/verification/diagnostics/test_upstox_scope_guards.py	
+test	tests/fundamentals/test_upstox_source.py	tests/equity_os/sourcing/vendors/upstox/test_upstox_source.py	
+test	tests/fundamentals/test_upstox_statements.py	tests/equity_os/extraction/vendors/upstox/test_upstox_statements.py	
+test	tests/fundamentals/test_vendor_dictionary_bridge.py	tests/equity_os/normalisation/derivation/test_vendor_dictionary_bridge.py	judgement
+test	tests/fundamentals/test_vendor_ingest_reuse.py	tests/equity_os/extraction/surfaces/test_vendor_ingest_reuse.py	judgement
+test	tests/fundamentals/test_vendor_schema.py	tests/equity_os/verification/comparison/test_vendor_schema.py	
+test	tests/fundamentals/test_vendor_sql_boundaries.py	tests/equity_os/interface/workflows/test_vendor_sql_boundaries.py	judgement
+test	tests/fundamentals/test_vendor_surface_bakeoff.py	tests/equity_os/extraction/model/test_vendor_surface_bakeoff.py	
+test	tests/fundamentals/test_vendor_surface_canary.py	tests/equity_os/sourcing/surfaces/test_vendor_surface_canary.py	
+test	tests/fundamentals/test_vendor_surface_cells.py	tests/equity_os/extraction/surfaces/test_vendor_surface_cells.py	judgement
+test	tests/fundamentals/test_vendor_surface_claims.py	tests/equity_os/extraction/model/test_vendor_surface_claims.py	
+test	tests/fundamentals/test_vendor_surface_company.py	tests/equity_os/sourcing/surfaces/test_vendor_surface_company.py	
+test	tests/fundamentals/test_vendor_surface_due.py	tests/equity_os/sourcing/surfaces/test_vendor_surface_due.py	
+test	tests/fundamentals/test_vendor_surface_fetch.py	tests/equity_os/sourcing/surfaces/test_vendor_surface_fetch.py	
+test	tests/fundamentals/test_vendor_surface_labels.py	tests/equity_os/extraction/model/test_vendor_surface_labels.py	
+test	tests/fundamentals/test_vendor_surface_market.py	tests/equity_os/sourcing/surfaces/test_vendor_surface_market.py	
+test	tests/fundamentals/test_vendor_surface_promote.py	tests/equity_os/interface/workflows/test_vendor_surface_promote.py	judgement
+test	tests/fundamentals/test_vendor_surface_readers.py	tests/equity_os/sourcing/surfaces/test_vendor_surface_readers.py	
+test	tests/fundamentals/test_vendor_surface_sectors.py	tests/equity_os/sourcing/surfaces/test_vendor_surface_sectors.py	
+test	tests/fundamentals/test_vendor_surface_series.py	tests/equity_os/sourcing/surfaces/test_vendor_surface_series.py	
+test	tests/fundamentals/test_vendor_surface_tables.py	tests/equity_os/extraction/surfaces/test_vendor_surface_tables.py	
+test	tests/fundamentals/test_vendor_surface_tracer.py	tests/equity_os/sourcing/surfaces/test_vendor_surface_tracer.py	
+test	tests/fundamentals/test_vendor_upgrade.py	tests/equity_os/storage/records/test_vendor_upgrade.py	
+test	tests/fundamentals/test_vendor_values_store.py	tests/equity_os/storage/records/test_vendor_values_store.py	
+test	tests/fundamentals/test_verify.py	tests/equity_os/verification/comparison/test_verify.py	
+test	tests/fundamentals/test_verify_multislice.py	tests/equity_os/interface/workflows/test_verify_multislice.py	judgement
+test	tests/fundamentals/test_verify_privacy.py	tests/equity_os/interface/workflows/test_verify_privacy.py	judgement
+test	tests/fundamentals/test_verify_project.py	tests/equity_os/interface/workflows/test_verify_project.py	judgement
+test	tests/fundamentals/test_verify_support_seal.py	tests/equity_os/interface/workflows/test_verify_support_seal.py	judgement
+test	tests/fundamentals/test_views_export.py	tests/equity_os/interface/commands/sourcing/test_views_export.py	judgement
+test	tests/fundamentals/test_views_readonly_role.py	tests/equity_os/storage/database/test_views_readonly_role.py	
+test	tests/fundamentals/test_watchlist_xbrl_ingest.py	tests/equity_os/companies/identity/test_watchlist_xbrl_ingest.py	
+test	tests/fundamentals/test_xbrl.py	tests/equity_os/extraction/xbrl/test_xbrl.py	
+test	tests/fundamentals/test_xbrl_anchor_integrity.py	tests/equity_os/extraction/xbrl/test_xbrl_anchor_integrity.py	
+test	tests/fundamentals/test_xbrl_dimension_identity.py	tests/equity_os/extraction/packages/test_xbrl_dimension_identity.py	judgement
+test	tests/fundamentals/tijori_cli_support.py	tests/equity_os/support/tijori_cli_support.py	
+test	tests/fundamentals/upstox_fixtures.py	tests/equity_os/support/upstox_fixtures.py	
+test	tests/fundamentals/vendor_retained_support.py	tests/equity_os/support/vendor_retained_support.py	
+test	tests/fundamentals/vendor_surface_support.py	tests/equity_os/support/vendor_surface_support.py	

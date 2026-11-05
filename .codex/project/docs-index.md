@@ -15,7 +15,7 @@ Authoritative docs and when to read them.
 | `docs/evidence/product-completion/vision-acceptance.md` | Latest product-completion evidence checkpoint; JSON companion binds requirements to source revisions and records unresolved scope and proof |
 | `docs/evidence/product-completion/retrospective-evaluation-contract-proposal.md` | Proposed honest Apar evaluation after actual capture; requires the applicable owner decision before changing evaluation contracts |
 | `docs/evidence/product-completion/retained-source-inventory.json` | Retained document paths, sizes and hashes; inventory alone does not prove durable backup or restore |
-| `scripts/restructure/moves.tsv` | **Finding where an old path went.** RESTRUCTURE-1's move map: every pre-move path (the old `src/` package, flat `config/` files, the old test folder) and its place under `equity_os/`, `config/<bucket>/` or `tests/equity_os/`. Historical specs, plans and evidence keep the old paths; read them through this map |
+| `docs/history/restructure-1-moves.tsv` | **Finding where an old path went.** RESTRUCTURE-1's move map: every pre-move path (the old `src/` package, flat `config/` files, the old test folder) and its place under `equity_os/`, `config/<bucket>/` or `tests/equity_os/`. Historical specs, plans and evidence keep the old paths; read them through this map |
 | `CONTEXT.md` | Naming anything — the domain glossary; use its terms, avoid its listed synonyms |
 | `.beads/beads.md` | Beads workflow, agent context profiles, session-completion protocol |
 | `.codex/project/brief.md` → `verification.md` → `invariants.md` | Orienting in a new session (standard read order) |
