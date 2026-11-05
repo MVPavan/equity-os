@@ -409,13 +409,33 @@ PYEOF
   # `+` side of `git diff -U0 scope_base` for a tracked file, the whole content of an
   # untracked one. Built per path so `added_tests` is exactly the added lines of
   # files under tests/, never a grep on a merged stream.
+  #
+  # A reviewed move (VERIFY_RENAME_MAP, a moves.tsv: kind, old, new, flag) adds
+  # only what it changed. This prints the old path, and only when the destination
+  # has a row, both paths share a protection domain (both under tests/, or
+  # neither) and git itself reports the rename. Everything else gets the full scan.
+  reviewed_move_source() {
+    [ -n "${VERIFY_RENAME_MAP:-}" ] || return 1
+    local new="$1" old diff
+    old="$(awk -F'\t' -v new="${new}" '$3 == new {print $2; exit}' "${VERIFY_RENAME_MAP}" 2>/dev/null)"
+    [ -n "${old}" ] || return 1
+    case "${old}|${new}" in
+      tests/*\|tests/*) ;;
+      tests/*|*\|tests/*) return 1 ;;
+    esac
+    diff="$(git diff -U0 -M "${scope_base}" -- "${old}" "${new}")"
+    grep -qxF "rename from ${old}" <<<"${diff}" && grep -qxF "rename to ${new}" <<<"${diff}" || return 1
+    printf '%s' "${old}"
+  }
   local added added_tests
   added="$(mktemp)"; added_tests="$(mktemp)"
   if [ -n "${changed_files}" ]; then
-    local f lines
+    local f lines old_path
     while IFS= read -r f; do
       [ -n "${f}" ] || continue
-      if [ -n "$(git ls-files -- "${f}")" ]; then
+      if old_path="$(reviewed_move_source "${f}")"; then
+        lines="$(git diff -U0 -M "${scope_base}" -- "${old_path}" "${f}" | grep -E '^\+' | grep -vE '^\+\+\+ ' | sed 's/^+//')"
+      elif [ -n "$(git ls-files -- "${f}")" ]; then
         lines="$(git diff -U0 "${scope_base}" -- "${f}" | grep -E '^\+' | grep -vE '^\+\+\+ ' | sed 's/^+//')"
       else
         # -I: an untracked binary file must not poison the text scans below.
@@ -464,10 +484,19 @@ PYEOF
   # implementer is briefed "do not edit tests/" and those files are hashed, so
   # routing it IMPL leaves it no legal move — the same structural fault that
   # made diff coverage advisory. Test-scope size violations route CONTRACT.
+  #
+  # VERIFY_OVERSIZE_LIST (an oversize.tsv: path, pre-move lines, ceiling) lets a
+  # reviewed moved file stay above 800, but never above its ceiling. An unlisted
+  # file has ceiling 0, so it fails as it always did.
   local big py_changed big_src big_test
   py_changed="$(grep -E '\.py$' <<<"${changed_files}" || true)"
   if [ -n "${py_changed}" ]; then
-    big="$(wc -l ${py_changed} 2>/dev/null | awk '$1 > 800 && $2 != "total" {print $2":"$1}' | head -3 | paste -sd, -)"
+    big="$(wc -l ${py_changed} 2>/dev/null | awk '
+      BEGIN {
+        list = ENVIRON["VERIFY_OVERSIZE_LIST"]
+        while (list != "" && (getline row < list) > 0) { split(row, col, "\t"); ceiling[col[1]] = col[3] + 0 }
+      }
+      $1 > 800 && $2 != "total" && $1 > ceiling[$2] {print $2":"$1}' | head -3 | paste -sd, -)"
     big_test="$(tr ',' '\n' <<<"${big}" | grep -E "^${TEST_SCOPE}/" | paste -sd, - || true)"
     big_src="$(tr ',' '\n' <<<"${big}" | grep -vE "^${TEST_SCOPE}/" | grep -v '^$' | paste -sd, - || true)"
     [ -n "${big_test}" ] && escalate "${EXIT_CONTRACT}" "over-800-lines in hashed test scope (${big_test})"
