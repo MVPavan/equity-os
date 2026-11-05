@@ -454,9 +454,9 @@ the unit as printed: a source is never corrected in the closed list, and no read
 
 | Id | Contract: metric, scope, horizon, unit | `cells_anchor` | `row_anchor`, `row_text`, which is also `subject_text` |
 |---|---|---|---|
-| `conductor_installed_capacity_fy26` | `installed_capacity`, `conductor`, `FY26`, `MT` | `p8.b16.0:38` | `p8.b13.0:10`, `CONDUCTORS` |
-| `oil_installed_capacity_fy26` | `installed_capacity`, `oil`, `FY26`, `MT` | `p9.b6.0:43` | `p9.b3.0:30`, `TRANSFORMER AND SPECIALTY OILS` |
-| `cable_installed_capacity_fy26` | `installed_capacity`, `cable`, `FY26`, `KM` | `p10.b6.0:38` | `p10.b3.0:6`, `CABLES` |
+| `conductor_installed_capacity_fy26` | `installed_capacity`, `conductor`, `FY26`, `MT` | `p8.b27.0:38` | `p8.b23.0:10`, `CONDUCTORS` |
+| `oil_installed_capacity_fy26` | `installed_capacity`, `oil`, `FY26`, `MT` | `p9.b7.0:43` | `p9.b4.0:30`, `TRANSFORMER AND SPECIALTY OILS` |
+| `cable_installed_capacity_fy26` | `installed_capacity`, `cable`, `FY26`, `KM` | `p10.b7.0:38` | `p10.b4.0:6`, `CABLES` |
 
 `published.observation_id` is 904 for each admitted id. **V** The anchors resolve through the loader on the deck's bytes, and
 the three spans pass today's `_prose` unchanged; `validate_book` gains only the `ROW_BINDING` branch in rule 3. Rules 1,
