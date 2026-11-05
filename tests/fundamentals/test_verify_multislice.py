@@ -64,7 +64,7 @@ def test_slices_share_checks_and_keep_each_contract(gate, second) -> None:  # no
             "pytest",
             "tests/fundamentals",
             "-n",
-            "8",
+            "24",
             "--dist",
             "loadfile",
             "-q",

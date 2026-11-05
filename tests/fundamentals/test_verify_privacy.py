@@ -235,7 +235,7 @@ def test_default_gate_command_registry_and_bounded_output_are_preserved(gate) ->
         "pytest",
         "tests/fundamentals",
         "-n",
-        "8",
+        "24",
         "--dist",
         "loadfile",
         "-q",
