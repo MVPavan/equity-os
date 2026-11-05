@@ -1,7 +1,7 @@
 # RESEARCH-4 S1 — Base-case forward view — Implementation Plan
 
 **Origin:** `docs/specs/2026-11-03-research-4-forward-view.md` (r6, approved with this plan by gpt-6.1-sol), §8 S1 and §10, with §0-§7. Bead `eqos-3v3w`. Format: `.claude/skills/planning/references/plan-format.md`.
-**Status:** approved r3 (2026-11-03): approver gpt-6.1-sol, `APPROVE` after two fix rounds. Task 0 passed (below). The owner granted permissions A and B on 2026-11-04. **Amendment r4 (drafted 2026-11-05, one review's findings fixed, not yet approved; r3 stands until gpt-6.1-sol approves it):** Tasks 9a-9c, with spec r7. Code approval at `0858fc89` covers none of it.
+**Status:** approved r3 (2026-11-03): approver gpt-6.1-sol, `APPROVE` after two fix rounds. Task 0 passed (below). The owner granted permissions A and B on 2026-11-04. **Amendment r4 (approved 2026-11-05: approver gpt-6.1-sol, `APPROVE` after two fix rounds):** Tasks 9a-9c, with spec r7. Code approval at `0858fc89` covers none of it.
 **Goal:** on `eqos_test_r4`, the FY27_Q1 run writes a `forward_view` section with a base-case five-year path by driver and division, recomputed by code on every check, all claims `MATCH`, with a real Sol `APPROVE` and a readable export.
 **Out of scope:**
 - Any live write: 0046, the thesis and the report stay off the live database until the live close. The one exception is Task 9c's single intake registration of the deck, if any capacity id is admitted, which the sealed cutoff then requires (spec §6.2).

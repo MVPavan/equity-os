@@ -1,7 +1,7 @@
 # RESEARCH-4 — Forward view — Spec
 
 **Status:** approved r6 (2026-11-03): approver gpt-6.1-sol, `APPROVE` on r5's re-review after its fresh closing review, and on r6's amendments with the S1 plan. Amendment: OD-9, §6.2 rule 3, §7.3's capture identity, S1 cases 1 and 4, §10 and the total estimate (§9, last row). The owner granted permissions A and B in §7.1 on 2026-11-04. No implementation, rehearsal or live result is established.
-**Amendment r7 (drafted 2026-11-05, one review's findings fixed, not yet approved; r6 stands until gpt-6.1-sol approves it):** FY26 installed capacity as an as-printed disclosure, conditional on the meaning round, in §1, §3, §4, §6.2 (closed list, rules 3 and 4), §6.3 (rules 2 and 7), §7.2, §8 S1, §9 and §10. No model line, block, migration or registry assumption changes.
+**Amendment r7 (approved 2026-11-05: approver gpt-6.1-sol, `APPROVE` after two fix rounds):** FY26 installed capacity as an as-printed disclosure, conditional on the meaning round, in §1, §3, §4, §6.2 (closed list, rules 3 and 4), §6.3 (rules 2 and 7), §7.2, §8 S1, §9 and §10. No model line, block, migration or registry assumption changes.
 **Origin:** bead `eqos-3v3w`; binding requirements `docs/specs/2026-10-27-research-3-thesis-analysis.md` §7; owner
 direction `docs/goals/2026-10-27-research-report-targets.md`.
 **Implementer:** Opus. **Boundaries:** E-01 stays deferred
