@@ -243,7 +243,8 @@ Goal: The spec's replay sequence works on the state it really transforms, withou
 
 Files: none committed. A disposable branch from `45d315f9` in a disposable worktree.
 
-Approach: Merge `P`, run `move.py`, merge the candidate. Then build the moved tree of `P` alone.
+Approach: Merge `P`, run `move.py`. Build the moved tree of `P` alone and confirm it equals the
+candidate's move commit; then `git merge -s ours` that commit and merge the candidate.
 
 Verification: Both merges complete without a hand fix. The diff against the candidate names only
 `research-4`'s own work, under mapped paths. `MOVED_PINS` is byte-equal. Ruff, mypy and importing each

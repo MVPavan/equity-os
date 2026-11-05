@@ -350,8 +350,11 @@ during the cutover rehearsal. The task stays disabled throughout.
 ## 8. Replay on `research-4` (designed and rehearsed; the real replay is later)
 
 `research-4` touches none of the 40 pinned files (verified), so its `MOVED_PINS` come out equal.
-Procedure after `main` has moved: merge `P` into `research-4`, run the same script, then merge the
-moved `main`. The two moved trees then differ only by `research-4`'s own work. Migration `0046` is
+Procedure after `main` has moved: merge `P` into `research-4`, run the same script, confirm the
+moved tree of `P` alone equals `main`'s move commit, record that commit with `git merge -s ours`, then
+merge the moved `main`. The two moved trees then differ only by `research-4`'s own work. The `-s ours`
+step is needed because a plain merge conflicts in import blocks: both sides rename the same import
+lines identically, and `research-4`'s added imports sort next to them (rehearsal, 2026-11-05). Migration `0046` is
 unaffected. The map already covers its 6 new modules and 9 new test files.
 
 The whole sequence is rehearsed on disposable branches cut from `45d315f9`, without altering
