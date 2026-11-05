@@ -303,6 +303,9 @@ scenario. `BLOCK_INPUTS[block]` is a closed table.
 Shown beside the assumption for the reader; not inputs to `compute`. Each is a `CALCULATION` trace over the selected
 annual statement, flows on its `YEAR` window and balances at its close, at the rounding policy's scale and
 `ROUND_HALF_EVEN`, as the probe's ratios (`risk_probe.py:612-620`). A guard failing renders it not available.
+These five display-only anchors undergo the same independent recomputation on every check and in the write precheck;
+the stored trace result alone is insufficient. The writer uses the pinned rounding policy; replay compares the
+recomputed rate rounded half-even at the claim's precision.
 
 | Anchor | Formula | Guard |
 |---|---|---|
@@ -587,7 +590,7 @@ holds at ordinary resolution.
 | Assumption endpoint | `fcst.a.<scope>.<id>.<end>` | `THESIS_CLAIM` whose cited row's key is exactly `assumption.<scope>.<id>.<end>` (`thesis.X` → `falsifier.X`, `fcst.p.X` → `scenario.X`, `fcst.t.X` → `trigger.X`; else `None`). Scope is the book's for that id. Value kind and unit are the registry's; currency and scale none, or crore for `capex_crore` |
 | Disclosure | `fcst.d.<id>` | `SOURCE_QUOTE`; anchor, quote, value and contract are the cited book's. Its capture is the one selection gives (`_cited`): first-party, holding the book's exact `source_sha256` and supplying the verified span; it need not be the pinned observation's capture, which stays the publication and issuer evidence (§6.2 rules 5, 6) |
 | Filed operand | `probe.Rn.<line>` | Filed `FIGURE`; `measurement_key`: canonical id `<line>`, the report's entity, `CONSOLIDATED`, `forward.filed`'s window or balance date, INR, `CURRENCY_AMOUNT`; unit crore, scale 10^7 |
-| Base trace | `fcst.base.<x>` | `CALCULATION`; same key fields with canonical id `fcst.base.<x>`; row 4 ties the trace's digest to it |
+| Base trace | `fcst.base.<x>` | `CALCULATION`; same key fields with canonical id `fcst.base.<x>`; row 4 ties the trace's digest to it. On every check, independently recompute the seven S1 anchors from the sealed filing's lines under its pins. Require one distinct value per required key; missing or conflicting values give `UNRESOLVED`. Compare EBITDA and PPE exactly in crore, and rates after `ROUND_HALF_EVEN` rounding at claim precision. Trace-reference correspondence is also required throughout the closure |
 | Any | | Not a `PROJECTION` |
 
 **Wrong book.** Every thesis citation in the version holds one `cited_sealed_digest`, of a thesis version whose twin's
