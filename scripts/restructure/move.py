@@ -53,12 +53,12 @@ CONFIG_PATH = re.compile(r"(?<![\w./-])config/[\w./-]*")
 problems: list[str] = []
 
 
-def run(*command: str, capture: bool = True) -> str:
+def run(*command: str) -> str:
     """Run a command from the repo root; a non-zero exit stops the script."""
-    done = subprocess.run(command, capture_output=capture, text=True, check=False)
+    done = subprocess.run(command, capture_output=True, text=True, check=False)
     if done.returncode:
         raise SystemExit(f"FAILED {' '.join(command)}\n{done.stdout}\n{done.stderr}")
-    return done.stdout if capture else ""
+    return done.stdout
 
 
 def read_tsv(name: str) -> list[dict[str, str]]:
@@ -301,17 +301,6 @@ def rewrite_import(
     return start, end, ("\n" + indent).join(lines).encode()
 
 
-def path_root(node: ast.AST) -> ast.AST:
-    """The object a chain of attributes, subscripts and calls hangs from."""
-    while True:
-        if isinstance(node, ast.Attribute | ast.Subscript):
-            node = node.value
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-            node = node.func.value
-        else:
-            return node
-
-
 def is_file_path(node: ast.AST) -> bool:
     """``Path(__file__)``."""
     return (
@@ -391,7 +380,7 @@ class Rewriter:
             while run_end + 1 < len(items) and is_string(items[run_end + 1]):
                 run_end += 1
             run_items = items[index : run_end + 1]
-            self.run(run_items, items[index - 1] if index else None, items, run_end, rooted_in_tmp)
+            self.run(run_items, items[index - 1] if index else None, items, rooted_in_tmp)
             index = run_end + 1
         self.after_config_fstring(items)
 
@@ -409,7 +398,6 @@ class Rewriter:
         run_items: list[ast.AST],
         before: ast.AST | None,
         items: list[ast.AST],
-        run_end: int,
         rooted_in_tmp: bool,
     ) -> None:
         """One run of consecutive string segments."""
@@ -446,16 +434,18 @@ class Rewriter:
                 self.config_tail(first, rooted_in_tmp)
 
     def config_tail(self, segment: ast.AST, rooted_in_tmp: bool) -> None:
-        """The first segment under a config root gains its bucket."""
+        """The first segment under a config root gains its bucket; an unknown one needs a row."""
         top = segment.value.split("/")[0]
-        if top in self.keep or top in NEW_TOPS:
+        if segment.value in self.keep or top in self.keep or top in NEW_TOPS:
             return
         prefix = config_prefix(top)
-        if prefix is None or (rooted_in_tmp and "." in top):
-            self.handled.add(id(segment))
+        self.handled.add(id(segment))
+        if prefix is None:
+            problems.append(f"{self.old_path}:{segment.lineno}: config path with no row: {top}")
+            return
+        if rooted_in_tmp and "." in top:
             return
         self.insert_prefix(segment, prefix)
-        self.handled.add(id(segment))
 
     def anchor(self, node: ast.BinOp) -> None:
         """``Path(__file__).parent / "fixtures"`` becomes repo-rooted."""
@@ -595,14 +585,15 @@ def documented_nodes(tree: ast.Module) -> list[ast.Constant]:
     ]
 
 
-def wrap_docstrings(text: str) -> str:
+def wrap_docstrings(text: str, before: str) -> str:
     """A docstring line a longer path pushed past the limit breaks at its last fitting space."""
+    unchanged = set(before.split("\n"))
     lines = text.split("\n")
     spans = [(node.lineno, node.end_lineno) for node in documented_nodes(ast.parse(text))]
     for first, last in sorted(spans, reverse=True):
         for number in range(last, first - 1, -1):
             line = lines[number - 1]
-            if len(line.encode()) > LINE_LIMIT:
+            if len(line) > LINE_LIMIT and line not in unchanged:
                 indent = line[: len(line) - len(line.lstrip())]
                 cut = line.rfind(" ", len(indent) + 1, LINE_LIMIT)
                 if cut < 0:
@@ -945,7 +936,7 @@ def main() -> None:
         new = MOVED.get(old, old)
         rewriter = Rewriter(text.encode(), old, new, keep.get(old, set()))
         result = rewriter.result(old in PINNED_OLD).decode()
-        Path(new).write_text(result if old in PINNED_OLD else wrap_docstrings(result))
+        Path(new).write_text(result if old in PINNED_OLD else wrap_docstrings(result, text))
     for path, text in text_files.items():
         out = rewrite_text(text, False, path) if path in TEXT_SCRIPTS else text
         Path(path).write_text(out)
