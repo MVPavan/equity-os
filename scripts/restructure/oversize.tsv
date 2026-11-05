@@ -1,0 +1,17 @@
+path	pre_move_lines	ceiling
+equity_os/interface/entry/cli.py	798	813
+equity_os/interface/workflows/goal_runner.py	1087	1102
+equity_os/sourcing/vendors/upstox/upstox_source.py	941	956
+equity_os/sourcing/surfaces/vendor_surface_capture.py	870	885
+equity_os/publication/drafting/run_draft.py	798	813
+tests/equity_os/support/compare_tables_support.py	806	821
+tests/equity_os/verification/comparison/test_compare_extraction_tables.py	803	818
+tests/equity_os/interface/workflows/test_goal_runner.py	1096	1111
+tests/equity_os/sourcing/news/test_news.py	1163	1178
+tests/equity_os/extraction/vendors/screener/test_phase3_compare.py	800	815
+tests/equity_os/companies/onboarding/test_shareholding_filing.py	808	823
+tests/equity_os/interface/commands/sourcing/test_source_intake_cli.py	858	873
+tests/equity_os/analysis/thesis_models/test_thesis.py	826	841
+tests/equity_os/extraction/vendors/tijori/test_tijori_overview.py	903	918
+tests/equity_os/sourcing/surfaces/test_vendor_surface_company.py	1006	1021
+tests/equity_os/sourcing/surfaces/test_vendor_surface_due.py	973	988
