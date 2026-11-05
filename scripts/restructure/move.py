@@ -114,6 +114,12 @@ def config_prefix(top: str) -> str | None:
     return PREFIX.get(top) or ("runs" if top.startswith("aparinds-") else None)
 
 
+def config_relative(text: str) -> bool:
+    """A run config's name or a config folder's YAML path, which no ``config/`` prefix marks."""
+    top = text.split("/")[0]
+    return text.endswith(".yaml") and (top.startswith("aparinds-") or "/" in text and top in PREFIX)
+
+
 def map_module_text(match: re.Match[str], strict: bool, where: str) -> str:
     """A dotted name through the map, longest module prefix first, keeping an attribute suffix."""
     text = match.group()
@@ -330,6 +336,15 @@ def is_config_literal(node: ast.AST) -> bool:
     return is_string(node) and node.value == "config"
 
 
+def is_config_root(node: ast.AST) -> bool:
+    """A config literal or a name the code uses for the config root."""
+    return (
+        is_config_literal(node)
+        or (isinstance(node, ast.Name) and node.id in CONFIG_ROOT_NAMES)
+        or (isinstance(node, ast.Attribute) and node.attr in CONFIG_ROOT_NAMES)
+    )
+
+
 def flatten(node: ast.BinOp) -> tuple[ast.AST, list[ast.AST]]:
     """A ``/`` chain as (root, segments), left to right."""
     parts: list[ast.AST] = []
@@ -383,7 +398,7 @@ class Rewriter:
     def after_config_fstring(self, items: list[ast.AST]) -> None:
         """``"config" / f"aparinds-{quarter}.yaml"``: the name prefix decides the bucket."""
         for before, item in zip(items, items[1:], strict=False):
-            if is_config_literal(before) and isinstance(item, ast.JoinedStr):
+            if is_config_root(before) and isinstance(item, ast.JoinedStr):
                 head = item.values[0]
                 if is_string(head) and config_prefix(head.value.split("/")[0]):
                     self.insert_prefix(item, config_prefix(head.value.split("/")[0]) or "")
@@ -427,12 +442,7 @@ class Rewriter:
                 self.config_tail(run_items[1], rooted_in_tmp)
         elif before is not None and is_string(first):
             top = first.value.split("/")[0]
-            named = (
-                is_config_literal(before)
-                or (isinstance(before, ast.Name) and before.id in CONFIG_ROOT_NAMES)
-                or (isinstance(before, ast.Attribute) and before.attr in CONFIG_ROOT_NAMES)
-            )
-            if top in DIR_TOPS or named:
+            if top in DIR_TOPS or is_config_root(before):
                 self.config_tail(first, rooted_in_tmp)
 
     def config_tail(self, segment: ast.AST, rooted_in_tmp: bool) -> None:
@@ -507,6 +517,15 @@ class Rewriter:
             ):
                 loggers.update(id(arg) for arg in node.args)
         for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.JoinedStr)
+                and node.values
+                and id(node.values[0]) not in self.handled
+            ):
+                head, tail = node.values[0], node.values[-1]
+                named = is_string(head) and is_string(tail) and head.value not in self.keep
+                if named and config_relative(head.value + tail.value):
+                    problems.append(f"{self.old_path}:{node.lineno}: config f-string with no row")
             if not is_string(node) or id(node) in self.handled or id(node) in loggers:
                 continue
             if node.value in self.keep:
@@ -514,6 +533,8 @@ class Rewriter:
             where = f"{self.old_path}:{node.lineno}"
             new = rewrite_text(node.value, id(node) not in documented, where)
             if new == node.value:
+                if id(node) not in documented and config_relative(node.value):
+                    problems.append(f"{where}: config-relative name with no row: {node.value}")
                 continue
             start, end = self.offsets.span(node)
             raw = self.data[start:end]

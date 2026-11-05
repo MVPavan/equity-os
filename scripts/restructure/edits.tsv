@@ -151,3 +151,21 @@ tests/fundamentals/test_verify_project.py	1	("D8", "test_data_stage3_e2e.py")	("
 tests/fundamentals/test_verify_project.py	1	("D9", "test_ledger_stage5_e2e.py")	("D9", "interface/workflows/test_ledger_stage5_e2e.py")	the registered target's moved path
 tests/fundamentals/test_verify_project.py	1	("Frozen manifests", "test_frozen_manifests.py")	("Frozen manifests", "interface/workflows/test_frozen_manifests.py")	the registered target's moved path
 tests/fundamentals/test_verify_project.py	1	("Amendment records", "test_amendment_records.py")	("Amendment records", "interface/workflows/test_amendment_records.py")	the registered target's moved path
+tests/fundamentals/test_compare_run_rules.py	2	"comparison_policy/v1.yaml"	"verification/comparison_policy/v1.yaml"	a config-root-relative path the map cannot see; its folder moved to config/verification
+tests/fundamentals/test_compare_run_rules.py	2	"definition_sets/v1.yaml"	"verification/definition_sets/v1.yaml"	a config-root-relative path the map cannot see; its folder moved to config/verification
+tests/fundamentals/test_pilot_alignment.py	1	config_path = CONFIG / config_name	config_path = CONFIG / "runs" / config_name	run configs moved to config/runs; a variable the map cannot see
+tests/fundamentals/test_pilot_alignment.py	1	config_path = CONFIG / QUARTERS[quarter_id][0]	config_path = CONFIG / "runs" / QUARTERS[quarter_id][0]	run configs moved to config/runs; a variable the map cannot see
+tests/fundamentals/test_pilot_alignment.py	1	_pdf_occurrences(CONFIG / name)	_pdf_occurrences(CONFIG / "runs" / name)	run configs moved to config/runs; a variable the map cannot see
+tests/fundamentals/test_pilot_alignment.py	1	aparinds-fy26-q2.yaml	aparinds-fy26-q2.yaml	kept: a bare run-config name joined under config/runs by the rows above
+tests/fundamentals/test_pilot_alignment.py	1	aparinds-fy26-q3.yaml	aparinds-fy26-q3.yaml	kept: a bare run-config name joined under config/runs by the rows above
+tests/fundamentals/test_pilot_alignment.py	1	aparinds-fy26-q4-pg.yaml	aparinds-fy26-q4-pg.yaml	kept: a bare run-config name joined under config/runs by the rows above
+tests/fundamentals/test_pilot_alignment.py	1	aparinds-fy27-q1.yaml	aparinds-fy27-q1.yaml	kept: a bare run-config name joined under config/runs by the rows above
+tests/fundamentals/test_pilot_alignment.py	1	aparinds-fy27-q1-pg.yaml	aparinds-fy27-q1-pg.yaml	kept: a bare run-config name joined under config/runs by the rows above
+tests/fundamentals/test_prep2b_cutoffs.py	1	aparinds-fy26-q2.yaml	aparinds-fy26-q2.yaml	kept: a bare run-config name joined under config/runs by its rows
+tests/fundamentals/test_prep2b_cutoffs.py	1	aparinds-fy26-q3.yaml	aparinds-fy26-q3.yaml	kept: a bare run-config name joined under config/runs by its rows
+tests/fundamentals/test_prep2b_cutoffs.py	1	aparinds-fy26-q4-pg.yaml	aparinds-fy26-q4-pg.yaml	kept: a bare run-config name joined under config/runs by its rows
+tests/fundamentals/test_prep2b_cutoffs.py	1	aparinds-fy27-q1.yaml	aparinds-fy27-q1.yaml	kept: a bare run-config name joined under config/runs by its rows
+tests/fundamentals/test_pdf_statement_pages.py	1	aparinds-	aparinds-	kept: the f-string's run-config name is joined under config/runs by its row
+tests/fundamentals/run_support.py	1	aparinds-identity.yaml	aparinds-identity.yaml	kept: a file written in the test's own temporary folder, not a config path
+tests/fundamentals/test_prep2b_admission.py	1	    (root / DEFAULT_IMPORT_CONFIG).write_text(body.replace(PINNED, pinned))	    (root / DEFAULT_IMPORT_CONFIG).parent.mkdir(parents=True, exist_ok=True)\n    (root / DEFAULT_IMPORT_CONFIG).write_text(body.replace(PINNED, pinned))	the import config moved to config/publication, a folder the temporary root lacks
+tests/fundamentals/test_amendment_records.py	1	"--diff-filter=A", "--format=%H"	"--follow", "--diff-filter=A", "--format=%H"	the move commit renames the e2e file; its first add is the original commit, as plan Task 4 step 7 checks
