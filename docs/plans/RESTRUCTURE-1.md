@@ -1,6 +1,6 @@
 # RESTRUCTURE-1 Implementation Plan
 
-**Status:** review 1 fixed, awaiting Sol. **Bead:** `eqos-foec`.
+**Status:** approved 2026-11-05: approver gpt-6.1-sol, `APPROVE` after one fix round. **Bead:** `eqos-foec`.
 **Origin:** `docs/specs/2026-11-05-restructure.md`; owner decisions recorded in `eqos-foec`.
 **Goal:** Move source, config and tests into the owner's buckets in one scripted commit, with every
 stored pin, sealed digest and report still valid and `eqos` replacing `fundamentals`.

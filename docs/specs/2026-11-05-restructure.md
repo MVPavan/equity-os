@@ -1,6 +1,6 @@
 # RESTRUCTURE-1: reorganise source, config and tests into buckets
 
-**Status:** review 1 fixed, awaiting Sol. **Bead:** `eqos-foec`. **Plan:** `docs/plans/RESTRUCTURE-1.md`.
+**Status:** approved 2026-11-05: approver gpt-6.1-sol, `APPROVE` after one fix round. **Bead:** `eqos-foec`. **Plan:** `docs/plans/RESTRUCTURE-1.md`.
 **Date:** 2026-11-05.
 
 Owner decisions are not reopened here (bucket list, command names, config mirror, README per
