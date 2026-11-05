@@ -72,8 +72,8 @@ live, so they need no row and take the moved hash on first use.
   hashes do not.
 - **Stored paths (verified by a read-only sweep of every text and JSON column in `eqos`):** no
   `src/fundamentals` or `tests/fundamentals` anywhere. `config/` appears only in three sealed prose
-  fields, and `fundamentals ` in two more, which no code resolves (inferred from reading the
-  fragments). They stay as written.
+  fields, and the command name in two more, which no code resolves (inferred from reading the
+  fragments). They stay as written. The word also appears in vendor text, as ordinary English.
 - **Migrations and frozen manifests:** unchanged. No committed migration needs editing.
 
 ## 2. Layout
