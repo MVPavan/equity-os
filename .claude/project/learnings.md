@@ -403,9 +403,8 @@ Format per entry:
 - Apply: run the full suite through `scripts/verify.sh` (`suite_pytest`), or pass the same
   `-n 8 --dist loadfile` and `PYTEST_DEBUG_TEMPROOT`. Keep `verify.sh red` serial: it reads
   `sys.modules` in-process, which xdist workers would hide.
-- Owner cap (2026-10-29): at most 8 workers in total across everything running at once (the
-  machine is shared; 16 throttled other work). The gate uses 8; concurrent worker lanes use
-  `-n 4` each, or `-n 8` only when running alone.
+- Owner cap: lifted 2026-11-05 ("utilise all the CPUs available"), replacing the 2026-10-29 cap of
+  8. The gate uses 24 of 32; PostgreSQL shares the machine.
 
 ## A drill verdict does not measure the real panel  (2026-11-02)
 - Observed: RESEARCH-3 S3's rehearsal passed with orchestrator-written verdicts on every draft. The first real panel rounds on ordinary drafts came in the live run, and all three FY26_Q2 drafts were rejected, permanently on the ledger.
