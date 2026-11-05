@@ -1,10 +1,10 @@
 # RESEARCH-4 S1 — Base-case forward view — Implementation Plan
 
 **Origin:** `docs/specs/2026-11-03-research-4-forward-view.md` (r6, approved with this plan by gpt-6.1-sol), §8 S1 and §10, with §0-§7. Bead `eqos-3v3w`. Format: `.claude/skills/planning/references/plan-format.md`.
-**Status:** approved r3 (2026-11-03): approver gpt-6.1-sol, `APPROVE` after two fix rounds. Task 0 passed (below). The owner granted permissions A and B on 2026-11-04.
+**Status:** approved r3 (2026-11-03): approver gpt-6.1-sol, `APPROVE` after two fix rounds. Task 0 passed (below). The owner granted permissions A and B on 2026-11-04. **Amendment r4 (drafted 2026-11-05, not yet reviewed; r3 stands until gpt-6.1-sol approves it):** Tasks 9a-9c, with spec r7. Code approval at `0858fc89` covers none of it.
 **Goal:** on `eqos_test_r4`, the FY27_Q1 run writes a `forward_view` section with a base-case five-year path by driver and division, recomputed by code on every check, all claims `MATCH`, with a real Sol `APPROVE` and a readable export.
 **Out of scope:**
-- Any live write: 0046, the thesis and the report stay off the live database until the live close.
+- Any live write: 0046, the thesis and the report stay off the live database until the live close. The one exception is Task 9c's single intake registration of the deck, which the sealed cutoff requires (spec §6.2).
 - S2's `WORKING_CAPITAL` and `FUNDING` blocks and the days and cash anchors.
 - S3's bear and bull computation, scenario section, trigger evaluator and watch rows.
 - Parity (`--parity`) and the §7.6 rehearsals, both live close.
@@ -419,6 +419,76 @@ Dependencies: Task 8.
 
 Risks: a later book or rehearsal defect may change code. That change gets its own gate, a Sol check of the fix, and a fresh restore.
 
+### Task 9a: Meaning round on the three capacity statements
+
+Goal: a real Sol ruling on what each FY26 capacity statement means, before any code depends on it.
+
+Files:
+- Create (never committed): `scratchpad/research4/s1/rounds/capacity-meaning-<n>/`, brief and response with SHA-256s.
+
+Interfaces:
+- Consumes: the deck's complete pp. 8-10, by blob `193aa8f298db`; pre-cutoff first-party statements from `scratchpad/research4/s1/capacity-search/before.md` and `before2.md` on rod counting, oil's unit and management's stated utilisation; the FY21-FY23 oil conflict, as a question.
+- Produces: per id, `HOLDS` or `REFUSES` on unit, scale, period and scope. For conductor and oil, `COMPARABLE` or `NOT_COMPARABLE` against sold volume, and for oil, `READ_AS_KL` or `NOT_ESTABLISHED`.
+
+Approach: one fresh read-only Sol round (`gpt-6.1-sol`, `high`), brief per `.claude/rules/core/04-agent-stack.md`. **The brief holds nothing dated after `as_of`:** not `after.md`, `after2.md` or their documents (spec §6.3 rule 7). Sol rules; the orchestrator writes no verdict. The orchestrator's recommendation goes in the brief only as a question. A refused id leaves the closed list. A `NOT_COMPARABLE` or `NOT_ESTABLISHED` removes that division from Task 9b's comparison tuple; the id stays if its statement holds.
+
+Verification: the round files exist with hashes; no brief file names a post-cutoff document.
+
+Dependencies: Task 9. Spec r7 and this amendment approved by Sol first.
+
+Risks: Sol may refuse conductor's comparison on scope. That is a valid answer: the row reads `NOT_ASSESSED` and S1 still closes.
+
+### Task 9b: The code change, gate and Sol check
+
+Goal: spec r7's closed list, rule 3 branch, comparison rows and corrected sentences, with a fresh gate.
+
+Files, on `research-4` from `0858fc89`. Lines are estimates (**I**):
+
+| File | Change | Lines |
+|---|---|---|
+| `src/fundamentals/contracts/forward_book.py` | Three `DISCLOSURES` entries through one small helper; the closed-list comment | +16 |
+| `src/fundamentals/ledger/forward_validate.py` | `_prose` applies `ROW_BINDING` where the spec pins `cells_anchor` | +5 |
+| `src/fundamentals/ledger/import_mapping.py` | `KM` in `_VOLUME_UNITS` | 1 changed |
+| `src/fundamentals/ledger/forward.py` | `_LIMITS`, `_NOT_DELIVERED` first item; the comparison tuple, a row function, its note, one paragraph in `_body` | +25, 3 changed |
+| `tests/fundamentals/test_forward_prose.py` | Row-binding refusal and control; span running on to a comparative year; `KM` | +15 |
+| `tests/fundamentals/test_forward_view.py` | `ABOVE` and `WITHIN` on exact values; missing capacity darkens no block; no cable row; corrected sentences | +15 |
+| `tests/fundamentals/forward_support.py` | Capacity entries and spans in the invented book and PDF | +10 |
+
+About 47 production and 40 test lines. **No change** to `forward_model.py` (so no new `Block`, `OUTPUTS` line or claim), `forward_binding.py`, migrations or `forward_validate._cross_foot`.
+
+Approach: a fresh Opus round. The comparison tuple holds only what Task 9a ruled comparable: `(division, capacity key, FY26 volume key, volume line)`. The row function reads exact values from `inputs` and `result.values`, gives every number a placeholder, and renders `ABOVE` or `WITHIN` per year. A division left out or missing an input renders `NOT_ASSESSED` with the reason. Section order: after the driver rows and bridge. Rendered sentences follow spec §3 word for word. Then the orchestrator runs the gate, and one fresh Sol round checks this diff, per Task 9's risk.
+
+Verification: `VERIFY_SCOPE_BASE=$S1_BASE scripts/verify.sh gate RESEARCH-4-S1` prints `ROUTE: PASS` at the new commit, because the approved `0858fc89` no longer names the code under test; Sol's `APPROVE` on file; a verified bundle of the tip. The gate keeps the 16:00 UTC window.
+
+Dependencies: Task 9a.
+
+Risks: `forward_support.py` and the test total are already over their stops (Task 2's result). `ABOVE` and `WITHIN` are not recomputed on check, as "largest driver" and `INSIDE` are not; their operands are. A percentage route was rejected: about 25 more production lines, a `Block`, twelve claims, and a future year reading as a utilisation forecast.
+
+### Task 9c: Retain the deck once, on live
+
+Goal: the deck is a first-party capture on live before the book is sealed, so every restore carries it and its first-seen is on or before the book's `decided_on` (spec §6.2).
+
+Files:
+- Create (never committed): `scratchpad/research4/s1/retain_deck.py`, about 20 lines, its SHA-256 kept with the rounds.
+
+Interfaces:
+- Consumes: observation 904 from `DocumentIntake.latest(entity, ANNOUNCEMENTS)`; `api/documents_cli.py`, whose code is identical on `main` and `research-4` (**V**).
+- Produces: one snapshot and one `capture_refs`, `capture_addresses` and `document_attempts` row: source `nse-documents`, surface `NSE_PRESENTATION`, as capture 2015 and attempt 302 for the May deck. No ledger row and no 0046.
+
+Approach, from the shared checkout on `main`:
+1. `documents backfill` cannot do this: `classify_announcement` reads category `Updates` as `OTHER`, so `observed_link` gives none. The script names the link itself, as `eqos-3ndm`'s fix later will: `document_request(DocumentLink(kind=PRESENTATION, period=an_dt, url=attchmntFile, host=NSE_HOST, found_on=ANNOUNCEMENTS, filed_at=<an_dt, IST>))`.
+2. It holds `documents.lock`, the snapshot store's `prepare_ordinary_output`, an autocommit runtime connection and `live_transport()`, as `run_documents` does, then calls `_Pass._attempt(observation, DocumentKind.PRESENTATION, request)`. That fetches, applies `refusal`, registers and records the attempt in one transaction. If `intake.attempts` already holds `OK`, it does nothing.
+3. It stops unless the body's SHA-256 is the blob the meaning round read (`193aa8f298db…`).
+4. Copy the new snapshot files into the worktree's `data/` and rerun the Retained inputs parity. A restore's copied snapshot root needs them.
+
+Outside the 16:00 UTC window. BSE's copy is not retained: the bytes are the same (**V**, hashed 2026-11-05), no BSE observation exists to pin, and a second capture serves nothing.
+
+Verification: `validate_book`'s `_PINNED` query reports fetched for observation 904 and the blob, with entity and `an_dt` as listed; `_span` returns each of the three quotes on the selected capture; `db check-live` passes from the shared checkout; `git status` is clean of scratch.
+
+Dependencies: Task 9b, so a refused statement costs no write. Before Task 10.
+
+Risks: a live write outside the live close. The scope is one document's intake rows, the kind the scheduled job writes daily. If this step is skipped and the deck is registered later, the sealed book fails its first-seen check on live, and only a new successor repairs it.
+
 ### Task 10: The assumption book
 
 Goal: thesis successor 1.3.0 exists, its bytes committed, with Sol's real `APPROVE` as its ruling.
@@ -440,7 +510,7 @@ Approach:
 
 Verification: `evidence_holds` true for the entry; the import succeeds on a throwaway test database; the round files exist with hashes; a verified bundle holds the book commit; `git status` clean of scratch. The orchestrator writes no verdict and edits no response.
 
-Dependencies: Task 9.
+Dependencies: Task 9c. The book's restore holds the deck's capture; its three `published` entries pin observation 904; no rationale, statement or path uses capacity after FY26 or those FY21-FY23 values, and `capacity_delivery` stays a required watch item.
 
 Risks: the core judgement risk. Assumption values are opinion, and Sol can only test defensibility, not truth. Hindsight cannot be disproved (§6.3 rule 7) and is disclosed. `config/ledger_import.yaml` names one successor, so a later live `ledger import --thesis-successor` imports this one; nothing runs it before the live close.
 
@@ -486,7 +556,7 @@ Interfaces:
 
 Approach: a fresh Sol session with no prior context reviews everything S1 built, per step 6 of the review loop. Real findings go to a fresh Opus round and a re-review; a code change re-runs Tasks 9 and 11's affected steps from a fresh restore. Docs by Sonnet. The orchestrator commits, refreshes the dashboard after each committed task, and sends the owner the export.
 
-Verification: gate `PASS` at the closing commit; structural gate; `git status` in both checkouts shows only intended files; a verified bundle of the closing commit and the hashed rounds are in `scratchpad/backups/research4/`. The live database is unchanged: a read-only query shows migrations still ending at 0045, the same heads and the digests captured in Task 11. `db check-live` from the shared checkout on `main` still passes; from the worktree it fails by design (C-11). The worktree stays until the live close.
+Verification: gate `PASS` at the closing commit; structural gate; `git status` in both checkouts shows only intended files; a verified bundle of the closing commit and the hashed rounds are in `scratchpad/backups/research4/`. Apart from Task 9c's intake rows, the live database is unchanged: a read-only query shows migrations still ending at 0045, the same heads and the digests captured in Task 11. `db check-live` from the shared checkout on `main` still passes; from the worktree it fails by design (C-11). The worktree stays until the live close.
 
 Dependencies: Task 11.
 
@@ -518,6 +588,7 @@ Each case must be able to fail. "Fails if" names what would make it fail.
 | 7 Book guards | `test_forward_book.py`, every row in each statement field | Any row persists anything |
 | 8 Labels | `test_forward_view.py`: `INSIDE`, `NOT_COMPARABLE`, `BELOW`; `test_forward_book.py`: reference outside `COMPARABLE` | A later year is compared; an assumption is not opinion |
 | 9 Rate anchors | `test_forward_view.py`: hand-computed; negative outflow positive; zero and negative denominators for each anchor, each rendering not available with no numerical claim while unaffected content still writes | A sign or formula changes; a check of `== 0` alone would pass a negative denominator |
+| Capacity (spec r7) | `test_forward_prose.py`, `test_forward_view.py`; Task 11 step 6: each capacity id `MATCH`, a row per division Task 9a ruled comparable, no cable row | A quote passes under another division's id; a year's label disagrees with its exact values; a missing capacity fails a block |
 | 10 Regenerated report | Task 11 steps 3, 4, 7 | Any claim not `MATCH`; `scan_section` raises; Sol does not `APPROVE` |
 | C-1, C-7, C-9 | `test_forward_view.py`: a claim-bearing version refuses with no model call recorded; a claim-free `NOT_ASSESSED` version narrates successfully | Narrate refuses a `NOT_ASSESSED` version, accepts `fcst.` claims or calls a model first; `fcst.d.*` becomes next quarter's guidance; `NOT_DONE` denies the base case an eligible report holds |
 | S3 cases 1, 2 (C-8) | `test_forward_book.py` | A bad scenario, trigger or watch block persists |
