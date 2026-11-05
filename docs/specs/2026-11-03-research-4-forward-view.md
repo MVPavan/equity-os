@@ -239,8 +239,7 @@ PAT_t = PBT_t - Tax_t
 ```
 
 **Stated in the section:** EBITDA includes other income. Exceptional items and associates are zero. Debt is held flat,
-so the gap's own interest is excluded (OD-4). `r` is high because the filed finance cost includes more than interest
-on these borrowings; **I** from the presentation's note on open-period forex (p6). `d` is a proxy over PPE plus CWIP:
+so the gap's own interest is excluded (OD-4). `d` is a proxy over PPE plus CWIP:
 capex enters the base when spent, so depreciation is not timed to commissioning.
 
 **Rows.** For each division: volume, realisation, revenue, EBITDA, EBITDA per unit, margin.
@@ -416,8 +415,8 @@ disclosure's one value is both bounds) and renders `INSIDE`, `BELOW` or `ABOVE`;
        drops signs, which would pass a wrong column or a negative; it and guidance parsing do not change.
 
      A column mapping is sealed, so the reviewer and the code judge the same claim.
-   - `PROSE`, no `columns` or `column`: the quote, less its period labels, holds exactly one number, unsigned and not
-     parenthesised, equal to `value`;
+   - `PROSE`, no `columns` or `column`: the quote, less its period labels, holds exactly one number, with no sign or
+     parentheses, attached or separated, and no magnitude word its unit does not name, equal to `value`;
      the quote or a `PERIOD` span holds the required period; the quote or `SUBJECT` and `UNIT` spans hold the closed
      list's subject and unit text.
 4. **Cross-foot against filed figures**, tolerance one crore (the presentation rounds to crore): each division's
@@ -587,11 +586,15 @@ holds at ordinary resolution.
 
 | Role | Input claim | Must equal |
 |---|---|---|
-| Assumption endpoint | `fcst.a.<scope>.<id>.<end>` | `THESIS_CLAIM` whose cited row's key is exactly `assumption.<scope>.<id>.<end>` (`thesis.X` → `falsifier.X`, `fcst.p.X` → `scenario.X`, `fcst.t.X` → `trigger.X`; else `None`). Scope is the book's for that id. Value kind and unit are the registry's; currency and scale none, or crore for `capex_crore` |
+| Assumption endpoint | `fcst.a.<scope>.<id>.<end>` | `THESIS_CLAIM` whose cited row's key is exactly `assumption.<scope>.<id>.<end>` (`thesis.X` → `falsifier.X`, `fcst.p.X` → `scenario.X`, `fcst.t.X` → `trigger.X`; else `None`). Scope is the book's for that id. Value kind and unit are the registry's; currency and scale none, or crore for `capex_crore`. Every emitted endpoint, used by the model or not, equals its sealed row in every field, including value, precision, rounding and class |
 | Disclosure | `fcst.d.<id>` | `SOURCE_QUOTE`; anchor, quote, value and contract are the cited book's. Its capture is the one selection gives (`_cited`): first-party, holding the book's exact `source_sha256` and supplying the verified span; it need not be the pinned observation's capture, which stays the publication and issuer evidence (§6.2 rules 5, 6) |
 | Filed operand | `probe.Rn.<line>` | Filed `FIGURE`; `measurement_key`: canonical id `<line>`, the report's entity, `CONSOLIDATED`, `forward.filed`'s window or balance date, INR, `CURRENCY_AMOUNT`; unit crore, scale 10^7 |
 | Base trace | `fcst.base.<x>` | `CALCULATION`; same key fields with canonical id `fcst.base.<x>`; row 4 ties the trace's digest to it. On every check, independently recompute the seven S1 anchors from the sealed filing's lines under its pins. Require one distinct value per required key; missing or conflicting values give `UNRESOLVED`. Compare EBITDA and PPE exactly in crore, and rates after `ROUND_HALF_EVEN` rounding at claim precision. Trace-reference correspondence is also required throughout the closure |
 | Any | | Not a `PROJECTION` |
+
+**Times and memory.** An anchor's resolved times include its required readings' first-known times, so a required line
+known after the cutoff fails the anchor and its projections. A `PROJECTION` claim supports no memory item, and an item
+labelled observed cannot rest on a version holding projections (extension A; invariant 8).
 
 **Wrong book.** Every thesis citation in the version holds one `cited_sealed_digest`, of a thesis version whose twin's
 `applies_to` is the report's period. The write path has already compared `as_of` and `filed` (§2); the digest seals
@@ -637,7 +640,8 @@ and `FY27-FY31` for peak gap, and the horizon equals it. Peak gap's year renders
 4. `compute` the rest, with the sealed `fiscal_year_end_month`. A block in `failed` resolves `None`.
 5. Each claim resolves to its exact value rounded at its registered precision, with `times` the union of its block's
    inputs' resolved times (the recursive cutoff check; row 2 then applies them). Row 5 requires a `PROJECTION`'s stored
-   value to equal this result exactly, not after rounding; other `VALUED` kinds keep their rounded comparison.
+   value to equal this result exactly, not after rounding; so does an assumption endpoint against its sealed row; other
+   `VALUED` kinds keep their rounded comparison.
 
 ### 7.4 Proofs (S1 acceptance, on the test database)
 
