@@ -145,11 +145,10 @@ The thesis gains `assumption.*`, `scenario.*`, `trigger.*` (self-cited `POLICY`,
 missing, targets document:44-45); credibility adjustment (Apar's scored outcomes are `UNRESOLVED`, RESEARCH-3 §3);
 causes of past moves (RESEARCH-3 S3 closed unmet); prospective falsification (FY27_Q1 was known at sealing; §6.2, §10).
 
-**Stated prominently beside the headline, code-built, once any capacity id is admitted:** future capacity delivery is
-not established, sold volume can differ from production capacity, and cable growth has no physical-volume
-decomposition. `capacity_delivery` stays a required watch item (§6.2). If the meaning round refuses all three ids, no code
-changes: the section keeps r6's sentence, that the volume paths depend on capacity delivery that has not been
-established and cable growth has no physical-volume decomposition, and no capacity row.
+**Stated prominently beside the headline, code-built, on every route:** capacity delivery and the physical feasibility
+of the assumed volume paths have not been assessed, sold volume can differ from production capacity, and cable growth
+has no physical-volume decomposition. `capacity_delivery` stays a required watch item (§6.2). If the meaning round refuses
+all three ids, only this sentence and the refusal reasons change in code, and the section has no capacity row.
 
 **Stated with the capacity rows, code-built:** each figure is as printed, for FY26 only, and is not compared with the
 path beside it; volume is sold volume, not production; and the source names no plants, geography or product scope for
@@ -475,8 +474,9 @@ that the selected capture's first-seen is at or before `cutoff_instant(thesis_su
 alone does not settle this: a deck registered after 18:30 UTC cannot be sealed under that UTC date. Fixing `eqos-3ndm` is
 separate: the attempt is already `OK` when that fix reaches this observation, so intake skips it.
 
-**If the meaning round refuses all three,** the amendment costs no write and no code: the deck is not retained, the closed
-list and the code stay as at `0858fc89`, and S1 proceeds with capacity left `NOT_ASSESSED`.
+**If the meaning round refuses all three,** the amendment costs no write: the deck is not retained and the closed list
+stays as at `0858fc89`. Only `_LIMITS`' sentence and the refused ids' reasons change, and S1 proceeds with capacity left
+`NOT_ASSESSED`.
 
 **Provenance survives citation.** Disclosures reach the run as `SOURCE_QUOTE` claims on the capture, not through
 `THESIS_CLAIM`, and the row renders the quote through `{{c:<key>|quote}}`. Assumption rows name their reference.
@@ -991,4 +991,4 @@ written (§2, §5.3). No question here is the owner's financial judgement; §7.1
 | `ledger/rework.py:233-249` | A branch for `fcst.*` keys (§7.6) |
 | `ledger/narrate.py:233` | Refuses a version holding any `fcst.` claim, before any model call (OD-9) |
 | `ledger/forward_model.py`, `ledger/forward.py` (new) | Pure model and `MODELS`, `OUTPUTS`; binding, `validate_book`, trigger evaluator, parity and code-built section |
-| r7, on `research-4` after `0858fc89`, only if an id is admitted: `contracts/forward_book.py`, `ledger/forward_validate.py`, `ledger/import_mapping.py`, `ledger/forward.py` | The admitted ids; the `ROW_BINDING` branch; `KM` if cable is admitted; the as-printed capacity rows and corrected `_LIMITS`. `forward_model.py` and `forward_binding.py` do not change. The code change re-runs the gate (plan Task 9b) |
+| r7, on `research-4` after `0858fc89`: `ledger/forward.py` on every route; `contracts/forward_book.py`, `ledger/forward_validate.py`, `ledger/import_mapping.py` only if an id is admitted | Every route: the neutral `_LIMITS` sentence and each refused id's reason. If admitted: the ids; the `ROW_BINDING` branch; `KM` if cable is admitted; the as-printed capacity rows. `forward_model.py` and `forward_binding.py` do not change. The code change re-runs the gate (plan Task 9b) |
