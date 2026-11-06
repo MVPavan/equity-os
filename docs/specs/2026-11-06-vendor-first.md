@@ -1,6 +1,7 @@
 # VENDOR-1: vendor-first sourcing with filing checks
 
 **Status:** approved (gpt-6.1-sol APPROVE, review round 3, 2026-11-06). **Bead:** eqos-awnc. **Date:** 2026-11-06.
+Amended 2026-11-06 per Phase 1 plan review 2 (gpt-6.1-sol).
 
 Code facts were read at `77637a17`; store facts were queried read-only. **Inferred** and **not
 established** mark everything else. Measurement figures come from
@@ -104,6 +105,8 @@ lookup) rejects as `INVALID`/`UNIT_MISMATCH`. Fix:
   (`VENDOR_EXTRACTORS` in `run_config.py` pins it), and retained captures are re-ingested.
 - Precision is never inferred from serialized digits.
 
+Before re-measurement, retained first-party packages are re-interpreted under the new mapping set.
+
 ### 6.2 Standalone-only onboarding
 
 Today `discovery.py` refuses `STANDALONE_BASIS` when the filing window has no consolidated row,
@@ -160,9 +163,10 @@ enters only through rule 1 and through the check class (§6.6).
 
 **Filing state of a cell.** First match wins:
 
-1. `FILING_ABSENT`: no first-party occurrence for the cell in the run.
-2. `FILING_FAILED`: a first-party occurrence exists but the cell fails today's first-party rule
-   (`admission.py`: extraction `AGREE`, or `NOT_APPLICABLE` on one representation).
+1. `FILING_ABSENT`: every first-party side is `NO_VALUE`, with no acquisition, extraction or
+   interpretation failure.
+2. `FILING_FAILED`: any first-party side is `UNAVAILABLE` or `INVALID`, or a non-absent cell fails
+   today's first-party admission rule.
 3. `FILING_DIFFERS`: admissible, and F is disjoint from the S interval or from the T interval.
 4. `FILING_AGREES`: admissible, and F intersects both.
 
@@ -229,6 +233,9 @@ is filename-ordered and gap-tolerant (`migrations.py`).
 - `eqos.row_captures`: the `fact_admissions` branch also yields `witness_interpretation_id`, so
   retention guards hold both witnesses' captures.
 
+0047 also extends the `run_versions` pin CHECK for `vendor_first_policy` and `eligibility`, and
+creates append-only `vendor_fallback_outcomes`.
+
 ### 6.6 Eligibility: a pinned artifact plus counterexample blocking
 
 **Check class** = digest of (canonical id, period kind, basis, framework, issuer class, the
@@ -236,7 +243,9 @@ Screener entry and the Tijori entry with their mapping-set version, both extract
 dictionary version, `vendor_first` policy version). Any version change makes a new class with no
 evidence, so incompatible evidence is invalidated by identity, not by a rule. Issuer class is an
 identity setting (`NON_FINANCIAL` for every onboarded issuer today, since onboarding refuses
-financial issuers; `BANK` in Phase 3).
+financial issuers; `BANK` in Phase 3). In Phase 1, issuer class is resolved from positively
+evidenced onboarding provenance known at the cutoff; absent or unsupported provenance yields no
+class.
 
 **Artifact.** `eqos vendor measure --available-from <timestamp>` (product code replacing the
 scratch `measure*.py`) reads stored run results and writes
@@ -263,7 +272,8 @@ admission row. From then on:
 - `read_selected` returns nothing for a selected fact whose authorising label is
   `VENDORS_AGREE_NOT_CHECKED` and whose class has a counterexample recorded at or before the
   cutoff; earlier cutoffs are unchanged. The cell refuses on the next run and becomes a trigger;
-- sealed reports keep their stored values; a later render shows "class later contradicted by a
+- sealed reports keep their stored values; a later status note accompanying the unchanged sealed
+  report shows "class later contradicted by a
   filing on ‹date›".
 
 ### 6.7 Citation
@@ -320,7 +330,7 @@ Owner decision 1 applies. Mechanically:
   the fact, and follow each vendor's retention and licence terms in the source catalog;
 - when either witness's capture expires or its vendor's licence ends, the admission is withdrawn
   for new reports: `read_selected` and citation resolution refuse it; sealed reports keep their
-  stored values and show "vendor source expired ‹date›";
+  stored bytes and values; their status note shows "vendor source expired ‹date›";
 - a backup restore does not resurrect a withdrawn admission; only a hash-matched re-fetch from the
   vendor within licence makes the capture `RESTORED` and the admission usable again.
 
@@ -362,10 +372,12 @@ Every renderer reading `read_selected` prints the label text beside the number (
    A version mismatch gives `CHECK_REQUIRED`. A counterexample in run N blocks row 3 in run N+1
    with the artifact unchanged, and `read_selected` drops the earlier unchecked fact for later
    cutoffs only.
-9. **Citation.** A sealed report citing a row-3 fact and a calculation using it resolves both with
-   the label; `row_captures` returns both witnesses' captures.
+9. **Citation.** Through the existing filing-backed Stage 2 report path, a fixture withholding the
+   quarter's filing package from the comparison run seals a report citing a row-3 fact and a
+   calculation using it. Both citations resolve with the admission label; `row_captures` returns
+   both vendor witnesses' captures. Reports for quarters without filings are outside Phase 1.
 10. **Retention.** Expiry, and separately licence end, of either witness withdraws the admission
-    for a new report; the sealed report keeps its value with the note; a backup restore does not
+    for a new report; the sealed report keeps its value with the note (the status note of §6.9); a backup restore does not
     revive it; a hash-matched re-fetch does.
 11. **Fallback.** On an Apar period whose filing is withheld from the first run, the command
     acquires the XBRL and results PDF for that period only, ingests, reruns with vendor sides and
