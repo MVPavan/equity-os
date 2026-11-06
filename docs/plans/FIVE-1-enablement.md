@@ -1,6 +1,10 @@
 # FIVE-1 Implementation Plan: five-company enablement
 
-**Status:** fix round 3 for Sol plan review 3. **Bead:** `eqos-awnc`. **Date:** 2026-11-06.
+**Status:** approved 2026-11-06 by orchestrator ruling under the agent-stack rule for a loop that has not
+converged after 3 rounds. There were four gpt-6.1-sol rounds. Review 4 found only R4-01 (P2).
+The orchestrator applied Sol's stated smallest fix: `IDENTITY_REJECTED` is fatal in pass 1, a
+mixed-capture case is added, and the write-pass limits now include already-expired captures and the
+insertion gate. The phase-end Sol review covers the implementation. **Bead:** `eqos-awnc`. **Date:** 2026-11-06.
 **Origin:** owner order 2026-11-05 step 4 (thorough test on APARINDS, ICICIBANK, LAURUSLABS,
 MTARTECH, NETWEB); `docs/plans/FIVE-COMPANY-TEST.md` §2 blockers 2, 4, 5, §8 Q1, Q3–Q5, Q7;
 `docs/plans/VENDOR-1-P3.md` Task 11 (blocked on a sanctioned acquisition route); orchestrator
@@ -301,8 +305,11 @@ behaviour). Without the flag, behaviour is today's. With it, `reingest` runs two
    its verified body and build `_adapters` as today, with the fiscal-year-end month at `PE`. Check
    each adapter's version pin as `ingest_vendor` does first (`vendor_extractor_pin`,
    `pin_versions`, which writes only `version_pins`), then call its extract on the body. An adapter
-   raising `VendorExtractionError` contributes nothing here and is still ingested in pass 2, which
-   records its failure attempt as today. Then, before any write:
+   raising `VendorExtractionError` with outcome `IDENTITY_REJECTED` is a capture, entity or basis
+   refusal (`vendor_tijori.py` `_NO_BASIS`; `vendor_screener.py` identity and basis checks). It is
+   fatal: the command exits `INCOMPLETE` naming the capture, with nothing written (R4-01). Any other
+   `VendorExtractionError` is a section failure. That adapter contributes nothing here, and pass 2
+   still ingests it and records its failure attempt as today. Then, before any write:
    - **Coverage per required vendor.** For each of Screener and Tijori, the union of its adapters'
      occurrences, across every section and cited capture, must hold an occurrence whose period
      ends at `PE`. Section filtering stays each adapter's own, as today: a Screener section's parse
@@ -325,9 +332,10 @@ behaviour). Without the flag, behaviour is today's. With it, `reingest` runs two
 (`repository.py`), so any check left to the per-adapter loop could follow an earlier adapter's
 committed `PE` attempt. Coverage and payload agreement are therefore settled before the first
 write. The check pass does not ingest at `PE0`: doing so would add a `PE0` attempt on every
-command and move what `PE0` runs read (`vendor_sides._latest`). Refusals that pass 2 still raises
-on its own, a capture turning expired or purge-pending (`ingest_vendor_retained`) or a store
-error, are today's and fall outside this guarantee. Without stored agreement, a changed binding
+command and move what `PE0` runs read (`vendor_sides._latest`). A few refusals stay
+write-pass limits, as today: a capture already or newly expired or purge-pending whose bytes remain
+(`ingest_vendor_retained`); evidence the insertion gate rejects (`discovery_gate.py`); and a store
+error. They fall outside this guarantee and may leave earlier adapters' `PE` attempts committed. Without stored agreement, a changed binding
 (for example a different fiscal-year-end month at `PE`) would raise `OccurrenceConflictError`
 part-way through, or leave a generation's interpretations partial (Review 3 note). The command
 re-parses each capture twice per target; the parse is deterministic and cheap, so this is accepted.
@@ -353,8 +361,10 @@ with no partial write:** a target held by Screener but not Tijori (Tijori ingest
 today's order) exits `INCOMPLETE` with attempt, occurrence and interpretation counts unchanged at
 every period; so does a target in no section. **Stored disagreement:** a fiscal-year-end month at
 `PE` differing from the one the stored generation used exits `INCOMPLETE` with nothing written.
-A Screener section whose adapter refuses records its failure attempt at `PE` while the other
-sections proceed. Absent source captures, an absent vendor and a basis mismatch each exit
+A Screener section whose adapter refuses with a non-identity outcome records its failure attempt
+at `PE` while the other sections proceed. **Mixed captures (R4-01):** one valid and one
+basis-rejected capture for the same vendor, with target coverage from both vendors, exits
+`INCOMPLETE` with attempt, occurrence and interpretation counts unchanged at every period. Absent source captures, an absent vendor and a basis mismatch each exit
 `INCOMPLETE` with no write; without the flag the existing reingest test is unchanged; fallback
 tests unchanged.
 
