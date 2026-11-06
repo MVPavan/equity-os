@@ -50,12 +50,9 @@ from equity_os.publication.narration.evidence_bundle import Bundle, BundleLimits
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records import store
 
-# Task 0's proven invocation (plan, RESEARCH-3 S3). No config can change it.
-NARRATE_ISOLATION = (
-    "--tools", "", "--setting-sources", "", "--settings", '{"autoMemoryEnabled":false}',
-    "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence",
-    "--system-prompt", "You write report text from the data in the user's message.",
-)  # fmt: skip
+# With the client's ISOLATION_ARGS, Task 0's proven invocation (plan, RESEARCH-3 S3).
+# No config can change it.
+NARRATE_SYSTEM_PROMPT = "You write report text from the data in the user's message."
 # P8's frozen U1-U6, one row per line as the plan's table: (section, before, after).
 # fmt: off
 DISCLOSURE_UPDATES = (
@@ -135,7 +132,7 @@ class _NarrateFile(BaseModel):
 
 
 class NarrateConfig(BaseModel):
-    """The drafting client, always with ``NARRATE_ISOLATION``, and the limits."""
+    """The drafting client, always with ``NARRATE_SYSTEM_PROMPT``, and the limits."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -146,7 +143,7 @@ class NarrateConfig(BaseModel):
 def load_narrate_config(path: Path) -> NarrateConfig:
     """The validated config from ``path``."""
     held = _NarrateFile.model_validate(yaml.safe_load(path.read_text(encoding="utf-8")))
-    claude = ClaudeClientConfig(**held.claude.model_dump(), extra_args=NARRATE_ISOLATION)
+    claude = ClaudeClientConfig(**held.claude.model_dump(), system_prompt=NARRATE_SYSTEM_PROMPT)
     return NarrateConfig(claude=claude, limits=held.limits)
 
 

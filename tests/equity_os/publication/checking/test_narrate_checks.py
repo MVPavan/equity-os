@@ -336,7 +336,7 @@ def test_the_configured_argv_is_the_proven_one() -> None:
     """A17, W1: only what Task 0 proved reaches the model, in the largest argv item Linux takes."""
     config = flow.load_narrate_config(COMMITTED)
     assert ClaudeOpusClient(config.claude).build_command("PROMPT") == PROVEN_ARGV
-    assert config.claude.extra_args == flow.NARRATE_ISOLATION
+    assert config.claude.extra_args == ()
     assert "extra_args" not in COMMITTED.read_text(encoding="utf-8")
     assert config.limits.max_prompt_bytes == 131_071
 

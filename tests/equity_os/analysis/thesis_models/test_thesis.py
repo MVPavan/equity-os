@@ -491,20 +491,21 @@ def test_claude_client_builds_command_with_and_without_model() -> None:
     runner = _RecordingRunner(stdout="A")
     client = ClaudeOpusClient(ClaudeClientConfig(model="claude-opus-4-1"), runner=runner)
     client.generate("P")
+    # The thesis model must see only its prompt: no tools, skills, CLAUDE.md, memory or git
+    # status (eqos-pds3). These flags were checked against a live ``claude -p`` call.
+    isolation = [
+        "--tools", "", "--setting-sources", "", "--settings", '{"autoMemoryEnabled":false}',
+        "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence",
+        "--system-prompt", "You answer from the data in the user's message.",
+    ]  # fmt: skip
     assert runner.calls[0]["cmd"] == [
-        "claude",
-        "-p",
-        "P",
-        "--output-format",
-        "text",
-        "--model",
-        "claude-opus-4-1",
-    ]
+        "claude", "-p", "P", "--output-format", "text", "--model", "claude-opus-4-1", *isolation,
+    ]  # fmt: skip
 
     runner2 = _RecordingRunner()
     client2 = ClaudeOpusClient(ClaudeClientConfig(model=None), runner=runner2)
     client2.generate("Q")
-    assert runner2.calls[0]["cmd"] == ["claude", "-p", "Q", "--output-format", "text"]
+    assert runner2.calls[0]["cmd"] == ["claude", "-p", "Q", "--output-format", "text", *isolation]
     assert client2.label == "claude-opus"
 
 

@@ -28,6 +28,13 @@ _FALLBACK_LABEL = "claude-opus"
 _PRINT_FLAG = "-p"
 _OUTPUT_FORMAT_FLAG = "--output-format"
 _MODEL_FLAG = "--model"
+_SYSTEM_PROMPT_FLAG = "--system-prompt"
+# No tools, settings, memory, MCP servers, skills or saved session: the model sees only
+# the system prompt and the user's message (no CLAUDE.md, memory index or git status).
+ISOLATION_ARGS = (
+    "--tools", "", "--setting-sources", "", "--settings", '{"autoMemoryEnabled":false}',
+    "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence",
+)  # fmt: skip
 
 
 def claude_cli_available(executable: str = "claude") -> bool:
@@ -56,7 +63,7 @@ class ClaudeOpusClient:
         return _CLIENT_NAME
 
     def build_command(self, prompt: str) -> list[str]:
-        """Build the ``claude -p`` argv for ``prompt`` (prompt is positional)."""
+        """Build the isolated ``claude -p`` argv for ``prompt`` (prompt is positional)."""
         command = [
             self._config.executable,
             _PRINT_FLAG,
@@ -66,6 +73,8 @@ class ClaudeOpusClient:
         ]
         if self._config.model is not None:
             command.extend([_MODEL_FLAG, self._config.model])
+        command.extend(ISOLATION_ARGS)
+        command.extend([_SYSTEM_PROMPT_FLAG, self._config.system_prompt])
         command.extend(self._config.extra_args)
         return command
 

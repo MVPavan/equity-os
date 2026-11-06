@@ -70,6 +70,7 @@ class ClaudeClientConfig(BaseModel):
     executable: str = DEFAULT_CLAUDE_EXECUTABLE
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     retries: int = DEFAULT_RETRIES
+    system_prompt: str = "You answer from the data in the user's message."
     extra_args: tuple[str, ...] = ()
     use_api: bool = False
     api_key: SecretStr | None = None
