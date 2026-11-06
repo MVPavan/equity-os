@@ -74,6 +74,7 @@ from equity_os.publication.checking.quote_anchor import (
     source_document,
     verify_quote_anchor,
 )
+from equity_os.publication.checking.vendor_text import VT_ANCHOR, vendor_location
 from equity_os.publication.drafting.display import EXACT_DIGITS, FILED
 from equity_os.publication.revision.import_mapping import UPDATE_FILES, ledger_contracts
 from equity_os.storage.facts.pg_fact_store import NATIVE_ORIGIN
@@ -401,11 +402,16 @@ def resolve_location(
     cutoff: datetime,
     catalog: SourceCatalog,
     snapshots: SnapshotStore,
+    source_cutoff: datetime | None = None,
 ) -> bool:
-    """Whether a prose location names a non-empty first-party span of this issuer,
-    known and first seen by the citing version's cutoff."""
+    """Whether a prose location names a non-empty first-party span of this issuer, known and
+    first seen by the citing version's cutoff, or a ``VT_ANCHOR`` eligible vendor span."""
     if not capture_id.isdigit():
         return False
+    if VT_ANCHOR.fullmatch(anchor):
+        return vendor_location(
+            cursor, int(capture_id), anchor, entity_id, source_cutoff, cutoff, snapshots
+        )
     with cursor.connection.cursor(row_factory=dict_row) as own:
         capture = _first_party_capture(own, int(capture_id), catalog)
         if capture is None or capture["first_seen"] > cutoff:

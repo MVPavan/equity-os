@@ -603,7 +603,13 @@ def test_privileges_match_the_d2_matrix(ledger: Ledger) -> None:
                     "has_table_privilege(%(r)s, %(t)s, 'UPDATE, DELETE, TRUNCATE')",
                     {"r": role, "t": qualified},
                 ).fetchone()
-                insert = table in inserts if table in GATED else role == RUNTIME_ROLE
+                insert = (
+                    role in (RUNTIME_ROLE, PANEL_ROLE)  # 0051: written with the version
+                    if table == "version_source_cutoffs"
+                    else table in inserts
+                    if table in GATED
+                    else role == RUNTIME_ROLE
+                )
                 assert granted == (True, insert, False), (role, table)
                 if table in GATED:
                     assert conn.execute(

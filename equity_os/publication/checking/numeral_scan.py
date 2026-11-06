@@ -106,3 +106,9 @@ def scan_narrative(text: str) -> tuple[str, ...]:
     reasons += [f"digit: {t}" for t in tokens if any(c.isnumeric() for c in t)]
     reasons += [f"number word: {found.group()}" for found in _LEXICON.finditer(bare)]
     return tuple(reasons)
+
+
+def has_numeral(text: str) -> bool:
+    """Whether raw text holds a Unicode numeric character or a number word; no date or period
+    exemption (VENDOR-1 reading 5)."""
+    return any(c.isnumeric() for c in text) or _LEXICON.search(text) is not None

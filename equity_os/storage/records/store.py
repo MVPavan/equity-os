@@ -59,7 +59,15 @@ _VERSION_STATE: LiteralString = (
     "INSERT INTO eqos.validation_claim_states (validation_id, version_id, state) "
     "VALUES (%s, %s, %s)"
 )
-_VERSION: LiteralString = "SELECT * FROM eqos.report_versions WHERE id = %s"
+_VERSION: LiteralString = (
+    "SELECT v.*, s.source_cutoff FROM eqos.report_versions v "
+    "LEFT JOIN eqos.version_source_cutoffs s ON s.version_id = v.id WHERE v.id = %s"
+)
+# An explicit source cutoff wins; otherwise the predecessor's; otherwise no row.
+_SOURCE_CUTOFF: LiteralString = """INSERT INTO eqos.version_source_cutoffs
+SELECT %(version)s, cutoff FROM (SELECT coalesce(%(cutoff)s::timestamptz, (SELECT source_cutoff
+    FROM eqos.version_source_cutoffs WHERE version_id = %(predecessor)s)) AS cutoff) c
+WHERE cutoff IS NOT NULL"""
 _SECTIONS: LiteralString = (
     "SELECT ordinal, section_key, body FROM eqos.report_sections WHERE version_id = %s "
     "ORDER BY ordinal"
@@ -98,6 +106,14 @@ def create_version(cursor: Cursor[Any], draft: VersionDraft) -> int:
             "knowledge_cutoff": draft.knowledge_cutoff,
             "pinned_run_ids": list(draft.pinned_run_ids),
             "content_hash": draft.content_hash,
+        },
+    )
+    cursor.execute(
+        _SOURCE_CUTOFF,
+        {
+            "version": version_id,
+            "cutoff": draft.source_cutoff,
+            "predecessor": draft.predecessor_id,
         },
     )
     for path, body in draft.import_sources:

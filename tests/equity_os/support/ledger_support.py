@@ -84,8 +84,10 @@ COVERAGE_TABLES = REGISTRY_TABLES | {
 }
 # 0043's document intake: refusal matrix in test_document_intake.
 DOCUMENT_TABLES = frozenset({"document_listings", "document_observations", "document_attempts"})
-# 0047's vendor-first tables (VENDOR-1 Phase 1, Task 1).
-VENDOR_FIRST_TABLES = frozenset({"vendor_counterexamples", "vendor_fallback_outcomes"})
+# 0047's vendor-first tables (VENDOR-1 Phase 1, Task 1) and 0051's (Phase 2, Task 4).
+VENDOR_FIRST_TABLES = frozenset(
+    {"vendor_counterexamples", "vendor_fallback_outcomes", "version_source_cutoffs"}
+)
 CUTOFF = datetime(2026, 7, 31, 18, 30, tzinfo=UTC)
 CONTENT_HASH = "0" * 64
 PINNED_INPUTS = "1" * 64

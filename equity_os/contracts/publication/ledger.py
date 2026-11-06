@@ -218,6 +218,7 @@ class VersionDraft(BaseModel):
     sections: tuple[ReportSection, ...]
     claims: tuple[NumericClaim, ...] = ()
     import_sources: tuple[tuple[str, bytes], ...] = ()
+    source_cutoff: datetime | None = None
 
 
 class Validation(BaseModel):

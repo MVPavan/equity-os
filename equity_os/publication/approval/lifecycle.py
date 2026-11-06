@@ -182,6 +182,7 @@ def submit(
             cursor,
             entity_id=row[0],
             cutoff=draft.knowledge_cutoff,
+            source_cutoff=draft.source_cutoff,
             catalog=catalog,
             snapshots=snapshots,
         )
@@ -302,6 +303,7 @@ def check_version(
         cursor,
         entity_id=row[0],
         cutoff=draft.knowledge_cutoff,
+        source_cutoff=draft.source_cutoff,
         catalog=catalog,
         snapshots=snapshots,
     )
