@@ -44,6 +44,10 @@ from equity_os.normalisation.mapping.mapping import (
     load_normalisation_policy,
 )
 from equity_os.storage.records.repository import EvidenceRepository, VersionPin
+from equity_os.verification.admission.vendor_first import (
+    VendorFirstPolicy,
+    load_vendor_first_policy,
+)
 from equity_os.verification.comparison.definitions import (
     DefinitionSet,
     load_definition_set,
@@ -58,6 +62,8 @@ ROUNDING_POLICY_DIR = "normalisation/rounding_policy"
 DEFINITION_SETS_DIR = "verification/definition_sets"
 COMPARISON_POLICY_DIR = "verification/comparison_policy"
 ALIGNMENT_DIR = "alignment"
+VENDOR_FIRST_POLICY_DIR = "verification/vendor_first/policy"
+ELIGIBILITY_DIR = "verification/vendor_first/eligibility"
 YAML_SUFFIX = ".yaml"
 _SOURCE_ROOT = Path(__file__).resolve().parents[2]
 # Extractor content sources (design decision 7), relative to the ``equity_os`` package.
@@ -203,6 +209,8 @@ _PIN_FIELDS = (
     "comparison_policy",
     "alignment_rules",
 )
+# Pinned only when the run names a version (VENDOR-1 §6.4, §6.6).
+_OPTIONAL_PINS = ("vendor_first_policy", "eligibility")
 
 
 class ComparisonSemanticsError(ValueError):
@@ -221,6 +229,7 @@ class LoadedConfig(BaseModel):
     definition_set: DefinitionSet
     comparison_policy: ComparisonPolicy
     alignment_rules: AlignmentRuleSet
+    vendor_first_policy: VendorFirstPolicy | None
     pinned: PinnedVersions
 
 
@@ -300,6 +309,23 @@ def load_run_config(
     alignment = load_alignment_rules(
         config_root / MAPPINGS_DIR / ALIGNMENT_DIR / f"{chosen.alignment_rules}{YAML_SUFFIX}"
     )
+    policy = (
+        None
+        if chosen.vendor_first_policy is None
+        else load_vendor_first_policy(
+            _file(config_root, VENDOR_FIRST_POLICY_DIR, chosen.vendor_first_policy)
+        )
+    )
+    eligibility = (
+        None
+        if chosen.eligibility is None
+        else Pin(
+            version=chosen.eligibility,
+            content_sha256=hashlib.sha256(
+                _file(config_root, ELIGIBILITY_DIR, chosen.eligibility).read_bytes()
+            ).hexdigest(),
+        )
+    )
     extractors = {
         representation: (extractor_pins or {}).get(representation) or extractor_pin(representation)
         for representation in FIRST_PARTY_REPRESENTATIONS
@@ -325,6 +351,10 @@ def load_run_config(
             else vendor_pins
         ),
         comparison_semantics=COMPARISON_SEMANTICS,
+        vendor_first_policy=None
+        if policy is None
+        else Pin(version=policy.version, content_sha256=policy.content_sha256),
+        eligibility=eligibility,
     )
     return LoadedConfig(
         dictionary=dictionary,
@@ -334,6 +364,7 @@ def load_run_config(
         definition_set=definitions,
         comparison_policy=comparison,
         alignment_rules=alignment,
+        vendor_first_policy=policy,
         pinned=pinned,
     )
 
@@ -348,15 +379,15 @@ def require_pins(config: LoadedConfig, pinned: PinnedVersions) -> None:
                 current=_SEMANTICS_VERSION,
             )
         )
-    for name in (*_PIN_FIELDS, "definition_set"):
-        expected: Pin = getattr(pinned, name)
-        actual: Pin = getattr(config.pinned, name)
+    for name in (*_PIN_FIELDS, "definition_set", *_OPTIONAL_PINS):
+        expected: Pin | None = getattr(pinned, name)
+        actual: Pin | None = getattr(config.pinned, name)
         if expected != actual:
             raise VersionContentDriftError(
                 artifact=name,
-                version=expected.version,
-                pinned_sha256=expected.content_sha256,
-                actual_sha256=actual.content_sha256,
+                version=str(expected and expected.version),
+                pinned_sha256=str(expected and expected.content_sha256),
+                actual_sha256=str(actual and actual.content_sha256),
             )
     if config.pinned.vendor_extractors != pinned.vendor_extractors:
         raise VersionContentDriftError(
@@ -388,8 +419,9 @@ def pin_config(
     repository.pin_versions(
         [
             VersionPin(artifact=name, version=pin.version, content_sha256=pin.content_sha256)
-            for name in _PIN_FIELDS
+            for name in (*_PIN_FIELDS, *_OPTIONAL_PINS)
             for pin in (getattr(config.pinned, name),)
+            if pin is not None
         ]
         + [vendor_version_pin(pin) for pin in config.pinned.vendor_extractors]
     )

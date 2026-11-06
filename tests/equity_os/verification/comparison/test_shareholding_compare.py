@@ -208,7 +208,8 @@ HEAD_IDENTITY_HASH = "e77ecf35d57faf48becb1273713ce22cb62aa599c8873c4ac24129ad41
 
 
 def _default_request() -> RunRequest:
-    """A default-family request with fixed extractor pins, so no source bytes enter it."""
+    """A default-family request with fixed extractor pins, so no source bytes enter it, and
+    without the vendor-first policy pin, which postdates HEAD 70647c0 (VENDOR-1 Task 6)."""
     pins = {
         Representation.XBRL: VersionPin(version="x", content_sha256="a" * 64),
         Representation.PDF: VersionPin(version="p", content_sha256="b" * 64),
@@ -222,6 +223,7 @@ def _default_request() -> RunRequest:
         code_version="c",
         database_identity=DatabaseIdentity(host="h", port=1, name="n"),
         extractor_pins=pins,
+        versions=ConfigVersions(vendor_first_policy=None),
     )
 
 

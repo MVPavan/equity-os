@@ -3,7 +3,8 @@
     compare run --entity <entity_key> --period-end <YYYY-MM-DD> --basis consolidated
         [--cutoff <ISO-8601 with offset>] [--mode as_known|retrospective] [--config-root config]
         [--vendor <source>/<surface> ...] [--dictionary v1] [--mapping-set v1]
-        [--normalisation-policy v1] [--alignment-rules v1] [--family <family>]
+        [--normalisation-policy v1] [--alignment-rules v1] [--eligibility <version>]
+        [--family <family>]
     compare report (--run <id> | --entity <key> --period-end <date> --basis <basis>)
         [--family <family>] [--as-of <ISO-8601 with offset>] [--config-root config]
     compare queue list --run <id> [--as-of <ISO-8601 with offset>]
@@ -165,6 +166,7 @@ def add_compare_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     run.add_argument("--mapping-set", default=DEFAULT_VERSION)
     run.add_argument("--normalisation-policy", default=DEFAULT_VERSION)
     run.add_argument("--alignment-rules", default=DEFAULT_VERSION)
+    run.add_argument("--eligibility")
     run.add_argument("--family", choices=sorted(_FAMILIES), default=_RESULTS)
     report = actions.add_parser(REPORT_ACTION, help=_REPORT_HELP)
     report.add_argument("--run", type=int)
@@ -286,6 +288,7 @@ def run_compare(args: argparse.Namespace) -> RunRecord:
                 mapping_set=args.mapping_set,
                 normalisation_policy=args.normalisation_policy,
                 alignment_rules=args.alignment_rules,
+                eligibility=args.eligibility,
             ),
             family=_FAMILIES[args.family],
         )

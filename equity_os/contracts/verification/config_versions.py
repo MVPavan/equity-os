@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict
 
-from equity_os.contracts.measurement.evidence import PinnedVersions
+from equity_os.contracts.measurement.evidence import PinnedVersions, VersionPin
 
 DEFAULT_VERSION = "v1"
 
@@ -22,6 +22,8 @@ class ConfigVersions(BaseModel):
     definition_set: str = DEFAULT_VERSION
     comparison_policy: str = DEFAULT_VERSION
     alignment_rules: str = DEFAULT_VERSION
+    vendor_first_policy: str | None = DEFAULT_VERSION
+    eligibility: str | None = None
 
     @classmethod
     def of(cls, pinned: PinnedVersions) -> ConfigVersions:
@@ -34,4 +36,11 @@ class ConfigVersions(BaseModel):
             definition_set=pinned.definition_set.version,
             comparison_policy=pinned.comparison_policy.version,
             alignment_rules=pinned.alignment_rules.version,
+            vendor_first_policy=_version(pinned.vendor_first_policy),
+            eligibility=_version(pinned.eligibility),
         )
+
+
+def _version(pin: VersionPin | None) -> str | None:
+    """An optional pin's version."""
+    return None if pin is None else pin.version

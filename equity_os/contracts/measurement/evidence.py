@@ -473,6 +473,11 @@ class PinnedVersions(BaseModel):
     comparison_semantics: VersionPin | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
+    # VENDOR-1 §6.4 and §6.6; ``None`` (omitted) on runs recorded before them.
+    vendor_first_policy: VersionPin | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    eligibility: VersionPin | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("vendor_extractors")
     @classmethod

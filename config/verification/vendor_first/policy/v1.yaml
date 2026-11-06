@@ -1,0 +1,7 @@
+# Vendor-first policy v1 (VENDOR-1 spec §6.4). A vendor pair is imprecise when the wider
+# half-width exceeds precision_limit x max(|S|, |T|); a check class is eligible after
+# min_clean_key_periods key-periods agree with the filing and none differs (§6.6). This is not
+# the comparison policy's triage magnitude_threshold. Quoted so no float sets the boundary.
+version: v1
+precision_limit: '0.005'
+min_clean_key_periods: 4
