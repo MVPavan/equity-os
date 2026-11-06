@@ -1,11 +1,11 @@
 # FIVE-1 Implementation Plan: five-company enablement
 
-**Status:** fix round 2 for Sol plan review 2. **Bead:** `eqos-awnc`. **Date:** 2026-11-06.
+**Status:** fix round 3 for Sol plan review 3. **Bead:** `eqos-awnc`. **Date:** 2026-11-06.
 **Origin:** owner order 2026-11-05 step 4 (thorough test on APARINDS, ICICIBANK, LAURUSLABS,
 MTARTECH, NETWEB); `docs/plans/FIVE-COMPANY-TEST.md` §2 blockers 2, 4, 5, §8 Q1, Q3–Q5, Q7;
 `docs/plans/VENDOR-1-P3.md` Task 11 (blocked on a sanctioned acquisition route); orchestrator
 rulings: ICICIBANK joins the comparison config; MTARTECH is `EQ` on the current master.
-Code facts read at `800b4cc5`, rechecked at `6d722569` and `f19d2d54`. **Inferred** marks anything not read directly.
+Code facts read at `800b4cc5`, rechecked at `6d722569`, `f19d2d54` and `454d7633`. **Inferred** marks anything not read directly.
 **Goal:** every company of the five-company test can be onboarded live through a sanctioned
 route, gets first-party and vendor evidence for a named list of periods, and runs under one
 dictionary and mapping-set version, without touching anything the Stage 4 freeze protects.
@@ -44,6 +44,17 @@ dictionary and mapping-set version, without touching anything the Stage 4 freeze
 | R2-01 | `commands.txt` gains role (d) *final-pin positive*: an evidenced, agreeing, filing-absent cell of a class that qualifies from the other genuine checks, never acquired or fallen back on before the final segment; its filing absence is re-checked immediately before the positive run; no such cell (for any reason) means the isolated positive fixture plus a recorded live limitation; the segment after the artifact commit runs on a new gated revision holding the artifact, with a refreshed inventory, before its rehearsal | Task 6 |
 | R2-02 | `--captures-of` looks up the current generation at the source period `PE0` (capture, extractor version, entity, basis, framework, extraction context), extracts once at `PE0` only where none matches, then writes only the `PE` attempt and missing interpretations over the stored occurrence ids; the integration test counts extractor calls | Task 3 |
 | Open note 1 | The one-group refusal is described as a property of the public `compare run` builder, not of stored runs | Task 2 |
+
+R2-02's bypass (`reuse=`, public context digests, extractor-call spies) is withdrawn by the
+review 3 ruling below.
+
+## Review 3 dispositions
+
+| Item | Change | Section |
+|---|---|---|
+| R3-01 | **Orchestrator ruling (three rounds without convergence): the extraction bypass is removed, no version is bumped.** The bypass edited `vendor_ingest.py`, `vendor_screener.py` and `vendor_tijori.py`, which every vendor extractor source set hashes (`run_config.py` `VENDOR_EXTRACTORS`, `_sources_sha256`), so it forced coordinated version transitions across every vendor extractor and Phase 3's allocations. The parse it avoided is deterministic: the same extractor over the same retained bytes and binding yields identical occurrences, and storage reuses identical rows by capture, extractor version and anchor key and rejects a different payload (`repository.py` `_insert_occurrences`, `OccurrenceConflictError`). The evidence is therefore stored once in substance; the repo's "extract once" rule targets model extraction and stored results, not re-running a deterministic parser over the same bytes. `--captures-of` re-runs today's ingest per target, with its logic in `vendor_reingest.py` alone (hashed by no source set). `reuse=`, the context-digest renames and the call-counting spies are deleted. **Pin inventory: FIVE-1 edits no content-pinned file**, so it needs no transition and no coordination with Phase 3's reserved versions (`VENDOR-1-P3.md` "Version and pin inventory"); Task 7 checks this mechanically | Task 3; File map; Task 7 |
+| R3-02 | Two passes. A check pass parses every cited capture's adapters with no target write, establishes target coverage per required vendor across all its sections (a quarter is covered by `QUARTERS`; annual sections lacking it do not count against it) and checks each parsed occurrence against any stored one under the same anchor. Only then the write pass runs today's ingest at `PE`. A refusal writes no row at any period; a failed section still records its failure and the others proceed. Tests: a June quarter on a March year-end, and a target missing only from the vendor ingested second | Task 3 |
+| Note (partial interpretations) | Not reachable under re-parse. `_interpretations` (`vendor_ingest.py`) reuses when any row of the generation exists under the current pins, but each generation's rows come from one `put_interpretations` transaction (`repository.py`), so for a given occurrence set they are all present or none. A partial set needs the occurrence set itself to change under one extractor version, which means a different payload for a stored anchor (e.g. a changed fiscal-year-end month moving the annual periods); the check pass refuses exactly that before any write. No hashed edit and no version transition is needed | Task 3 |
 
 **Out of scope:** running the five-company test (its protocol is `FIVE-COMPANY-TEST.md` §5–§6);
 a standalone admit command (reading 3); fresh vendor fetches for back periods (reading 2); any
@@ -142,12 +153,15 @@ protocols, with the additions in "Live protocol" below.
 | `equity_os/interface/commands/verification/compare_cli.py` | modify: `fallback --generation N` through `entity_fetch` | 2 |
 | `equity_os/verification/admission/fallback.py` | modify: `_acquire`, `_ingest` public as `acquire_group`, `ingest_group` (returns the report); one-group guard | 2, 3 |
 | `equity_os/interface/commands/extraction/evidence_cli.py` | modify: `evidence acquire` action | 3 |
-| `equity_os/interface/commands/sourcing/vendor_reingest.py` + its CLI registration | modify: `--captures-of` | 3 |
-| `equity_os/extraction/surfaces/vendor_ingest.py` | modify: `ingest_vendor(..., reuse=)` skips `extract` for a stored generation | 3 |
-| `equity_os/extraction/vendors/screener/vendor_screener.py`, `.../tijori/vendor_tijori.py` | modify: context digest public, behaviour unchanged | 3 |
+| `equity_os/interface/commands/sourcing/vendor_reingest.py` + its CLI registration | modify: `--captures-of` (check pass, then today's ingest) | 3 |
 | `config/coverage/watchlist.yaml` | modify: ICICIBANK entry | 4 |
 | `docs/plans/FIVE-COMPANY-TEST.md`, `CONTEXT.md` | modify | 6 |
 | Tests: `tests/equity_os/support/onboarding_support.py`, `test_onboarding_acquisition.py`, the fallback test beside `fallback.py`'s existing one, the `vendor reingest` test, watchlist-loading tests that pin the stock list | modify/extend | 1–4 |
+
+**No content-pinned file (R3-01).** No file above is in a hashed extractor source set
+(`run_config.py` `EXTRACTOR_SOURCES`, `SHP_EXTRACTOR_SOURCES`, `VENDOR_EXTRACTORS`). No FIVE-1
+change alters how pinned inputs become results, so `_SEMANTICS_VERSION` stays. Phase 3's reserved
+versions are untouched.
 
 ## Task 1: Sanctioned acquisition route
 
@@ -259,8 +273,7 @@ does, one period per command and generation; and `eqos vendor reingest ... --per
 --captures-of <PE0>` records vendor evidence at `PE` from the captures cited at `PE0`.
 
 Files:
-- Modify: `fallback.py`, `evidence_cli.py`, `vendor_reingest.py` and its CLI registration,
-  `vendor_ingest.py` (`reuse`), `vendor_screener.py` and `vendor_tijori.py` (public context digest)
+- Modify: `fallback.py`, `evidence_cli.py`, `vendor_reingest.py` and its CLI registration
 - Test: one integration test per command over retained Apar-like fixtures with a fake transport
 
 Interfaces:
@@ -268,10 +281,7 @@ Interfaces:
 - Produces: `acquire_group` (today's `_acquire`, renamed); `ingest_group(...) -> IngestReport |
   None` (today's `_ingest` returning the `ingest_first_party` report, `None` on `IntakeError` or
   `IngestError`); `ingested(report: IngestReport | None) -> bool` (today's success predicate,
-  used by `run_fallback`); `reingest(..., captures_of: date | None = None)`;
-  `ingest_vendor(..., reuse: AcquisitionAttempt | None = None)`; public context digests
-  `vendor_screener.page_context` (today's `_context`) and `vendor_tijori.extraction_context` (the
-  digest `extract_tijori` computes inline, moved out), each used by its extractor unchanged.
+  used by `run_fallback`); `reingest(..., captures_of: date | None = None)`.
 
 Approach: the `evidence acquire` action resolves `<KEY>` to one entity (unknown refuses before
 transport), calls `ordinary_roots` and `entity_fetch` (authorisation `named-period acquisition of
@@ -284,32 +294,43 @@ per-period settings and extraction-failure checks are fallback's, unchanged. `--
 `--dictionary` are required, so no default can split versions.
 
 `--captures-of PE0` selects the captures by the attempts at `PE0` (default `--period-end`, today's
-behaviour) and extracts each capture once (R2-02). Without the flag, behaviour is today's.
-`_adapters` also yields, per adapter, its current extraction context (`page_context` per Screener
-section, `extraction_context` for Tijori) and its section (Screener `section.value`, Tijori
-none). For each capture and adapter:
+behaviour). Without the flag, behaviour is today's. With it, `reingest` runs two passes, all in
+`vendor_reingest.py`; no extractor, ingest or storage file changes (R3-01):
 
-1. **Lookup at the source period.** `list_generation_attempts(capture, version, entity_id,
-   period_end=PE0, basis, framework=IND_AS)` filtered to `extraction_context_sha256` equal to the
-   current context. The lookup is at `PE0`, never `PE`: the query is period-scoped
-   (`repository.py`), and step 2 guarantees every current generation is stored at `PE0`.
-2. **Extract once where none matches.** Run today's per-adapter ingest at `PE0` (the plain
-   `vendor reingest` call), which extracts and stores the generation at the source period. A later
-   target finds it in step 1 and calls no extractor. A section whose adapter refuses records its
-   failure attempt at `PE0` as today, and the other sections proceed. A failed attempt carries no
-   context, so it never matches and is re-extracted for each target. This is today's failure
-   handling, unchanged and honest.
-3. **Target check.** The stored occurrences of the matched generations
-   (`list_capture_occurrences(capture, version)` with `native_context` basis, and section for
-   Screener, equal to the adapter's) must hold a period ending at `PE`; otherwise the command exits
-   `INCOMPLETE` naming the gap and writes no `PE` row.
-4. **Reuse at the target.** `ingest_vendor_retained(request at PE, ..., reuse=<matched attempt>)`
-   runs today's authority, version-pin, expiry and body-hash checks, skips `extract`, and builds
-   the extraction from the stored rows: those occurrences, the matched attempt's outcome, reasons
-   and context. `put_generation` re-reads the identical occurrences (same ids, actual periods,
-   `UNKNOWN` knowledge time, the capture's original availability) and adds one `PE` attempt.
-   `_interpretations` reuses the rows already under the current pins and appends only the missing
-   ones.
+1. **Check pass (no attempt, occurrence or interpretation write).** For every cited capture, read
+   its verified body and build `_adapters` as today, with the fiscal-year-end month at `PE`. Check
+   each adapter's version pin as `ingest_vendor` does first (`vendor_extractor_pin`,
+   `pin_versions`, which writes only `version_pins`), then call its extract on the body. An adapter
+   raising `VendorExtractionError` contributes nothing here and is still ingested in pass 2, which
+   records its failure attempt as today. Then, before any write:
+   - **Coverage per required vendor.** For each of Screener and Tijori, the union of its adapters'
+     occurrences, across every section and cited capture, must hold an occurrence whose period
+     ends at `PE`. Section filtering stays each adapter's own, as today: a Screener section's parse
+     yields only that section's rows, and its attempt cites only those. A quarterly target is
+     covered by `QUARTERS`; `PROFIT_LOSS`, `CASH_FLOW` and `BALANCE_SHEET` lacking it (annual ends,
+     own instants, `vendor_screener._period`) do not count against it.
+   - **Stored agreement.** A parsed occurrence whose capture, extractor version and anchor key are
+     already stored (`list_capture_occurrences(capture, version)`) must equal that row without its
+     id, which is storage's own rule.
+
+   Any failure exits `INCOMPLETE` naming the gap, with nothing written at any period.
+2. **Write pass.** Today's per-adapter `ingest_vendor_retained` at `PE`, unchanged. The same
+   extractor re-parses the same verified bytes under the same binding, so it yields the
+   occurrences pass 1 checked. `put_generation` reuses the stored identical rows (same ids, own
+   periods, `UNKNOWN` knowledge time, the capture's first-seen time from `put_capture_ref`) and adds
+   one `PE` attempt per adapter; `_interpretations` reuses the generation's rows under the current
+   pins, or writes them all.
+
+**Why this order.** `put_generation` commits each adapter's generation separately
+(`repository.py`), so any check left to the per-adapter loop could follow an earlier adapter's
+committed `PE` attempt. Coverage and payload agreement are therefore settled before the first
+write. The check pass does not ingest at `PE0`: doing so would add a `PE0` attempt on every
+command and move what `PE0` runs read (`vendor_sides._latest`). Refusals that pass 2 still raises
+on its own, a capture turning expired or purge-pending (`ingest_vendor_retained`) or a store
+error, are today's and fall outside this guarantee. Without stored agreement, a changed binding
+(for example a different fiscal-year-end month at `PE`) would raise `OccurrenceConflictError`
+part-way through, or leave a generation's interpretations partial (Review 3 note). The command
+re-parses each capture twice per target; the parse is deterministic and cheap, so this is accepted.
 
 It exits `INCOMPLETE` naming the gap, before writing, when no capture is cited at `PE0`, or when
 Screener or Tijori has none. Nothing is relabelled; no new vendor fetch (reading 2). Periods before
@@ -320,17 +341,22 @@ package id; a period with no filing prints `FILING_UNAVAILABLE` and a failed int
 `FILING_UNRESOLVED`, both `INCOMPLETE`; a period before the settings window refuses; the new
 package's knowledge time is the acquisition's, so an `AS_KNOWN` run at an earlier cutoff does not
 select it; an unknown entity and a protected root refuse with no request sent. `vendor reingest
---captures-of`: a target the capture holds yields a `PE` attempt whose occurrences carry their own
-source periods, with the capture's original availability and `UNKNOWN` vendor knowledge time; the
-new interpretations are invisible at earlier `AS_KNOWN` cutoffs. **Extract once:** with the
-adapters' extract functions wrapped by call-counting spies, a source generation under an older
-extractor version is extracted exactly once per adapter (at `PE0`) on the first target `PE1`, and
-a second target `PE2` makes **zero** extractor calls while its attempts cite the same occurrence
-ids as `PE1`'s; a source already current at `PE0` makes zero calls on the first target. Absent
-source captures, an absent vendor and a basis mismatch each exit `INCOMPLETE` with no write; an
-absent target period exits `INCOMPLETE` with no `PE` row; a Screener section whose adapter refuses
-records its failure and the other sections still reuse; without the flag the existing reingest
-test is unchanged; fallback tests unchanged.
+--captures-of`: a target the capture holds yields a `PE` attempt per adapter whose occurrences
+carry their own source periods, with the capture's original availability and `UNKNOWN` vendor
+knowledge time; the new interpretations are invisible at earlier `AS_KNOWN` cutoffs. **Stored
+once:** after a first target `PE1`, a second target `PE2` over the same captures leaves the
+capture's occurrence rows and interpretation rows unchanged in count; its attempts cite the same
+occurrence ids as `PE1`'s; and it adds exactly one attempt per adapter at `PE2` and none at any
+other period. **Non-year-end target:** on a March year-end entity, a June quarter that `QUARTERS`
+holds and the annual sections lack succeeds, with an attempt for every section. **Missing target
+with no partial write:** a target held by Screener but not Tijori (Tijori ingested second in
+today's order) exits `INCOMPLETE` with attempt, occurrence and interpretation counts unchanged at
+every period; so does a target in no section. **Stored disagreement:** a fiscal-year-end month at
+`PE` differing from the one the stored generation used exits `INCOMPLETE` with nothing written.
+A Screener section whose adapter refuses records its failure attempt at `PE` while the other
+sections proceed. Absent source captures, an absent vendor and a basis mismatch each exit
+`INCOMPLETE` with no write; without the flag the existing reingest test is unchanged; fallback
+tests unchanged.
 
 Dependencies: Task 2.
 
@@ -426,7 +452,9 @@ Dependencies: Tasks 1–3.
 ## Task 7: Gate
 
 Goal: the tip holding Tasks 1–3 and 6 passes `scripts/verify.sh gate five-1` (log and revision in
-`scratchpad/five-1/gate/`), mypy strict and ruff clean; and the orchestrator runs the leak check
+`scratchpad/five-1/gate/`), mypy strict and ruff clean; `git diff --name-only <base>..<tip>` names
+no file in `EXTRACTOR_SOURCES`, `SHP_EXTRACTOR_SOURCES` or `VENDOR_EXTRACTORS` (R3-01); and the
+orchestrator runs the leak check
 on that tip and `test_data_stage4_e2e.py` (attempt-3 replay) where the protected data exist,
 recording PASS/FAIL only.
 
