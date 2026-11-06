@@ -112,6 +112,23 @@ def test_historical_scope_replays_committed_identifiers_with_head_default(gate) 
     assert "real captured identifier" in result.stdout
 
 
+def test_branch_default_scope_is_the_merge_base_with_main(gate) -> None:
+    root, _ = gate
+    _git(root, "branch", "-M", "main")
+    _git(root, "switch", "-qc", "feature")
+    token = str(900_000 + 73)
+    path = "tests/equity_os/test_synthetic.py"
+    (root / path).write_text(f'company_id = "{token}"\n')
+    _git(root, "add", path)
+    _git(root, "commit", "-qm", "synthetic copied ID")
+    _capture(root, f'<tr data-row-company-id="{token}">')
+
+    result = _run(gate)
+
+    assert result.returncode == 3, result.stdout
+    assert "real captured identifier" in result.stdout
+
+
 @pytest.mark.parametrize(
     "template",
     (

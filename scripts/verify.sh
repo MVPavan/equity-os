@@ -308,10 +308,11 @@ mode_gate() {
   local slice="$1"
   cd "${REPO_ROOT}" || exit "${EXIT_STOP}"
 
-  # Default remains HEAD. An explicit ancestor replays the full checkpoint,
-  # including committed additions; reject malformed/unrelated bases before work.
+  # Default is the merge base with main (HEAD when on main or main is absent), so
+  # committed branch work stays in scope. An explicit base replays the full
+  # checkpoint; reject malformed/unrelated bases before work.
   local scope_base
-  if ! scope_base="$(git rev-parse --verify --end-of-options "${VERIFY_SCOPE_BASE:-HEAD}^{commit}" 2>/dev/null)" \
+  if ! scope_base="$(git rev-parse --verify --end-of-options "${VERIFY_SCOPE_BASE:-$(git merge-base HEAD main 2>/dev/null || echo HEAD)}^{commit}" 2>/dev/null)" \
     || ! git merge-base --is-ancestor "${scope_base}" HEAD 2>/dev/null; then
     echo "rails            STOP  invalid verification scope base"
     echo "ROUTE: STOP      scope base must resolve to an ancestor commit"
