@@ -631,6 +631,10 @@ T3.78	pdf	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	Stand
 T3.79	pdf	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	Standalone	2026-09-30	6	Purchase of fixed assets
 T3.80	pdf	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	Standalone	2026-09-30	6	Proceeds from sole of fixed assets
 T3.81	pdf	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	Standalone	2026-09-30	6	Cash and cash equivalents include cash in hand
+T3.82	pdf	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	Standalone	2026-09-30	11	Treasury 220,641.18
+T3.83	xbrl-sum	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	2206411800000+Capital@OneI+ReservesAndSurplus@OneI	SegmentLiabilities@OneReportable43I
+T3.84	pdf	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	Standalone	2026-09-30	12	includes items such as tax paid in advance net of provision, deferred tax and provisions to the extent reckoned at the entity level
+T3.85	pdf	1b3599e2a01fc9b77f913fef7a3068bca6ec43c722010a1c1bc4c01c55033c03	Standalone	2026-06-30	10	includes items such as tax paid in advance net of provision, deferred tax and provisions to the extent reckoned at the entity level
 ```
 
 ## Ledger
@@ -650,9 +654,9 @@ periods are the quarter and the half-year; the instance files both (`OneD` [B3.1
 `a2d49864…` (B7b). Keys are dictionary v4's rows plus the six bank rows below, as v5 will hold them.
 
 **Dictionary v4 baseline.** v4 is v3 plus `current_tax_excl_earlier_years` (plan base ruling).
-v4 is not on `main` at this draft: its rows are read from branch `fix-results-pdf-data-quality`
-(`f75892e8`) plus v3's three shareholding basket rows (`derived.yaml`), which that branch's v4
-(still on v2) lacks. If the landed v4's row set differs, this ledger is amended before Task 6.
+v4 is not on `main` at this draft: its rows are read from branch `fix-dictionary-v4-on-v3`
+(tip `aa1a7cb3`), whose v4 builds on v3 and so carries v3's three shareholding basket rows
+(`derived.yaml`). If the landed v4's row set differs, this ledger is amended before Task 6.
 
 **Columns.** *Period*: `Q` the quarter 2026-07-01..2026-09-30 (`OneD`), `H1` the half-year
 2026-04-01..2026-09-30 (`FourD`), `I` the instant 2026-09-30 (`OneI`). A dimensioned row has
@@ -677,11 +681,13 @@ one line per evidenced member set. Its key names every axis: `segment` and `elim
   which is not filed; `R-OP` a formula operand is a `REFUSED` line, or a dimensioned operand has
   no key. The fix round adds three reasons. `R-MEAN`: the bank files an element under v4's name or
   a candidate alias, but its evidenced meaning is not the row's, so it is not mapped (Meaning
-  audit). `R-SCOPE`: the bank files a related element whose scope differs from the row's (Alias
-  audit). `R-TIME`: the row's element is filed only at another instant, and no mapping moves it.
+  audit). `R-SCOPE`: the bank files a related element whose scope differs from the row's, or is
+  not established as the row's (Alias audit). `R-TIME`: the row's element is filed only at another instant, and no mapping moves it.
 - `no key`: a dimensioned row with no member the package evidences enumerates no key. This
-  includes a dimensioned row whose filed members are `R-MEAN`. The engine enumerates member sets
-  only from interpretations (`engine._evidence_dimensions`).
+  includes a dimensioned row whose filed members are `R-MEAN`, or `R-BASIS` (fix round 2): the
+  members' `elimination_basis` is not established, so no complete key exists and the members are
+  withheld. The engine enumerates member sets only from interpretations
+  (`engine._evidence_dimensions`).
 
 **Issuer applicability (v5), by row.** A row is restricted to `NON_FINANCIAL` when its meaning is
 a line of the non-financial layout with no bank meaning (spec §8 step 3: revenue from operations,
@@ -743,12 +749,18 @@ locator is not proof of equivalence; the stated relation is.
 - **Segment liabilities (L401–L405, L407: `R-MEAN`).** The bank's filed segment liabilities, with
   unallocated liabilities, equal `NetSegmentLiabilities` and also total capital *and* liabilities
   [T3.71, T3.72]. The statement presents "Capital Employed" as its own line 5, outside the
-  segment liabilities, with "Total (4) + (5)" [T3.73–T3.75]. So the filed member and total
-  figures include equity that the statement keeps out of segment liabilities. That is not v4's
-  liabilities meaning; Apar's `NetSegmentLiabilities` is its liabilities alone (`xbrl/v5/in_capmkt.yaml`
-  evidence ref). Members enumerate no key; the total and net refuse. `segment_unallocable_liabilities`
-  (L406) keeps its value. `segment_capital_employed` (L443–L446) refuses `R-OP`: its liabilities
-  operand has no key.
+  segment liabilities, with "Total (4) + (5)" [T3.73–T3.75]. The equity is demonstrated in the
+  treasury member: `SegmentLiabilities@OneReportable43I` [T3.47] equals the PDF's treasury
+  liabilities line, 220,641.18 crore [T3.82], plus the instance's `Capital` and
+  `ReservesAndSurplus` [T3.83], the 360,593.47 crore printed as capital employed [T3.73]. So the
+  treasury member, and with it the aggregate and net, include equity that the statement keeps out
+  of segment liabilities. That is not v4's liabilities meaning; Apar's `NetSegmentLiabilities` is
+  its liabilities alone (`xbrl/v5/in_capmkt.yaml` evidence ref). It is not claimed that every
+  member contains equity; the other members are withheld with the series, because their meaning
+  is not established once the same element's treasury member and aggregate carry equity. Members
+  enumerate no key; the total and net refuse. `segment_unallocable_liabilities` (L406) keeps its
+  value. `segment_capital_employed` (L443–L446)
+  enumerates no key: neither operand has an interpreted member (Segments).
 - **Opening cash (L359: `R-TIME`).** `CashAndCashEquivalentsCashFlowStatement@PY_I` is the instant
   2026-03-31 [T3.04, B8.26]. The key is the instant 2026-09-30. Interpretation keeps XBRL periods,
   and the existing mapping reads this element as closing cash at each instant. The September
@@ -771,9 +783,9 @@ checked by meaning against `T3.01`–`T3.03`. A reason is never "Apar's element 
 | L050–L051 | `profit_continuing_after_tax` | `ProfitLossFromOrdinaryActivitiesAfterTax` | `R-SCOPE`. Ordinary activities (before extraordinary items) is not continuing operations (before discontinued operations). |
 | L062–L063 | `profit_attributable_owners` | `ProfitLossAfterTaxesMinorityInterestAndShareOfProfitLossOfAssociates` | `R-SCOPE`. A consolidation line; the standalone statement attributes nothing to owners or NCI. As for Apar, it is not mapped. |
 | L093–L094, L099–L100 | `eps_basic_continuing`, `eps_diluted_continuing` | `Basic`/`DilutedEarningsPerShareBeforeExtraordinaryItems` | `R-SCOPE`. Same distinction: before extraordinary items is not continuing operations. |
-| L103 | `ppe` | `FixedAssets` | `R-SCOPE`. The filing does not give the composition of "fixed assets". v4 keeps PPE apart from CWIP and intangibles. |
+| L103 | `ppe` | `FixedAssets` | `R-SCOPE`, scope not established. The filing does not give the composition of "fixed assets", and v4 keeps PPE apart from CWIP and intangibles, so whether the bank line has PPE's scope is not shown. No economic difference is claimed; a reviewed composition or equivalence would release it. |
 | L125 | `cash_and_cash_equivalents` | `CashAndBalancesWithReserveBankOfIndia`, `BalancesWithBanksAndMoneyAtCallAndShortNotice` | `R-SCOPE`. The balance sheet has no single cash line. The cash-flow measure "include[s] cash in hand … balances with RBI, balances with other banks and money at call" [T3.81] and is `cf_cash_closing` (L360). A sum would be computed, not reported. |
-| L258, L260 | `cf_capex_ppe`, `cf_sale_ppe` | `PurchaseOf`/`ProceedsFromSalesOfTangibleAssetsClassifiedAsInvestingActivities` | `R-SCOPE`. The statement line is "Purchase of fixed assets" / "Proceeds from sale of fixed assets" [T3.79, T3.80], with the same undisclosed composition as L103. The "tangible" tag does not show that CWIP is excluded. |
+| L258, L260 | `cf_capex_ppe`, `cf_sale_ppe` | `PurchaseOf`/`ProceedsFromSalesOfTangibleAssetsClassifiedAsInvestingActivities` | `R-SCOPE`, scope not established. The statement line is "Purchase of fixed assets" / "Proceeds from sale of fixed assets" [T3.79, T3.80], with the same undisclosed composition as L103. The "tangible" tag is relevant but does not by itself settle the composition. No economic difference is claimed. |
 | L326 | `cf_proceeds_stock_options` | inside `ProceedsFromIssuingShares` | `R-SCOPE`. It is combined in L322 and is not split. |
 | L023–L024 | `depreciation_amortisation` | `AdjustmentsForDepreciationAndAmortisationExpense` (cash flow) | `R-NF` confirmed. The P&L files no depreciation line; the adjustment is `cf_adj_depreciation` (L174). |
 | L040–L041, L044–L045 | `current_tax`, `deferred_tax` | `TaxExpense` only | `R-NF` confirmed. The split is printed only in the PDF [T3.22, T3.23], which is not a member (B7b). |
@@ -799,19 +811,29 @@ here from the filing. Task 8 implements it and never chooses it.
   `SegmentRevenue` with no dimension, and `SegmentRevenueFromOperations` plus
   `InterSegmentRevenue` equals that total, for Q and H1 [T3.63–T3.66]. The statement prints
   "Less: Inter segment revenue" after the total [T3.67]. The members are before elimination.
-- `segment_assets`: `POST_ELIMINATION`. The members sum to `SegmentAssets` with no dimension. That
-  total plus unallocated assets equals `NetSegmentAssets` and the balance-sheet `Assets`
-  [T3.68, T3.69]. The segment page prints no inter-segment asset or liability line [T3.70]. Figures
-  that reconcile to the entity total with no elimination line are after any elimination.
+- `segment_assets`: **basis unresolved; the members (L393–L396) are withheld, `no key` `R-BASIS`**
+  (fix round 2, Sol review 2 finding 1, which withdrew `POST_ELIMINATION`). The members sum to
+  `SegmentAssets` with no dimension. That total plus unallocated assets equals `NetSegmentAssets`
+  and the balance-sheet `Assets` [T3.68, T3.69]. The segment page prints no inter-segment asset or
+  liability line [T3.70]. This does not show where inter-segment adjustments sit: gross members
+  plus an unallocated amount that absorbs the eliminations reconcile to the same net total. The
+  retained segment notes define the segments and say that "Unallocated" includes "tax paid in
+  advance net of provision, deferred tax and provisions to the extent reckoned at the entity
+  level" [T3.84, T3.85]; no retained statement defines the elimination treatment of the
+  member assets. The undimensioned rows keep their values: `segment_assets_total`,
+  `segment_unallocable_assets` and `segment_assets_net` (L397–L399) carry no `elimination_basis`.
+  The basis is never chosen because Apar's `capmkt.segment_assets.2026` entry already supplies
+  `POST_ELIMINATION` (plan, Task 8).
 - `segment_liabilities`: no basis is frozen, because the meaning is refused (Meaning audit).
-  `segment_capital_employed` (assets less liabilities on one basis) therefore has no common basis
-  and refuses `R-OP`.
+- `segment_capital_employed` (assets less liabilities on one basis): neither operand has an
+  interpreted member, so it enumerates no key (L443–L446, `no key` `R-OP`). Before fix round 2 it
+  was `REFUSED R-OP` under a `POST_ELIMINATION` key, which named the withdrawn asset basis.
 
 **Excluded families.** `SHAREHOLDING` (`shareholding.yaml`'s four rows): not enumerated by a
 `FINANCIAL_RESULTS` run; no shareholding filing is in Phase 3 scope. The three shareholding
 basket formulas in `derived.yaml` enumerate no key here (`no key` lines). No other family exists.
 
-**Admissible cells (rehearsal, §6.5).** The 102 reported `VALUE` lines. Each is expected to admit
+**Admissible cells (rehearsal, §6.5).** The 98 reported `VALUE` lines. Each is expected to admit
 with label `CHECKED_AGAINST_FILING` under row 1, 2 or 5; which row depends on Task 12's vendor
 sides (B9) and is recorded at Task 13. A row 0a refusal of one of them is a deviation that blocks
 Task 13 until reviewed. Not admissible: the 5 `VALUE computed` lines. Derived figures are
@@ -820,15 +842,18 @@ rows as `NOT_REPORTED` (`admission.py:277–278`). Their reported operands follo
 rules for those lines. Also not admissible: every `REFUSED` line (no row 3 for `BANK`, so row 4
 or 6 refuses), and every `NOT_APPLICABLE` and `no key` line.
 
-**Counts.** 457 lines: `VALUE` 107 (102 filed, 5 computed); `NOT_APPLICABLE` 128 (127
-`ISSUER_RULE_ID`, 1 `results.annual_disclosure`); `REFUSED` 204 (`R-NF` 77, `R-QCF` 76, `R-PDF`
-18, `R-SCOPE` 15, `R-OP` 7, `R-MEAN` 6, `R-SIGN` 2, `R-CON` 2, `R-TIME` 1); `no key` 18 (6 as
-before, 12 `R-MEAN` segment members). Capability: 345 `SUPPORTED` lines, 94
-`UNSUPPORTED: no quarter cash-flow statement` (76 of them `R-QCF`, 18 `ISSUER_RULE_ID`), 18 `—`
-(`no key`); no balance sheet, cash-flow (half-year) or segment capability is unsupported at this
-period (B8). Against the first draft, 19 reported values leave (equity 2, segment result 10,
-segment liabilities 6, opening cash 1) and 1 is added (share proceeds), a net change of 18. The 4
-segment capital-employed computed values also leave.
+**Counts** (fix round 2, recounted by script from the table). 457 lines: `VALUE` 103 (98 filed,
+5 computed); `NOT_APPLICABLE` 128 (127 `ISSUER_RULE_ID`, 1 `results.annual_disclosure`);
+`REFUSED` 200 (`R-NF` 77, `R-QCF` 76, `R-PDF` 18, `R-SCOPE` 15, `R-MEAN` 6, `R-OP` 3, `R-SIGN` 2,
+`R-CON` 2, `R-TIME` 1); `no key` 26 (6 as before, 12 `R-MEAN` segment-result and
+segment-liability members, 4 `R-BASIS` segment-asset members, 4 `R-OP` segment capital employed).
+Capability: 337 `SUPPORTED` lines, 94 `UNSUPPORTED: no quarter cash-flow statement` (76 of them
+`R-QCF`, 18 `ISSUER_RULE_ID`), 26 `—` (`no key`); no balance sheet, cash-flow (half-year) or
+segment capability is unsupported at this period (B8). Against the first draft, 19 reported
+values leave (equity 2, segment result 10, segment liabilities 6, opening cash 1) and 1 is added
+(share proceeds), a net change of 18. The 4 segment capital-employed computed values also leave.
+Fix round 2: the 4 segment-asset member values leave (`VALUE` → `no key` `R-BASIS`), and the 4
+segment capital-employed lines move from `REFUSED R-OP` to `no key` `R-OP`.
 
 | # | Key | Period | Capability | Expected result | Locator |
 |---|---|---|---|---|---|
@@ -1224,10 +1249,10 @@ segment capital-employed computed values also leave.
 | L390 | `segment_other_elimination` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
 | L391 | `segment_profit_before_tax` | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `SegmentProfitBeforeTax@OneD` | T3.01 |
 | L392 | `segment_profit_before_tax` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `SegmentProfitBeforeTax@FourD` | T3.02 |
-| L393 | `segment_assets` [segment=retail, elimination_basis=POST_ELIMINATION] | I 2026-09-30 | SUPPORTED | VALUE `SegmentAssets@OneReportable31I` | T3.41, T3.05, T3.68–T3.70 |
-| L394 | `segment_assets` [segment=wholesale, elimination_basis=POST_ELIMINATION] | I 2026-09-30 | SUPPORTED | VALUE `SegmentAssets@OneReportable32I` | T3.42, T3.06, T3.68–T3.70 |
-| L395 | `segment_assets` [segment=treasury, elimination_basis=POST_ELIMINATION] | I 2026-09-30 | SUPPORTED | VALUE `SegmentAssets@OneReportable33I` | T3.43, T3.07, T3.68–T3.70 |
-| L396 | `segment_assets` [segment=other_banking, elimination_basis=POST_ELIMINATION] | I 2026-09-30 | SUPPORTED | VALUE `SegmentAssets@OneReportable34I` | T3.44, T3.08, T3.68–T3.70 |
+| L393 | `segment_assets` [segment=retail] | I 2026-09-30 | — | no key: R-BASIS, member basis unresolved, no member interpreted | T3.41, T3.05, T3.68–T3.70 |
+| L394 | `segment_assets` [segment=wholesale] | I 2026-09-30 | — | no key: R-BASIS, member basis unresolved, no member interpreted | T3.42, T3.06, T3.68–T3.70 |
+| L395 | `segment_assets` [segment=treasury] | I 2026-09-30 | — | no key: R-BASIS, member basis unresolved, no member interpreted | T3.43, T3.07, T3.68–T3.70 |
+| L396 | `segment_assets` [segment=other_banking] | I 2026-09-30 | — | no key: R-BASIS, member basis unresolved, no member interpreted | T3.44, T3.08, T3.68–T3.70 |
 | L397 | `segment_assets_total` | I 2026-09-30 | SUPPORTED | VALUE `SegmentAssets@OneI` | T3.03 |
 | L398 | `segment_unallocable_assets` | I 2026-09-30 | SUPPORTED | VALUE `UnAllocableAssets@OneI` | T3.03 |
 | L399 | `segment_assets_net` | I 2026-09-30 | SUPPORTED | VALUE `NetSegmentAssets@OneI` | T3.03 |
@@ -1274,10 +1299,10 @@ segment capital-employed computed values also leave.
 | L440 | `shares_outstanding` | I 2026-09-30 | SUPPORTED | VALUE computed | — |
 | L441 | `cf_wc_total` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
 | L442 | `cf_wc_total` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
-| L443 | `segment_capital_employed` [segment=retail, elimination_basis=POST_ELIMINATION] | I 2026-09-30 | SUPPORTED | REFUSED R-OP (segment_liabilities) | T3.41, T3.45, T3.68–T3.75 |
-| L444 | `segment_capital_employed` [segment=wholesale, elimination_basis=POST_ELIMINATION] | I 2026-09-30 | SUPPORTED | REFUSED R-OP (segment_liabilities) | T3.42, T3.46, T3.68–T3.75 |
-| L445 | `segment_capital_employed` [segment=treasury, elimination_basis=POST_ELIMINATION] | I 2026-09-30 | SUPPORTED | REFUSED R-OP (segment_liabilities) | T3.43, T3.47, T3.68–T3.75 |
-| L446 | `segment_capital_employed` [segment=other_banking, elimination_basis=POST_ELIMINATION] | I 2026-09-30 | SUPPORTED | REFUSED R-OP (segment_liabilities) | T3.44, T3.48, T3.68–T3.75 |
+| L443 | `segment_capital_employed` [segment=retail] | I 2026-09-30 | — | no key: R-OP, no operand member interpreted | T3.41, T3.45, T3.68–T3.75 |
+| L444 | `segment_capital_employed` [segment=wholesale] | I 2026-09-30 | — | no key: R-OP, no operand member interpreted | T3.42, T3.46, T3.68–T3.75 |
+| L445 | `segment_capital_employed` [segment=treasury] | I 2026-09-30 | — | no key: R-OP, no operand member interpreted | T3.43, T3.47, T3.68–T3.75 |
+| L446 | `segment_capital_employed` [segment=other_banking] | I 2026-09-30 | — | no key: R-OP, no operand member interpreted | T3.44, T3.48, T3.68–T3.75 |
 | L447 | `segment_revenue_members_total` [segment=reportable_segments_total, elimination_basis=PRE_ELIMINATION] | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE computed | T3.25–T3.32, T3.63–T3.67 |
 | L448 | `segment_revenue_members_total` [segment=reportable_segments_total, elimination_basis=PRE_ELIMINATION] | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE computed | T3.25–T3.32, T3.63–T3.67 |
 | L449 | `net_profit_margin_pct` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |

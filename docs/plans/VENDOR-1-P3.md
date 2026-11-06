@@ -1,5 +1,19 @@
 # VENDOR-1 Phase 3 Implementation Plan: banks
 
+## Task 3 review 2 dispositions
+
+Sol re-reviewed fix round 1 (main `2a70a09b`): CHANGES REQUIRED, two findings; B1c correctly
+stands. Fix round 2 is below. Record: `docs/evidence/vendor-first/icicibank-grounding.md`
+(Meaning audit, Alias audit, Segments, Counts, locators T3.82–T3.85).
+
+| Item | Disposition |
+|---|---|
+| 1 (P2) segment-asset basis | `POST_ELIMINATION` for L393–L396 is withdrawn. The reconciliation [T3.68–T3.70] does not show where inter-segment adjustments sit, and no retained statement defines the treatment; the segment notes define only the segments and "Unallocated" [T3.84, T3.85]. The basis is unresolved, and the members are withheld: `no key` `R-BASIS`. Segment capital employed (L443–L446) has no interpreted operand member and is `no key` `R-OP`. The undimensioned asset rows (L397–L399) keep their values. Task 8: the isolation amendment must also cover Apar's `capmkt.segment_assets.2026` (`in_capmkt.yaml:496–501`), and the bank basis is never chosen because that entry supplies one. |
+| 2 (P2) A7 comparatives | A7's period rule is rewritten (Resolved branches): the requested current intervals bind uniquely to the instance's; evidenced, labelled comparative columns are allowed; missing, ambiguous or conflicting current periods reject. The contradiction check is never waived after a positive match. Tests are listed. |
+| Release routes | Replaced by Sol's rulings on routes (a), (b) and (c), with conditions. None releases the Task 8 isolation stop. Route (a)'s current evidence is the period-reader probe: on current main the reader refuses both PDFs, so (a) needs a reviewed reader change first. |
+| Notes | PPE refusals (L103, L258, L260) read "scope not established". The segment-liability equity is demonstrated in the treasury member [T3.47, T3.82, T3.83] and so in its aggregate and net, not claimed of every member. L406 keeps its value. The record's v4 baseline is branch `fix-dictionary-v4-on-v3` (tip `aa1a7cb3`). |
+| Counts | 457 lines: `VALUE` 103 (98 reported, 5 computed); `NOT_APPLICABLE` 128; `REFUSED` 200 (`R-NF` 77, `R-QCF` 76, `R-PDF` 18, `R-SCOPE` 15, `R-MEAN` 6, `R-OP` 3, `R-SIGN` 2, `R-CON` 2, `R-TIME` 1); `no key` 26. Admissible on rehearsal: the 98 reported lines. Locator check: 246 of 246 `OK`. |
+
 ## Task 3 review 1 dispositions
 
 Sol reviewed the Task 3 amendment (main `95ad553c`) and found CHANGES REQUIRED, with seven
@@ -13,10 +27,10 @@ findings. Fix round 1 is below. Record: `docs/evidence/vendor-first/icicibank-gr
 | 3 (P1) segment result | The bank's measure is segment PBT [T3.57–T3.62]. The members (L375–L382) enumerate no key, and the total (L383–L384) is `REFUSED R-MEAN`. Isolation: Apar's `capmkt.segment_result_total.2026` would map the bank total, and no supported selector separates them, so Task 8's stop rule applies (Task 8). Apar's meaning is unchanged. |
 | 4 (P1) opening cash | L359 is `REFUSED R-TIME`, the existing no-value refusal for the September key. The filed instant is 2026-03-31 [T3.04, B8.26]. Nothing is retimestamped. |
 | 5 (P2) share proceeds | L322 is `VALUE ProceedsFromIssuingShares@FourD`: H1, INR, `decimals=-5`, positive inflow, statement line "Proceeds from issue of share capital (including ESOPs/ESUSs)" under financing [T3.76–T3.78]. The line is not split; L326 is `R-SCOPE`. Every alias-based refusal was audited by meaning (record, Alias audit). 15 lines move from `R-NF` to `R-SCOPE` with a stated distinction, among them tangible-asset purchase and sale (L258, L260), whose "fixed assets" composition is undisclosed. The rest are confirmed `R-NF` with reasons. |
-| 6 (P2) elimination basis | Frozen in the record. `segment_revenue` is `PRE_ELIMINATION` [T3.63–T3.67], and `segment_assets` is `POST_ELIMINATION` [T3.68–T3.70]. Segment liabilities include capital [T3.71–T3.75], so their meaning is refused (members no key; total and net `R-MEAN`; Apar's entries would map them, so the Task 8 stop rule applies). `segment_capital_employed` has no common basis and is `REFUSED R-OP`. |
+| 6 (P2) elimination basis | Frozen in the record. `segment_revenue` is `PRE_ELIMINATION` [T3.63–T3.67], and `segment_assets` is `POST_ELIMINATION` [T3.68–T3.70] (*withdrawn in review 2: basis unresolved*). Segment liabilities include capital [T3.71–T3.75], so their meaning is refused (members no key; total and net `R-MEAN`; Apar's entries would map them, so the Task 8 stop rule applies). `segment_capital_employed` has no common basis and is `REFUSED R-OP`. |
 | 7 (P2) Task 8 computed rows | Task 8's `MAPPED` check covers reported `VALUE` lines only. Computed lines go through the formula path (operands, complete key, trace) and stay `NOT_REPORTED` for admission. |
 | Rulings | EPS after extraordinary items is accepted (INR per share; Q and H1 separate). Exceptional items stay `R-SIGN`; the opposite sign is described as suggested, not proved. The computed-admission exclusion stands. |
-| Counts | 457 lines: `VALUE` 107 (102 reported, 5 computed); `NOT_APPLICABLE` 128; `REFUSED` 204 (`R-NF` 77, `R-QCF` 76, `R-PDF` 18, `R-SCOPE` 15, `R-OP` 7, `R-MEAN` 6, `R-SIGN` 2, `R-CON` 2, `R-TIME` 1); `no key` 18. Admissible on rehearsal: the 102 reported lines. Locator check: 242 of 242 `OK`. |
+| Counts (*superseded by review 2*) | 457 lines: `VALUE` 107 (102 reported, 5 computed); `NOT_APPLICABLE` 128; `REFUSED` 204 (`R-NF` 77, `R-QCF` 76, `R-PDF` 18, `R-SCOPE` 15, `R-OP` 7, `R-MEAN` 6, `R-SIGN` 2, `R-CON` 2, `R-TIME` 1); `no key` 18. Admissible on rehearsal: the 102 reported lines. Locator check: 242 of 242 `OK`. |
 
 ## Review 4 dispositions
 
@@ -208,8 +222,8 @@ is unconditional; only the cells below vary.
 
 Fixed from `docs/evidence/vendor-first/icicibank-grounding.md` (gen-1). `[Bx.yy]` are its Task 2
 locators; `[T3.nn]` are the rows Task 3 added. The locator check
-(`scratchpad/vendor-first/live-p3-1/locators_t3.py`) passes 242 of 242, none `NOT_ASSESSED`
-(fix round 1; 209 of 209 before).
+(`scratchpad/vendor-first/live-p3-1/locators_t3.py`) passes 246 of 246, none `NOT_ASSESSED`
+(fix round 2; 242 of 242 at fix round 1, 209 of 209 before).
 
 **B1c stands. The phase halts at Task 3** (fix round 1, after Sol review 1 rejected the first
 A7). The framework is declared only in the results PDFs (B1′ P). B7 fails on both PDFs, because
@@ -251,7 +265,7 @@ are off the onboarding and ingest paths.
 `member_identity.py` by the XBRL, PDF and SHP extractors. All three bump once in Task 5, so B4b
 adds no bump.
 
-### Amendment A7 (revised, fix round 1): PDF identity by a bound issuer declaration — not met
+### Amendment A7 (revised, fix rounds 1 and 2): PDF identity by a bound issuer declaration — not met
 
 Sol review 1 (finding 1) rejected the first A7, under which both exchange codes could appear
 anywhere in the PDF. That rule accepted another company's PDF that mentions the bank, an
@@ -276,22 +290,36 @@ that carries a results heading for any basis, or to the end of the document.
    and scrip. The seeded identifiers alone carry no name.
 2. **Basis.** The basis heading (e.g. `STANDALONE FINANCIAL RESULTS`) is a whole line on that same
    page.
-3. **Period.** A period heading line on that page, or a heading line elsewhere in the block,
-   prints the requested period end as one date. A date inside note sentences does not count.
+3. **Period** (rewritten in fix round 2, Sol review 2 finding 2). Each requested *current*
+   reporting interval binds to exactly one column of the block's statement page. The current
+   intervals are the instance's current-period contexts: for the 2026-09-30 package, Q
+   2026-07-01..2026-09-30 and H1 2026-04-01..2026-09-30; for the 2026-06-30 package, Q
+   2026-04-01..2026-06-30. A column binds when its printed heading, read by the generic reader
+   from page and column geometry, yields that interval: start and end, or a duration phrase and
+   end that fix both. An end date alone does not bind. The heading may be one line or a header the
+   reader assembles from stacked lines and a duration group shared over several columns. No date
+   comes from the expected answer, covering-letter prose or note sentences. Current Q and H1
+   share an end date; their durations tell them apart, and that is not a conflict. Other columns
+   are allowed as *comparatives* when their heading is read and labels a different period (prior
+   quarter, prior-year quarter or half-year, prior year). Comparatives bind nothing.
 4. **Framework.** The framework declaration (B1's phrase) occurs inside the block, with that basis
    as its subject.
 
 **Contradiction checks (each rejects).** Another title block for the same basis names a
-different entity, or names none. The block prints a period heading for another period end.
-Another block declares a framework for the same basis. A page-1 marker names another symbol.
+different entity, or names none. A requested current interval is missing (no column binds
+it), ambiguous (more than one column binds it, or a column that could be current has a heading
+the reader cannot resolve to one interval, such as an end date with no duration), or conflicting
+(two current headings disagree, or a current heading disagrees with the instance's interval). A
+comparative column whose heading cannot be read is ambiguous. These checks run in full after a
+positive match; a matching current column never waives them. Another block declares a framework for the same basis. A page-1 marker names another symbol.
 Title blocks of other bases are not compared. In the Q2 PDF, the consolidated title block reads
 "ICICI Bonk Limited" (OCR) [T3.54]. A document-wide name check would reject on that OCR error, and
 fuzzy matching would weaken the rule.
 
 **Limit.** The rule associates text inside one document with an identity-verified instance. It
 does not authenticate the document. A forged PDF that copies the issuer's title block and
-headings passes. Provenance would be the defence, and its unreconciled ISIN route stays rejected
-(below).
+headings passes. Provenance would be the defence; its ISIN route is not proved (route (b),
+below).
 
 **Evidence against the retained PDFs.**
 
@@ -299,28 +327,59 @@ headings passes. Provenance would be the defence, and its unreconciled ISIN rout
 |---|---|---|
 | 1 Issuer | met: p3 "ICICI Bank Limited" above "STANDALONE FINANCIAL RESULTS" [T3.49]; instance name "ICICI BANK LIMITED" [B4.10] | met: p3 [T3.50] |
 | 2 Basis | met [B7.02, T3.49] | met [B7.10, T3.50] |
-| 3 Period | **missing.** No line on p3 prints a date [T3.51]. The column headers split the month from "30, 2026" across lines. The block's dates occur only in note sentences, e.g. p8 "during six months ended September 30, 2026" [T3.53] | **missing.** No line on p3 prints a date [T3.52] |
+| 3 Period | **not bound.** No line on p3 prints a date [T3.51]. The column headers split the month from "30, 2026" across lines, and the current reader binds no column (route (a) probe, below). The block's other dates occur only in note sentences, e.g. p8 "during six months ended September 30, 2026" [T3.53] | **not bound.** No line on p3 prints a date [T3.52]; the reader binds no column (probe) |
 | 4 Framework | met: p7, "Notes on standalone financial results" [B1.05, T3.15]; block p3–p12, next heading p13 [B7.08] | met: p6 [B1.09, T3.17]; block p3–p10, next heading p11 [B7.14] |
 | Contradictions | none in the standalone block | none in the standalone block |
 
-**Exactly what is missing:** a period heading for the standalone results, bound to the
-issuer-titled statement page or its block, that code can read as a line. The only full period
+**Exactly what is missing:** the current Q and H1 intervals (Q only at 2026-06-30), each bound to
+one column of the issuer-titled statement page by the generic reader. The only full period
 heading is page 1 [B7.01, B7.09], in the covering letter, outside the block. Each of the
 following would weaken the rule, so none is taken: binding the covering letter to the block
-through its "Annexure I" cross-reference (an issuer-specific layout), matching a date anywhere in
-the block (the note sentences above), or reading the split column headers (statement-header
-parsing, which B7 found unevidenced on these OCR pages [T3.19–T3.21]).
+through its "Annexure I" enclosure outside route (b)'s reviewed association, matching a date
+anywhere in the block (the note sentences above), or feeding a hand-assembled header to
+`header_period` (that proves no column association). B7 found statement-line parsing unevidenced
+on these OCR pages [T3.19–T3.21].
 
-**What could release B1c** (each is a new amendment for Sol): (a) reviewed evidence that the
-generic column-header reader (`pdf_statement_pages` column binding with `header_period`) reads
-p3's headers as the requested Q and H1 periods on these PDFs; (b) a reviewed provenance route
-that reconciles the listing ISIN `INE090A01013` with `INE090A01021`; (c) a filing that prints the
-period heading on the statement page.
+**Release routes (Sol review 2 rulings).** Each route needs its own reviewed amendment. **None
+releases the Task 8 mapping-isolation stop**, which binds separately (Task 8).
 
-**Provenance rejected (unchanged).** Each results PDF's announcement-listing row reads ISIN
-`INE090A01013` [T3.13, T3.14], not the master's and instances' `INE090A01021` [B4.25, B4.01]. No
-reviewed identifier relationship explains the difference, and this plan asserts none. The CIN on
-page 1 and page 3 is not a seeded identifier.
+- **(a) Generic statement-header binding.** Acceptable in principle; not proved. It needs the
+  actual reader, with reviewed generic configuration, to bind the issuer-titled standalone
+  statement page to the framework notes in the same unambiguous block, and to recover the
+  requested current intervals (Q2: Q 2026-07-01..2026-09-30, H1 2026-04-01..2026-09-30; Q1: Q
+  2026-04-01..2026-06-30). An end-date substring alone is insufficient. The proof retains page and
+  column geometry and the assembled header text, distinguishes duration groups from comparatives,
+  rejects missing, ambiguous and conflicting current headers, and keeps the issuer, basis and
+  contradiction checks. A generic reconstruction of a printed header can meet item 3. No date
+  comes from the expected answer, covering-letter prose or note sentences. Header-only success
+  does not promote PDF statement amounts from `NOT_ASSESSED` or add a PDF package member.
+  **Current evidence: the reader refuses both PDFs on current main**
+  (`scratchpad/vendor-first/live-p3-1/period-probe/probe.py`; output `probe-output.txt`, sha256
+  `9beead81e3702a3687d198158fa4daa2f16655d22eba25dcb5d1aad327ddafbb`). With Apar's settings,
+  `locate_statement` finds no page. With bank settings built in memory, `_bind_columns` finds 0
+  basis super-headers at `pdf_statement_pages.py:626` (Q2 p3 column group 210–259; Q1 p3 group
+  328–378). Past that refusal, the shared "Three months ended" heading attaches only to the column
+  it overlaps: the current-quarter and prior-year-quarter columns read as instants ("September 30,
+  2026" and "September 30, 2025" on Q2 p3; "June 30, 2026" and "June 30, 2025" on Q1 p3). Route (a)
+  therefore needs a reviewed reader change before any binding. A later reader revision is
+  reviewed and pinned with its complete probe; success is never attributed to current main.
+- **(b) Provenance with ISIN reconciliation.** Acceptable in principle; not proved. Each results
+  PDF's announcement-listing row reads ISIN `INE090A01013` [T3.13, T3.14], not the master's and
+  instances' `INE090A01021` [B4.25, B4.01]. It needs retained authoritative evidence of the
+  relationship between the two ISINs for the same issuer, with validity dates and identifier
+  roles, recorded explicitly; an unexplained mismatch is never whitelisted. It also needs the
+  exact announcement-to-attachment URL and hash chain, and the attachment's period, basis and
+  framework association. ISIN reconciliation settles identity only: "Outcome of Board Meeting",
+  retrieval or broadcast time, or the symbol-filtered query establish no reporting period. Both
+  covering letters enclose the standalone and consolidated results for the named periods as
+  Annexure I (p1); a provenance amendment may use a reviewed generic association between that
+  enclosure and its results and notes, amending item 3 explicitly rather than bypassing it.
+  Unrelated or appended attachments, stale-period results and contradictory declarations reject.
+  The chain is kept as evidence through ingest, reuse and fallback. The CIN on page 1 and page 3
+  is not a seeded identifier.
+- **(c) Replacement filing.** Acceptable in principle if the retained replacement passes the
+  issuer, basis, current-period, framework and contradiction rules above. Changed capture pins
+  need re-grounding and review; a printable date alone is insufficient.
 
 **Implementation, if released.** Task 5, in `member_identity.verify_pdf_identity`. It takes the
 verified instance's name as an argument, and its constants sit beside `PDF_SYMBOL_MARKER`.
@@ -334,8 +393,16 @@ matching logic; synthetic pages unless marked):
   entities;
 - identifier boundaries: a title line "ICICI Bank Limited Employees Trust" rejects; a title line
   "icici bank limited" in another case verifies;
-- a block without a period heading line rejects. This is the retained PDFs (`retained`), which
-  reject today;
+- current Q and H1 sharing an end date: "Three months ended" and "Six months ended" over
+  September 30, 2026 bind Q 2026-07-01..2026-09-30 and H1 2026-04-01..2026-09-30, one column each;
+- comparative columns: prior-quarter, prior-year quarter and half-year, and prior-year columns
+  beside the current ones verify and bind nothing;
+- a missing current header rejects: the H1 column is absent, or its heading is unreadable. The
+  retained PDFs (`retained`), whose columns the current reader binds to no heading, reject today;
+- genuinely conflicting current headings reject: two columns both read as the current quarter
+  with different starts, or a current heading whose interval differs from the instance's;
+- an ambiguous current column rejects: a column that could be current reads as an end date with
+  no duration;
 - a page-1 marker naming another symbol rejects; Apar's retained PDFs verify through the marker as
   before (existing suite).
 
@@ -878,11 +945,14 @@ comparison and formula path, never as interpretations, and are never admitted as
 (`admit_run` refuses non-`REPORTED` rows as `NOT_REPORTED`). Apar interprets identically under
 v10 and v11.
 
-**Isolation (Task 3 review 1; stop rule applies).** Apar's 2026 in-capmkt entries
+**Isolation (Task 3 reviews 1 and 2; stop rule applies).** Apar's 2026 in-capmkt entries
 (`xbrl/v5/in_capmkt.yaml`, listed by v10) select by namespace, element, period shape and
 dimension axis. The bank files in the same namespace, so `schema_identity` does not separate the
-two (B3a). Without a new scope, three of those entries would map bank facts that the ledger
-refuses:
+two (B3a). Without a new scope, these entries would map bank facts that the ledger refuses or
+withholds:
+- `capmkt.segment_assets.2026` (`in_capmkt.yaml:496–501`; members, `POST_ELIMINATION`): the bank's
+  asset members, against L393–L396 `no key` `R-BASIS` (review 2). The bank basis is unresolved
+  and is never chosen because this entry already supplies one;
 - `capmkt.segment_result_total.2026` (`SegmentProfitLossBeforeTaxAndFinanceCosts`, no dimension):
   the bank's segment PBT, against L383–L384 `R-MEAN`;
 - `capmkt.segment_liabilities.2026` (members, `POST_ELIMINATION`) and
@@ -895,9 +965,11 @@ supported selector keeps Apar's meaning while refusing the bank's, so Task 8's s
 to these entries.** The stop needs an amendment, for example an evidenced IntegratedFinance-form
 scope on mapping entries. Apar's canonical meaning is never changed to make the bank fit. The
 bank's per-member segment results (`ReportableSegmentsFinanceCostsAxis`) match no existing entry
-and stay unmapped. `SegmentRevenue` (`PRE_ELIMINATION`) and `SegmentAssets` (`POST_ELIMINATION`)
-match Apar's entries with the bases the record evidences for the bank. The stop is moot while B1c
-halts the phase, but it binds any amendment that releases B1c.
+and stay unmapped. `SegmentRevenue` members (`PRE_ELIMINATION`) match Apar's entry with the
+basis the record evidences for the bank; the undimensioned `SegmentAssets` total, unallocated and
+net assets (L397–L399) carry no basis and match Apar's entries. The stop is deferred, not
+discharged, while B1c halts the phase. It binds any amendment that releases B1c, and releasing
+B1c by any route does not release it.
 
 Files:
 - Create: `config/normalisation/mappings/xbrl/v6/*`, `mappings/v11.yaml` (v10's files and keys
