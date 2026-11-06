@@ -54,8 +54,16 @@ The mandatory label on output: observed / computed / inferred / forecast / opini
 _Avoid_: confidence level (that is a separate field)
 
 **Evidence package**:
-The cited records of a report version, sealed by its digest; the frozen set of documents, facts, and calculations a run (or debate) works from. Built once per run; downstream steps do not fetch new evidence. Once retention expires its originals, it reconstructs by hash-matched re-fetch of exchange originals, while expired vendor material leaves only capture records, tombstones and comparison outcomes (retention-replay record). Exception (owner 2026-10-28, DOCS-1 A1): a document with no exchange original may be cited as a labelled Tijori vendor copy; it reconstructs only by hash-matched re-fetch from Tijori.
+The cited records of a report version, sealed by its digest; the frozen set of documents, facts, and calculations a run (or debate) works from. Built once per run; downstream steps do not fetch new evidence. Once retention expires its originals, it reconstructs by hash-matched re-fetch of exchange originals, while expired vendor material leaves only capture records, tombstones and comparison outcomes (retention-replay record). Exception (owner 2026-10-28, DOCS-1 A1): a document with no exchange original may be cited as a labelled Tijori vendor copy; it reconstructs only by hash-matched re-fetch from Tijori. Separately (owner 2026-11-06, VENDOR-1 decision 1): both vendor witnesses of an admitted vendor number are kept privately, never committed, while a sealed report cites them and within each vendor's licence; expiry or licence end of either withdraws the admission for new reports, and sealed reports keep their stored values with a visible note.
 _Avoid_: context (unqualified)
+
+**Admission label**:
+The label on every admitted number (VENDOR-1): "checked against filing" (the vendors agree and the filing agrees) or "vendors agree, not checked against filing" (no filing, admitted only for an eligible check class). A calculation carries the weaker label of its inputs.
+_Avoid_: confidence, verified (unqualified)
+
+**Check class**:
+The digest of everything that makes vendor-agreement evidence comparable: canonical id, period kind, basis, framework, issuer class, both vendors' mapping entries with their mapping-set version, both extractor versions, dictionary version and vendor-first policy version. Any version change makes a new class with no evidence; one filing counterexample blocks the class.
+_Avoid_: category, concept (unqualified)
 
 **Pilot source package**:
 The five frozen input files of one pilot quarter (XBRL, results PDF, transcript PDF, QoQ and YoY comparator XBRLs), pinned by id and sha256 in the pilot manifest. The input a run must read, not the evidence package it produces.
