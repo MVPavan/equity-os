@@ -1,11 +1,11 @@
 # FIVE-1 Implementation Plan: five-company enablement
 
-**Status:** fix round 1 for Sol plan review 1. **Bead:** `eqos-awnc`. **Date:** 2026-11-06.
+**Status:** fix round 2 for Sol plan review 2. **Bead:** `eqos-awnc`. **Date:** 2026-11-06.
 **Origin:** owner order 2026-11-05 step 4 (thorough test on APARINDS, ICICIBANK, LAURUSLABS,
 MTARTECH, NETWEB); `docs/plans/FIVE-COMPANY-TEST.md` §2 blockers 2, 4, 5, §8 Q1, Q3–Q5, Q7;
 `docs/plans/VENDOR-1-P3.md` Task 11 (blocked on a sanctioned acquisition route); orchestrator
 rulings: ICICIBANK joins the comparison config; MTARTECH is `EQ` on the current master.
-Code facts read at `800b4cc5`, rechecked at `6d722569`. **Inferred** marks anything not read directly.
+Code facts read at `800b4cc5`, rechecked at `6d722569` and `f19d2d54`. **Inferred** marks anything not read directly.
 **Goal:** every company of the five-company test can be onboarded live through a sanctioned
 route, gets first-party and vendor evidence for a named list of periods, and runs under one
 dictionary and mapping-set version, without touching anything the Stage 4 freeze protects.
@@ -36,6 +36,14 @@ dictionary and mapping-set version, without touching anything the Stage 4 freeze
 | Q6 | Accepted with F04's final-pin segment | Task 6 |
 | Q7 | Wave-2; a required identifier no retained capture shows blocks the entry; comparison config only | Task 4 |
 | Ruling 1 | FIVE-1 no longer edits `VENDOR-1-P3.md`; Phase 3 owns its imports/test seams for the moved module | Task 6; Interleaving |
+
+## Review 2 dispositions
+
+| Item | Change | Section |
+|---|---|---|
+| R2-01 | `commands.txt` gains role (d) *final-pin positive*: an evidenced, agreeing, filing-absent cell of a class that qualifies from the other genuine checks, never acquired or fallen back on before the final segment; its filing absence is re-checked immediately before the positive run; no such cell (for any reason) means the isolated positive fixture plus a recorded live limitation; the segment after the artifact commit runs on a new gated revision holding the artifact, with a refreshed inventory, before its rehearsal | Task 6 |
+| R2-02 | `--captures-of` looks up the current generation at the source period `PE0` (capture, extractor version, entity, basis, framework, extraction context), extracts once at `PE0` only where none matches, then writes only the `PE` attempt and missing interpretations over the stored occurrence ids; the integration test counts extractor calls | Task 3 |
+| Open note 1 | The one-group refusal is described as a property of the public `compare run` builder, not of stored runs | Task 2 |
 
 **Out of scope:** running the five-company test (its protocol is `FIVE-COMPANY-TEST.md` §5–§6);
 a standalone admit command (reading 3); fresh vendor fetches for back periods (reading 2); any
@@ -135,6 +143,8 @@ protocols, with the additions in "Live protocol" below.
 | `equity_os/verification/admission/fallback.py` | modify: `_acquire`, `_ingest` public as `acquire_group`, `ingest_group` (returns the report); one-group guard | 2, 3 |
 | `equity_os/interface/commands/extraction/evidence_cli.py` | modify: `evidence acquire` action | 3 |
 | `equity_os/interface/commands/sourcing/vendor_reingest.py` + its CLI registration | modify: `--captures-of` | 3 |
+| `equity_os/extraction/surfaces/vendor_ingest.py` | modify: `ingest_vendor(..., reuse=)` skips `extract` for a stored generation | 3 |
+| `equity_os/extraction/vendors/screener/vendor_screener.py`, `.../tijori/vendor_tijori.py` | modify: context digest public, behaviour unchanged | 3 |
 | `config/coverage/watchlist.yaml` | modify: ICICIBANK entry | 4 |
 | `docs/plans/FIVE-COMPANY-TEST.md`, `CONTEXT.md` | modify | 6 |
 | Tests: `tests/equity_os/support/onboarding_support.py`, `test_onboarding_acquisition.py`, the fallback test beside `fallback.py`'s existing one, the `vendor reingest` test, watchlist-loading tests that pin the stock list | modify/extend | 1–4 |
@@ -224,8 +234,11 @@ and replay requires `as_of` null and no master entry. Only `entity_fetch` uses e
 `entity_fetch` calls `ordinary_roots(raw_root)` first, then replays `gen-N` or acquires and
 writes `gen-<next>`. Every request in a generation stays unique (`replay_fetch`'s duplicate
 refusal is kept): `run_fallback` refuses before any fetch when more than one group triggers,
-because each group requests the same two listings (`results_filing.acquire_results`). A run is a
-one-period request (`run.request_for`), so one group is the expected case (inferred). Fallback
+because each group requests the same two listings (`results_filing.acquire_results`). This is a
+property of the bounded public interface, not a stored-run invariant: `RunScope.period_ends` and
+`.bases` are tuples (`run_models.py`), but the public builder `run.request_for`, which `compare
+run` uses, makes one entity, period end and basis, and fallback groups result rows, not the
+earlier operands a year-end run loads, so an ordinary run triggers at most one group. Fallback
 needs no sanction: spec §6.8 scopes it to the triggering run's own issuer and periods.
 
 Verification: fallback acquire (fake transport) then replay of the written generation gives equal
@@ -246,7 +259,8 @@ does, one period per command and generation; and `eqos vendor reingest ... --per
 --captures-of <PE0>` records vendor evidence at `PE` from the captures cited at `PE0`.
 
 Files:
-- Modify: `fallback.py`, `evidence_cli.py`, `vendor_reingest.py` and its CLI registration
+- Modify: `fallback.py`, `evidence_cli.py`, `vendor_reingest.py` and its CLI registration,
+  `vendor_ingest.py` (`reuse`), `vendor_screener.py` and `vendor_tijori.py` (public context digest)
 - Test: one integration test per command over retained Apar-like fixtures with a fake transport
 
 Interfaces:
@@ -254,7 +268,10 @@ Interfaces:
 - Produces: `acquire_group` (today's `_acquire`, renamed); `ingest_group(...) -> IngestReport |
   None` (today's `_ingest` returning the `ingest_first_party` report, `None` on `IntakeError` or
   `IngestError`); `ingested(report: IngestReport | None) -> bool` (today's success predicate,
-  used by `run_fallback`); `reingest(..., captures_of: date | None = None)`.
+  used by `run_fallback`); `reingest(..., captures_of: date | None = None)`;
+  `ingest_vendor(..., reuse: AcquisitionAttempt | None = None)`; public context digests
+  `vendor_screener.page_context` (today's `_context`) and `vendor_tijori.extraction_context` (the
+  digest `extract_tijori` computes inline, moved out), each used by its extractor unchanged.
 
 Approach: the `evidence acquire` action resolves `<KEY>` to one entity (unknown refuses before
 transport), calls `ordinary_roots` and `entity_fetch` (authorisation `named-period acquisition of
@@ -267,12 +284,36 @@ per-period settings and extraction-failure checks are fallback's, unchanged. `--
 `--dictionary` are required, so no default can split versions.
 
 `--captures-of PE0` selects the captures by the attempts at `PE0` (default `--period-end`, today's
-behaviour) and runs the existing extraction, whose occurrences keep their own periods; only the
-attempt is labelled `PE` (`request.period_end`). It exits `INCOMPLETE` naming the gap, before
-writing, when no capture is cited at `PE0`, when Screener or Tijori has none, or when a capture's
-stored occurrences under the current extractor hold no period ending at `PE`. Nothing is
-relabelled; no new vendor fetch (reading 2). Periods before onboarding's earliest `valid_from`
-refuse (reading 5).
+behaviour) and extracts each capture once (R2-02). Without the flag, behaviour is today's.
+`_adapters` also yields, per adapter, its current extraction context (`page_context` per Screener
+section, `extraction_context` for Tijori) and its section (Screener `section.value`, Tijori
+none). For each capture and adapter:
+
+1. **Lookup at the source period.** `list_generation_attempts(capture, version, entity_id,
+   period_end=PE0, basis, framework=IND_AS)` filtered to `extraction_context_sha256` equal to the
+   current context. The lookup is at `PE0`, never `PE`: the query is period-scoped
+   (`repository.py`), and step 2 guarantees every current generation is stored at `PE0`.
+2. **Extract once where none matches.** Run today's per-adapter ingest at `PE0` (the plain
+   `vendor reingest` call), which extracts and stores the generation at the source period. A later
+   target finds it in step 1 and calls no extractor. A section whose adapter refuses records its
+   failure attempt at `PE0` as today, and the other sections proceed. A failed attempt carries no
+   context, so it never matches and is re-extracted for each target. This is today's failure
+   handling, unchanged and honest.
+3. **Target check.** The stored occurrences of the matched generations
+   (`list_capture_occurrences(capture, version)` with `native_context` basis, and section for
+   Screener, equal to the adapter's) must hold a period ending at `PE`; otherwise the command exits
+   `INCOMPLETE` naming the gap and writes no `PE` row.
+4. **Reuse at the target.** `ingest_vendor_retained(request at PE, ..., reuse=<matched attempt>)`
+   runs today's authority, version-pin, expiry and body-hash checks, skips `extract`, and builds
+   the extraction from the stored rows: those occurrences, the matched attempt's outcome, reasons
+   and context. `put_generation` re-reads the identical occurrences (same ids, actual periods,
+   `UNKNOWN` knowledge time, the capture's original availability) and adds one `PE` attempt.
+   `_interpretations` reuses the rows already under the current pins and appends only the missing
+   ones.
+
+It exits `INCOMPLETE` naming the gap, before writing, when no capture is cited at `PE0`, or when
+Screener or Tijori has none. Nothing is relabelled; no new vendor fetch (reading 2). Periods before
+onboarding's earliest `valid_from` refuse (reading 5).
 
 Verification: named-period acquire then replay ingests equal packages and prints the stored
 package id; a period with no filing prints `FILING_UNAVAILABLE` and a failed intake
@@ -281,9 +322,15 @@ package's knowledge time is the acquisition's, so an `AS_KNOWN` run at an earlie
 select it; an unknown entity and a protected root refuse with no request sent. `vendor reingest
 --captures-of`: a target the capture holds yields a `PE` attempt whose occurrences carry their own
 source periods, with the capture's original availability and `UNKNOWN` vendor knowledge time; the
-new interpretations are invisible at earlier `AS_KNOWN` cutoffs; absent source captures, an absent
-vendor, an absent target period and a basis mismatch each exit `INCOMPLETE` with no write; without
-the flag the existing reingest test is unchanged; fallback tests unchanged.
+new interpretations are invisible at earlier `AS_KNOWN` cutoffs. **Extract once:** with the
+adapters' extract functions wrapped by call-counting spies, a source generation under an older
+extractor version is extracted exactly once per adapter (at `PE0`) on the first target `PE1`, and
+a second target `PE2` makes **zero** extractor calls while its attempts cite the same occurrence
+ids as `PE1`'s; a source already current at `PE0` makes zero calls on the first target. Absent
+source captures, an absent vendor and a basis mismatch each exit `INCOMPLETE` with no write; an
+absent target period exits `INCOMPLETE` with no `PE` row; a Screener section whose adapter refuses
+records its failure and the other sections still reuse; without the flag the existing reingest
+test is unchanged; fallback tests unchanged.
 
 Dependencies: Task 2.
 
@@ -343,21 +390,30 @@ Files: `FIVE-COMPANY-TEST.md`, `CONTEXT.md` (one entry: *acquisition sanction*).
   `evidence acquire` then `vendor reingest --captures-of`, both before its run; (b)
   *fallback*: a genuinely vendor-only period, with `vendor reingest --captures-of` but **no**
   `evidence acquire`, run, then `compare fallback` acquires it; (c) the fresh post-fallback rerun
-  fallback creates. §5.5's expectations become refusal-derived: a run's trigger groups are its
+  fallback creates; (d) *final-pin positive* (R2-01): an evidenced cell where both vendors agree
+  and no admissible filed value exists, in a class that can qualify from the (a)–(c) checks alone,
+  with **no** `evidence acquire` and no fallback for that cell before the final-pin segment.
+  §5.5's expectations become refusal-derived: a run's trigger groups are its
   stored `CHECK_REQUIRED`, `VENDOR_UNMAPPED`, `VENDORS_DISAGREE`, `VENDORS_IMPRECISE` refusals, so
   a filing-present run may still trigger. If live history offers no package-free eligible period,
   the fallback branch is shown on the isolated rehearsal fixture and the live limitation reported;
   live evidence is never deleted to make one.
 - **Final-pin segment (F04, Q6), after §5.6.** Sol reviews and the orchestrator commits the
   measured draft as a new eligibility version (never `v1`, never backdated, no mapping promoted,
-  BANK classes excluded as Phase 3 specifies). Fresh runs at a cutoff at or after its
-  `available_from`, over (a) periods of a non-bank class that qualifies from genuine evidence,
-  then admit. **Pass:** a vendor-only cell of that class admits as `VENDORS_AGREE_NOT_CHECKED` with
+  BANK classes excluded as Phase 3 specifies). **Artifact boundary:** `commands.txt` then names a
+  new gated revision that contains that artifact (the loaded config tree, `run_config.py`), and
+  the remaining commands are re-inventoried on it before this segment's rehearsal; the
+  equal-revision rule applies to that revision, and nothing runs the artifact from the older
+  tree. Immediately before the positive run, a read-only query saved beside `commands.txt` shows
+  the role-(d) cell still has no admissible filed value. Fresh runs at a cutoff at or after its
+  `available_from`, over the role-(d) periods, then admit. **Pass:** the role-(d) cell admits as `VENDORS_AGREE_NOT_CHECKED` with
   both witnesses and the artifact pin; its citation shows the label; a calculation over it shows
   the weaker label. On isolated rehearsal copies: the same cell at a cutoff before
-  `available_from` refuses, and a counterexample in the class blocks it. If no class qualifies,
-  the limitation is recorded and the positive case runs on a clearly identified isolated fixture;
-  live unchecked admission is then not claimed.
+  `available_from` refuses, and a counterexample in the class blocks it. If no suitable live
+  role-(d) cell exists, whether no class qualifies, no vendor-only agreeing input remains, or the
+  pre-run query finds a filed value, the limitation is recorded and the positive case runs on a
+  clearly identified isolated fixture; live unchecked admission is then not claimed. Evidence is
+  never deleted and no cutoff is backdated to make a cell.
 - Reading 4's consequence in §5.6: final-pin classes reported separately from older classes.
 
 Approach: edits only.
