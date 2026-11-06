@@ -9,6 +9,7 @@ occurrence and interpretation count unchanged at every period.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from datetime import date
 from functools import partial
@@ -34,6 +35,11 @@ from equity_os.extraction.surfaces.vendor_ingest import (
     ingest_vendor,
 )
 from equity_os.extraction.vendors.screener import vendor_screener
+from equity_os.extraction.vendors.screener.screener_session_models import BasisTopology
+from equity_os.extraction.vendors.screener.screener_session_page import (
+    parse_document,
+    read_identity,
+)
 from equity_os.extraction.vendors.tijori import vendor_tijori
 from equity_os.interface.commands.companies.onboard_cli import SCREENER_SECTIONS
 from equity_os.interface.commands.sourcing import vendor_reingest
@@ -45,7 +51,7 @@ from equity_os.interface.entry.cli import main
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records.repository import EvidenceRepository
 from equity_os.verification.comparison.run_config import load_run_config
-from tests.equity_os.extraction.vendors.test_vendor_retained import SCREENER, TIJORI
+from tests.equity_os.extraction.vendors.test_vendor_retained import OLDER, SCREENER, TIJORI
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
@@ -64,15 +70,20 @@ COUNTS = (
     "(SELECT count(*) FROM eqos.occurrences), (SELECT count(*) FROM eqos.interpretations)"
 )
 PERIODS = "SELECT period_end, count(*) FROM eqos.acquisition_attempts GROUP BY 1 ORDER BY 1"
+RECORDED = "SELECT recorded_at FROM eqos.interpretations WHERE mapping_set_version = %s"
 
 
 class Fixture:
     """The seeded entity with both vendors ingested at ``PE0``."""
 
     def __init__(
-        self, db: PgTestDatabase, monkeypatch: pytest.MonkeyPatch, store: Path = RETAINED
+        self,
+        db: PgTestDatabase,
+        monkeypatch: pytest.MonkeyPatch,
+        store: Path = RETAINED,
+        versions: ConfigVersions = VERSIONS,
     ) -> None:
-        self.db, self.entity_id, self.store = db, seed_apar(db), store
+        self.db, self.entity_id, self.store, self.versions = db, seed_apar(db), store, versions
         for name, value in db.cli_env().items():
             monkeypatch.setenv(name, value)
         with db.runtime_pool() as pool:
@@ -85,10 +96,17 @@ class Fixture:
         for capture, extract, vendor in [*sections, (TIJORI, tijori(TIJORI[2], self.key), "")]:
             self.ingest(capture, extract, vendor)
 
-    def ingest(self, capture: tuple[str, ...], extract: Any, vendor: str) -> None:
-        """One adapter's ingest at ``PE0``, as onboarding does."""
+    def ingest(
+        self,
+        capture: tuple[str, ...],
+        extract: Any,
+        vendor: str,
+        basis: Basis = Basis.CONSOLIDATED,
+        period: date = PE0,
+    ) -> None:
+        """One adapter's ingest at ``period``, as onboarding does."""
         version = vendor_screener.EXTRACTOR_VERSION if vendor else vendor_tijori.EXTRACTOR_VERSION
-        config = load_run_config(CONFIG, VERSIONS)
+        config = load_run_config(CONFIG, self.versions)
         with self.db.runtime_pool() as pool:
             ingest_vendor(
                 VendorIngestRequest(
@@ -98,8 +116,8 @@ class Fixture:
                     capture_id=capture[3],
                     representation=Representation.HTML,
                     entity_id=self.entity_id,
-                    period_end=PE0,
-                    basis=Basis.CONSOLIDATED,
+                    period_end=period,
+                    basis=basis,
                     framework=AccountingFramework.IND_AS,
                 ),
                 extract=extract,
@@ -127,10 +145,10 @@ class Fixture:
                 captures_of=source,
             )
 
-    def read(self, query: str) -> list[Any]:
+    def read(self, query: Any, params: tuple[Any, ...] = ()) -> list[Any]:
         """One query's rows."""
         with self.db.runtime_pool() as pool, pool.connection() as conn:
-            return conn.execute(query).fetchall()
+            return conn.execute(query, params).fetchall()
 
 
 @pytest.fixture
@@ -171,6 +189,30 @@ def _later_month(apar: Fixture) -> None:
         )
 
 
+def test_new_interpretations_stay_invisible_at_an_earlier_cutoff(
+    pg_db: PgTestDatabase, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With ``PE0`` interpreted under an older mapping set, the target reuses the occurrences but
+    writes new interpretations under the run's set, each recorded after a cutoff taken before the
+    command: an ``AS_KNOWN`` run at that cutoff (``vendor_sides._pinned``: recorded by the cutoff)
+    cannot see them, while the occurrences keep the capture's own first-seen time."""
+    apar = Fixture(pg_db, monkeypatch, versions=OLDER)
+    assert apar.read(RECORDED, (VERSIONS.mapping_set,)) == []
+    (cutoff,) = apar.read("SELECT clock_timestamp()")[0]
+    reports = apar.reingest(YEAR_END)
+    recorded = apar.read(RECORDED, (VERSIONS.mapping_set,))
+    assert recorded and all(at > cutoff for (at,) in recorded)
+    found = [o for r in reports for o in r.occurrences]
+    assert all(o.first_seen_at == o.capture.first_seen_at < cutoff for o in found)
+
+
+def _screener_only_cited(apar: Fixture) -> None:
+    """Only the Screener page's sections are also ingested at ``YEAR_END``."""
+    for section in SCREENER_SECTIONS:
+        extract = screener(apar.key, Basis.CONSOLIDATED, section)
+        apar.ingest(SCREENER, extract, "screener", period=YEAR_END)
+
+
 @pytest.mark.parametrize(
     ("edit", "target", "source", "basis", "gap"),
     [
@@ -178,9 +220,10 @@ def _later_month(apar: Fixture) -> None:
         (None, NOWHERE, PE0, Basis.CONSOLIDATED, "no screener-subscriber occurrence ends"),
         (_later_month, YEAR_END, PE0, Basis.CONSOLIDATED, "differs from its stored occurrence"),
         (None, YEAR_END, YEAR_END, Basis.CONSOLIDATED, "capture is cited at 2026-03-31"),
+        (_screener_only_cited, JUNE, YEAR_END, Basis.CONSOLIDATED, "no tijori capture is cited"),
         (None, YEAR_END, PE0, Basis.STANDALONE, "capture is cited at 2026-06-30"),
     ],
-    ids=["tijori-lacks", "no-section", "stored-disagrees", "no-capture", "basis"],
+    ids=["tijori-lacks", "no-section", "stored-disagrees", "no-capture", "one-vendor", "basis"],
 )
 def test_a_gap_refuses_before_any_write(
     apar: Fixture,
@@ -192,8 +235,8 @@ def test_a_gap_refuses_before_any_write(
 ) -> None:
     """A target held by Screener but not Tijori (ingested second), one in no section, a stored
     occurrence the current binding would re-parse differently, no capture cited at the source
-    period, and a basis no attempt holds: each refuses naming the gap, with every count
-    unchanged."""
+    period, only one vendor's captures cited there, and a basis no attempt holds: each refuses
+    naming the gap, with every count unchanged."""
     if edit is not None:
         edit(apar)
     before = apar.read(COUNTS), apar.read(PERIODS)
@@ -263,3 +306,114 @@ def test_a_failed_section_records_its_failure(
     assert sum('"FAILED"' in line for line in outcomes) == 1
     assert main([*argv, "--period-end", str(NOWHERE)]) == 4
     assert "INCOMPLETE: no screener-subscriber occurrence ends" in capsys.readouterr().err
+
+
+def _copy(tmp_path: Path) -> SnapshotStore:
+    """A private store holding the retained Screener and Tijori captures."""
+    store = SnapshotStore(tmp_path)
+    for capture in (SCREENER, TIJORI):
+        store.put_capture(*SnapshotStore(RETAINED).read_capture_verified(*capture))
+    return store
+
+
+def _variant(store: SnapshotStore, of: tuple[str, ...], body: bytes) -> tuple[str, ...]:
+    """A SYNTHETIC capture of ``body`` on ``of``'s surface."""
+    record = store.put_capture(record_of(body, *of[:2]), body)
+    return (*of[:2], record.request.request_key, record.capture_id)
+
+
+def _foreign_tijori(apar: Fixture, store: SnapshotStore) -> tuple[str, ...]:
+    """A SYNTHETIC Tijori copy naming another company symbol, failing at ``PE0``."""
+    _, page = store.read_capture_verified(*TIJORI)
+    foreign = _variant(store, TIJORI, page.replace(apar.key.encode(), b"SYNTHX"))
+    apar.ingest(foreign, tijori(TIJORI[2], apar.key), "")
+    return foreign
+
+
+def _standalone_screener(apar: Fixture, store: SnapshotStore) -> tuple[str, ...]:
+    """A SYNTHETIC Screener copy declaring standalone figures, accepted at ``PE0`` under an
+    earlier gate that read the valid page's basis evidence (its tables are the valid page's)."""
+    _, page = store.read_capture_verified(*SCREENER)
+    wrong = _variant(
+        store, SCREENER, re.sub(rb"Consolidated(\s+)Figures", rb"Standalone\1Figures", page)
+    )
+    real = vendor_screener.read_page_evidence
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(
+            vendor_screener,
+            "read_page_evidence",
+            lambda _, **options: real(page.decode(), **options),
+        )
+        for section in SCREENER_SECTIONS:
+            apar.ingest(wrong, screener(apar.key, Basis.CONSOLIDATED, section), "screener")
+    return wrong
+
+
+@pytest.mark.parametrize(
+    ("variant", "why"),
+    [(_foreign_tijori, "identity_mismatch"), (_standalone_screener, "declares basis standalone")],
+    ids=["foreign-tijori", "wrong-basis-screener"],
+)
+def test_a_capture_failing_issuer_or_basis_is_fatal(
+    pg_db: PgTestDatabase,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    variant: Callable[[Fixture, SnapshotStore], tuple[str, ...]],
+    why: str,
+) -> None:
+    """F2: beside the valid captures, a SYNTHETIC Tijori page of another company symbol, or a
+    Screener page declaring the other basis, is also cited at ``PE0``. Their adapters raise only
+    ``PARSE_FAILED`` and the valid captures cover the target, yet the whole-capture check refuses
+    naming that capture, with every attempt, occurrence and interpretation count unchanged."""
+    store = _copy(tmp_path)
+    apar = Fixture(pg_db, monkeypatch, tmp_path)
+    capture = variant(apar, store)
+    before = apar.read(COUNTS), apar.read(PERIODS)
+    with pytest.raises(ReingestIncompleteError, match=f"{capture[3]} is rejected: .*{why}"):
+        apar.reingest(YEAR_END)
+    assert (apar.read(COUNTS), apar.read(PERIODS)) == before
+
+
+def test_a_standalone_only_page_reingests(
+    pg_db: PgTestDatabase, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """F1, through the command: for an entity whose stored basis status is ``STANDALONE_ONLY``,
+    a SYNTHETIC unmarked standalone page (the shape Screener renders for such an issuer) and the
+    Tijori standalone tables ingested at ``PE0`` re-ingest at the year end, every adapter
+    ``COMPLETE``; the same page refuses under a basis status that files both bases."""
+    store = _copy(tmp_path)
+    apar = Fixture(pg_db, monkeypatch, tmp_path)
+    _, page = store.read_capture_verified(*SCREENER)
+    body = re.sub(rb"Consolidated\s+Figures", b"Figures", page).replace(b"View Standalone", b"View")
+    standalone = _variant(store, SCREENER, body)
+    _, warehouse = read_identity(parse_document(body.decode()))
+    binding = screener_binding(apar.key).model_copy(
+        update={"topology": BasisTopology(standalone_warehouse_id=warehouse)}
+    )
+    for section in SCREENER_SECTIONS:
+        extract = partial(
+            vendor_reingest._screener, binding=binding, basis=Basis.STANDALONE, section=section
+        )
+        apar.ingest(standalone, extract, "screener", Basis.STANDALONE)
+    tijori_standalone = partial(tijori(TIJORI[2], apar.key), basis=Basis.STANDALONE)
+    apar.ingest(TIJORI, tijori_standalone, "", Basis.STANDALONE)
+    argv = [
+        *("vendor", "reingest", "--entity", apar.key, "--basis", "standalone"),
+        *("--mapping-set", VERSIONS.mapping_set, "--dictionary", VERSIONS.dictionary),
+        *("--snapshot-root", str(tmp_path), "--config-root", str(CONFIG)),
+        *("--captures-of", str(PE0), "--period-end", str(YEAR_END)),
+    ]
+    before = apar.read(COUNTS), apar.read(PERIODS)
+    assert main(argv) == 4  # the seeded status files both bases
+    assert (apar.read(COUNTS), apar.read(PERIODS)) == before
+    with apar.db.runtime_pool() as pool:
+        repository = EvidenceRepository(pool)
+        evidence = repository.put_evidence_input(EvidenceInputKind.DISCOVERY, apar.key, "e" * 64)
+        with pool.connection() as conn:
+            conn.execute(
+                "INSERT INTO eqos.entity_basis_status (entity_id, basis_status, evidence_input_id)"
+                " VALUES (%s, 'STANDALONE_ONLY', %s)",
+                (apar.entity_id, evidence),
+            )
+    assert main(argv) == 0
+    assert (YEAR_END, ADAPTERS) in apar.read(PERIODS)

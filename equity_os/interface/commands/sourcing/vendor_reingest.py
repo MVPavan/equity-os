@@ -8,12 +8,14 @@ occurrences cite. Earlier rows are never changed; new ones are added beside them
 
 With ``captures_of`` (FIVE-1 Task 3) the captures are those the attempts at that source period
 cite, and the evidence is recorded at ``period_end``, in two passes. The check pass parses every
-adapter with no attempt, occurrence or interpretation write: an ``IDENTITY_REJECTED`` refusal is
-fatal; each of Screener and Tijori must hold an occurrence ending at ``period_end`` in some
-section; each parsed occurrence must equal any stored one under its capture, extractor version
-and anchor. Any gap raises ``ReingestIncompleteError`` before the first write. Only then does
-today's ingest run at ``period_end``, which reuses the stored occurrences and adds one attempt
-per adapter. Nothing is relabelled and nothing is fetched.
+adapter with no attempt, occurrence or interpretation write. Each whole capture must first prove
+the issuer and the requested basis (Tijori's company symbol; Screener's page basis evidence under
+the stored basis status), and an ``IDENTITY_REJECTED`` section refusal is fatal; ordinary section
+failures stay recoverable. Each of Screener and Tijori must hold an occurrence ending at
+``period_end`` in some section; each parsed occurrence must equal any stored one under its
+capture, extractor version and anchor. Any gap raises ``ReingestIncompleteError`` before the
+first write. Only then does today's ingest run at ``period_end``, which reuses the stored
+occurrences and adds one attempt per adapter. Nothing is relabelled and nothing is fetched.
 """
 
 from __future__ import annotations
@@ -28,10 +30,12 @@ from typing import Any
 from psycopg_pool import ConnectionPool
 
 from equity_os.companies.identity.identity_seed import SettingKey
+from equity_os.companies.onboarding.verification import screener_topology
+from equity_os.contracts.companies.basis_status import BasisStatus
 from equity_os.contracts.measurement.canonical import Basis, Representation
 from equity_os.contracts.measurement.evidence import AttemptStage, CaptureReference
 from equity_os.contracts.measurement.observation import AccountingFramework
-from equity_os.contracts.sourcing.acquisition_outcome import ExtractionOutcome
+from equity_os.contracts.sourcing.acquisition_outcome import ExtractionOutcome, OutcomeCode
 from equity_os.contracts.sourcing.source_catalog import SCREENER_PAGE, TIJORI_PAGE
 from equity_os.contracts.verification.config_versions import ConfigVersions
 from equity_os.extraction.packages.member_identity import IssuerIdentifiers
@@ -43,10 +47,16 @@ from equity_os.extraction.surfaces.vendor_ingest import (
     _bound,
 )
 from equity_os.extraction.vendors.screener import vendor_screener
-from equity_os.extraction.vendors.screener.screener_session_models import BasisTopology
+from equity_os.extraction.vendors.screener.screener_session_models import Basis as PageBasis
+from equity_os.extraction.vendors.screener.screener_session_models import (
+    BasisTopology,
+    PageOutcome,
+    ScreenerSessionError,
+)
 from equity_os.extraction.vendors.screener.screener_session_page import (
     parse_document,
     read_identity,
+    read_page_evidence,
 )
 from equity_os.extraction.vendors.tijori import vendor_tijori
 from equity_os.extraction.vendors.tijori.tijori_page import JsonScriptCollector, decode_document
@@ -54,6 +64,7 @@ from equity_os.interface.commands.companies.onboard_cli import SCREENER_SECTIONS
 from equity_os.sourcing.vendors.tijori.tijori_capture import (
     COMPANY_DETAILS_ISLAND,
     FINANCIALS_PAGE_LABEL,
+    classify_financials_body,
 )
 from equity_os.storage.raw_files.capture_retention import ingest_vendor_retained
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
@@ -73,6 +84,8 @@ _NO_VENDOR = "no {vendor} capture is cited at {source}"
 _REJECTED = "capture {capture_id} is rejected: {detail}"
 _UNBOUND = "no stored occurrence carries its identity evidence"
 _UNCOVERED = "no {vendor} occurrence ends at {target}"
+_STATUS = "stored basis status {status} does not publish a Screener {basis} page"
+_NOT_PROVEN = "the page does not prove the {basis} basis"
 _DISAGREES = "capture {capture_id} anchor {anchor} differs from its stored occurrence"
 Adapter = tuple[Any, str]  # the ``ingest_vendor`` adapter and its extractor version
 
@@ -106,6 +119,8 @@ def reingest(
     month = int(record.value_text)
     config = load_run_config(config_root, versions)
     ids = repository.issuer_identifiers(entity_id)
+    found = repository.basis_status_as_of(entity_id, repository.store_clock())
+    status = None if found is None else found[1]
     captures = {
         attempt.capture.capture_ref_id: attempt.capture
         for attempt in repository.list_attempts(entity_id, captures_of or period_end)
@@ -131,12 +146,13 @@ def reingest(
     def parsed(capture: CaptureReference) -> Iterator[tuple[Adapter, Any, bytes]]:
         identity = (capture.source_id, capture.surface, capture.request_key, capture.capture_id)
         record, body = store.read_capture_verified(*identity)
-        for adapter in _adapters(repository, capture, body, ids, basis, month, config_root):
+        for adapter in _adapters(repository, capture, body, ids, basis, status, month, config_root):
             yield adapter, record, body
 
     ordered = [capture for _, capture in sorted(captures.items())]
     if captures_of is not None:
-        _check(repository, ordered, parsed, request, captures_of, period_end)
+        verify = partial(_verify, ids=ids, basis=basis, status=status)
+        _check(repository, ordered, parsed, verify, request, captures_of, period_end)
     reports = []
     for capture in ordered:
         for (extract, version), _, _ in parsed(capture):
@@ -161,12 +177,14 @@ def _check(
     repository: EvidenceRepository,
     captures: list[CaptureReference],
     parsed: Callable[[CaptureReference], Iterator[tuple[Adapter, Any, bytes]]],
+    verify: Callable[[CaptureReference, bytes], None],
     request: Callable[[CaptureReference], VendorIngestRequest],
     source: date,
     target: date,
 ) -> None:
-    """The check pass (module docstring): refuse before any write unless every capture parses
-    without an identity refusal, both vendors cover the target and stored rows agree."""
+    """The check pass (module docstring): refuse before any write unless every capture proves its
+    issuer and basis and parses without an identity refusal, both vendors cover the target and
+    stored rows agree."""
     covered = dict.fromkeys((SCREENER_PAGE, TIJORI_PAGE), False)
     cited = {(capture.source_id, capture.surface) for capture in captures}
     if absent := sorted(covered.keys() - cited):
@@ -174,7 +192,9 @@ def _check(
     for capture in captures:
         assert capture.capture_ref_id is not None
         page = (capture.source_id, capture.surface)
-        for (extract, version), record, body in parsed(capture):
+        adapters = list(parsed(capture))
+        verify(capture, adapters[0][2])
+        for (extract, version), record, body in adapters:
             pin = vendor_extractor_pin(capture.source_id, capture.surface, version=version)
             repository.pin_versions([vendor_version_pin(pin)])
             try:
@@ -206,12 +226,61 @@ def _check(
             raise ReingestIncompleteError(_UNCOVERED.format(vendor=page[0], target=target))
 
 
+def _verify(
+    capture: CaptureReference,
+    body: bytes,
+    *,
+    ids: IssuerIdentifiers,
+    basis: Basis,
+    status: BasisStatus | None,
+) -> None:
+    """Refuse a whole capture that does not prove the issuer and the requested basis: Tijori's
+    page names another company symbol, or Screener's page lacks the basis evidence its stored
+    basis status requires (``read_page_evidence``, as the adapter checks it per section)."""
+    if (capture.source_id, capture.surface) == TIJORI_PAGE:
+        verdict = classify_financials_body(
+            body, expected_symbol=ids.nse_symbol, expected_company_id=None
+        )
+        if verdict.code is not OutcomeCode.OK:
+            detail = f"{verdict.code.value}: {verdict.native_value}"
+            raise ReingestIncompleteError(
+                _REJECTED.format(capture_id=capture.capture_id, detail=detail)
+            )
+        return
+    try:
+        text = body.decode("utf-8")
+        _, warehouse_id = read_identity(parse_document(text))
+        _, outcome = read_page_evidence(
+            text,
+            basis_requested=PageBasis(basis.value.lower()),
+            topology=_topology(status, basis, warehouse_id),
+        )
+    except (ScreenerSessionError, UnicodeDecodeError) as error:
+        detail = _REJECTED.format(capture_id=capture.capture_id, detail=error)
+        raise ReingestIncompleteError(detail) from error
+    if outcome is not PageOutcome.OK:
+        detail = _NOT_PROVEN.format(basis=basis.value)
+        raise ReingestIncompleteError(
+            _REJECTED.format(capture_id=capture.capture_id, detail=detail)
+        )
+
+
+def _topology(status: BasisStatus | None, basis: Basis, warehouse_id: int | None) -> BasisTopology:
+    """The Screener topology onboarding verified: a ``STANDALONE_ONLY`` issuer publishes only a
+    standalone page, an issuer filing both bases is read on its consolidated page; the page's
+    warehouse id is the requested basis's. Any other request refuses."""
+    if status is None or (basis is Basis.STANDALONE) != (status is BasisStatus.STANDALONE_ONLY):
+        raise ReingestIncompleteError(_STATUS.format(status=status, basis=basis.value))
+    return screener_topology(warehouse_id, basis)
+
+
 def _adapters(
     repository: EvidenceRepository,
     capture: CaptureReference,
     body: bytes,
     ids: IssuerIdentifiers,
     basis: Basis,
+    status: BasisStatus | None,
     month: int,
     config_root: Path,
 ) -> Iterator[Adapter]:
@@ -243,7 +312,7 @@ def _adapters(
         symbol=ids.nse_symbol,
         company_id=company_id,
         bse_code=ids.bse_scrip,
-        topology=BasisTopology(consolidated_warehouse_id=warehouse_id),
+        topology=_topology(status, basis, warehouse_id),
         identity_evidence_ref=str(earlier[0].native_context[_IDENTITY_REF]),
         fiscal_year_end_month=month,
     )
