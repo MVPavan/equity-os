@@ -26,6 +26,7 @@ import pytest
 import stage1_e2e_support
 import yaml
 from onboarding_support import fresh_db
+from psycopg import sql
 from retained_support import APAR_RAW_ROOT, apar_original
 from stage1_e2e_support import CONFIG, RUNS, Stage
 
@@ -33,6 +34,7 @@ from equity_os.companies.identity.identity_seed import EvidenceInputKind, Settin
 from equity_os.companies.onboarding.discovery import Request
 from equity_os.contracts.measurement.canonical import Basis, Representation
 from equity_os.contracts.verification.comparison import SourceRole
+from equity_os.interface.commands.companies import acquisition_authority
 from equity_os.interface.commands.extraction import evidence_cli
 from equity_os.interface.commands.verification import compare_cli
 from equity_os.interface.entry.cli import main
@@ -40,6 +42,7 @@ from equity_os.sourcing.documents.first_party_documents import ANNOUNCEMENTS, ns
 from equity_os.sourcing.exchange.nse_filings import INTEGRATED_LISTING, LEGACY_LISTING, listing_url
 from equity_os.storage.facts.pg_fact_store import create_native_store
 from equity_os.storage.records.repository import EvidenceRepository
+from equity_os.verification.admission import fallback
 from equity_os.verification.admission.admission import admit_run
 from equity_os.verification.comparison import run_config
 from equity_os.verification.comparison.run import DatabaseIdentity, execute_run, request_for
@@ -96,6 +99,24 @@ ADMISSIONS = (
     "JOIN eqos.results r ON r.id = a.result_id WHERE a.run_id = %s"
 )
 PACKAGES = "SELECT count(*) FROM eqos.filing_packages"
+TABLES = (
+    "SELECT table_name FROM information_schema.tables "
+    "WHERE table_schema = 'eqos' AND table_type = 'BASE TABLE'"
+)
+# FIVE-1-enablement's ``evidence acquire`` allowlist row, as a replay registering new captures
+# touches it (closing review 4): its capture inventory, document intake, then Phase 3's package and
+# extraction tables (``version_pins`` and the conditional tables are already pinned or unfired).
+ACQUIRE_TABLES = {
+    *("capture_refs", "capture_addresses", "retention_classes"),
+    *("document_listings", "document_observations", "document_attempts"),
+    *("filing_packages", "package_members", "package_statements", "package_statement_evidence"),
+    *("segment_members", "segment_member_evidence"),
+    *("occurrences", "interpretations", "interpretation_operands", "acquisition_attempts"),
+}
+ADMITTED_STATE = (
+    "SELECT (SELECT count(*) FROM eqos.fact_rows), (SELECT count(*) FROM eqos.fact_admissions), "
+    "(SELECT count(*) FROM eqos.vendor_counterexamples)"
+)
 COVERAGE = "SELECT count(*) FROM eqos.decisions"
 XBRL_SOURCE = "SELECT DISTINCT source_id FROM eqos.capture_refs WHERE surface = 'NSE_XBRL_INSTANCE'"
 STORED = (
@@ -332,9 +353,10 @@ def test_fallback_replays_its_generation_on_a_fresh_database(
 def test_fallback_refuses_a_run_triggering_two_groups(
     pg_db: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A stored run whose scope holds two quarters (``compare run`` makes one) triggers two
-    company-periods; the fallback refuses before any fetch, storing no outcome and writing no
-    generation (each group would request the same listings)."""
+    """A stored run whose scope holds two quarters (``compare run`` makes one) spans two
+    company-periods; the fallback refuses before admission and any fetch, storing no outcome,
+    fact, admission or counterexample and writing no generation (each group would request the
+    same listings). Closing review 3: the run is not admitted before the command."""
     june = date(2025, 6, 30)
     with _Fallback(pg_db, tmp_path, monkeypatch, Basis.CONSOLIDATED) as run:
         for vendor, label in run.stage.run["vendor_inputs"].items():
@@ -345,11 +367,16 @@ def test_fallback_refuses_a_run_triggering_two_groups(
         cutoff = run.stage.repository.store_clock()
         request = RunRequest.model_validate({**fields, "scope": scope, "cutoff": cutoff})
         run.run_id = execute_run(request, pool=run.pool, config_root=CONFIG).run_id
-        assert run.main(_served(), None) == 5
+        before, admitted = run.read(ADMITTED_STATE), []
+        monkeypatch.setattr(
+            fallback, "admit_run", lambda *a, **k: admitted.append(a) or admit_run(*a, **k)
+        )
+        assert run.main(_served(), None, admit=False) == 5
         assert not run.read(OUTCOMES)
+        assert (run.read(ADMITTED_STATE), admitted) == (before, [])
     out, err = capsys.readouterr()
     assert "fetch\t" not in out
-    assert "triggers 2 company-periods" in err
+    assert "spans 2 company-periods" in err
     assert not list((tmp_path / "raw").iterdir())
 
 
@@ -410,21 +437,26 @@ def test_evidence_acquire_ingests_one_named_period(
     ):
         raw = ("--raw-root", str(tmp_path / "raw"), "--generation", "1")
         capsys.readouterr()
+        before = _table_counts(run)
         assert run.acquire({}, issuer, *raw) == 0
+        after = _table_counts(run)
         assert capsys.readouterr().out.splitlines() == [line]
         assert [run.read(query) for query in STORED] == stored
+    assert {table for table, rows in after.items() if rows != before[table]} == ACQUIRE_TABLES
 
 
 def test_evidence_acquire_refuses_before_any_request(
     pg_db: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """An unknown entity, and a period before the SYNTHETIC ZZWINDOW's onboarding settings
-    window (its fiscal-year-end month is valid from 2025-04-01), refuse with no request sent
-    and no generation written."""
+    """An unknown entity, a period before the SYNTHETIC ZZWINDOW's onboarding settings window
+    (its fiscal-year-end month is valid from 2025-04-01), and a period inside it while ZZWINDOW
+    holds no NSE symbol or ISIN, refuse with no request sent and neither absent root created
+    (closing review 8: identity is resolved before any output is prepared)."""
     sent: list[Request] = []
     for name, value in pg_db.cli_env().items():
         monkeypatch.setenv(name, value)
     monkeypatch.setattr(evidence_cli, "live_transport", lambda: sent.append)
+    monkeypatch.setattr(acquisition_authority, "uncommitted", lambda: "")
     with pg_db.runtime_pool() as pool:
         repository = EvidenceRepository(pool)
         evidence = repository.put_evidence_input(EvidenceInputKind.DISCOVERY, "ZZWINDOW", "e" * 64)
@@ -438,8 +470,11 @@ def test_evidence_acquire_refuses_before_any_request(
             entity_id, SettingKey.FISCAL_YEAR_END_MONTH, "3", evidence, date(2025, 4, 1)
         )
     raw = tmp_path / "raw"
-    raw.mkdir()
-    for entity, period in (("ZZUNKNOWN", "2025-06-30"), ("ZZWINDOW", "2025-03-31")):
+    for entity, period in (
+        ("ZZUNKNOWN", "2025-06-30"),
+        ("ZZWINDOW", "2025-03-31"),
+        ("ZZWINDOW", "2025-06-30"),
+    ):
         argv = [
             *("evidence", "acquire", "--entity", entity, "--basis", "consolidated"),
             *("--period-end", period, "--mapping-set", V9.mapping_set),
@@ -451,7 +486,7 @@ def test_evidence_acquire_refuses_before_any_request(
     assert "'ZZUNKNOWN' is not seeded" in err
     assert "no fiscal-year-end month governs 2025-03-31" in err
     assert not sent
-    assert not list(raw.iterdir())
+    assert not raw.exists() and not (tmp_path / "snapshots").exists()
 
 
 class _Fallback:
@@ -472,6 +507,7 @@ class _Fallback:
     def __enter__(self) -> _Fallback:
         """Set up the run, its triggers and the coverage it must leave unchanged."""
         self.monkeypatch.setattr(time, "sleep", lambda _: None)
+        self.monkeypatch.setattr(acquisition_authority, "uncommitted", lambda: "")
         for name, value in self.pg_db.cli_env().items():
             self.monkeypatch.setenv(name, value)
         self._pool = self.pg_db.runtime_pool()
@@ -491,17 +527,20 @@ class _Fallback:
         """Close the pool."""
         self._pool.__exit__(*exc)
 
-    def main(self, served: dict[str, bytes], issuer: Path | None, *extra: str) -> int:
+    def main(
+        self, served: dict[str, bytes], issuer: Path | None, *extra: str, admit: bool = True
+    ) -> int:
         """``eqos compare fallback`` over a transport of ``served``, with any ``extra`` flags;
-        the run's triggers as admission reads them."""
+        with ``admit``, first the run's triggers as admission reads them."""
         self.monkeypatch.setattr(compare_cli, "live_transport", lambda: _transport(served))
-        self.triggers = {
-            row_id: refusal.value
-            for row_id, refusal in admit_run(
-                self.run_id, pool=self.pool, store_id=self.store_id, config_root=CONFIG
-            ).refusals
-            if refusal.value in TRIGGERS
-        }
+        if admit:
+            self.triggers = {
+                row_id: refusal.value
+                for row_id, refusal in admit_run(
+                    self.run_id, pool=self.pool, store_id=self.store_id, config_root=CONFIG
+                ).refusals
+                if refusal.value in TRIGGERS
+            }
         argv = [
             *("compare", "fallback", "--run", str(self.run_id), "--store-id", self.store_id),
             *("--snapshot-root", str(self.tmp_path / "snapshots")),
@@ -530,6 +569,16 @@ class _Fallback:
         """One query's rows."""
         with self.pool.connection() as conn:
             return conn.execute(query, params).fetchall()
+
+
+def _table_counts(run: _Fallback) -> dict[str, int]:
+    """Each ``eqos`` table's row count."""
+    tables = run.read(TABLES)
+    query = sql.SQL(" UNION ALL ").join(
+        sql.SQL("SELECT {}, count(*) FROM eqos.{}").format(sql.Literal(t), sql.Identifier(t))
+        for (t,) in tables
+    )
+    return dict(run.read(query))
 
 
 def _first_party(pool: Any, run_id: int) -> list[Any]:

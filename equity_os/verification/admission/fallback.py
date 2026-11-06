@@ -2,11 +2,11 @@
 admission triggers, acquire that period's results filing, ingest it, rerun with the default
 vendor sides under the run's pins, admit, settle each original trigger cell against its rerun row
 and store one terminal outcome. Entity, symbol, ISIN, period end and basis come from the
-triggering run, so no other issuer is requested. A run triggering more than one group is refused
-before any fetch: each group requests the same two listings, and a replayable generation holds
-each request once. The public ``compare run`` builder (``request_for``) makes one entity, period
-end and basis, so its runs trigger at most one group; this bounds that interface, not stored
-runs, whose scope may hold several."""
+triggering run, so no other issuer is requested. A run whose results span more than one group is
+refused before admission or any fetch: each group requests the same two listings, and a
+replayable generation holds each request once. The public ``compare run`` builder
+(``request_for``) makes one entity, period end and basis, so its runs span one group; this bounds
+stored runs, whose scope may hold several, to that interface."""
 
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ PDF_PARSE = "pdf_parse"
 AUTHORIZATION = "vendor-first fallback of run {run_id}"
 _LOG = structlog.get_logger("verification.fallback")
 _EVENT = "fallback_outcome"
-_MANY_GROUPS = "run {run_id} triggers {count} company-periods; fallback takes one"
+_MANY_GROUPS = "run {run_id} spans {count} company-periods; fallback takes one"
 _INSERT = (
     "INSERT INTO eqos.vendor_fallback_outcomes "
     "(run_id, entity_id, period_end, basis, outcome, rerun_id, cells) "
@@ -137,14 +137,14 @@ def run_fallback(
         row.row_id: (row.key.entity_id, period_end(row.key.period), row.key.basis)
         for row in RunStore(pool).read_results(run_id)
     }
+    if len(spanned := set(groups.values())) > 1:
+        raise ValueError(_MANY_GROUPS.format(run_id=run_id, count=len(spanned)))
     triggered: dict[Group, dict[str, AdmissionRefusal]] = {}
     for row_id, refusal in admit_run(
         run_id, pool=pool, store_id=store_id, config_root=config_root
     ).refusals:
         if refusal in TRIGGERS:
             triggered.setdefault(groups[row_id], {})[row_id] = refusal
-    if len(triggered) > 1:
-        raise ValueError(_MANY_GROUPS.format(run_id=run_id, count=len(triggered)))
     pdf_config = pdf_issuer_config(issuer_config)
     authorization, roots = AUTHORIZATION.format(run_id=run_id), (snapshot_root, raw_root)
     outcomes = []
@@ -216,15 +216,16 @@ def pdf_issuer_config(issuer_config: Path | None) -> Path | None:
 def acquire_group(
     pool: ConnectionPool, store: SnapshotStore, fetch: Fetch, group: Group
 ) -> tuple[ResultsFiling | None, str]:
-    """The group's filing, requested for the entity's one held NSE symbol and ISIN."""
+    """The group's filing, requested for the entity's one held NSE symbol and ISIN, which are
+    resolved before any output is prepared."""
     entity_id, end, basis = group
-    with store.prepare_ordinary_output(), pool.connection() as conn:
+    with pool.connection() as conn:
         held = [h for h in latest_slice(conn) if h.entity_id == entity_id]
         (symbol,), (isin,) = (
             {h.value for h in held if h.namespace is namespace}
             for namespace in (IdentifierNamespace.NSE_SYMBOL, IdentifierNamespace.ISIN)
         )
-        conn.commit()
+    with store.prepare_ordinary_output(), pool.connection() as conn:
         conn.autocommit = True  # each listing and capture commits on its own, as in a pass
         try:
             filing = acquire_results(

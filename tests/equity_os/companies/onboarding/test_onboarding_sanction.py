@@ -242,6 +242,7 @@ def test_a_sanctioned_acquisition_onboards_and_replays_its_ingest(
     tables = ("onboarding_records", "filing_packages", "occurrences", "interpretations")
     acquired, stored = recorded(pg_db), [count(pg_db, table) for table in tables]
     assert all(stored)
+    _reinterpret(raw / "gen-1", tmp_path)
     monkeypatch.setattr(onboard_cli, "live_transport", lambda: _raising)
     with fresh_db(pg_template) as db:
         for name, value in db.cli_env().items():
@@ -250,3 +251,22 @@ def test_a_sanctioned_acquisition_onboards_and_replays_its_ingest(
         assert main(["onboard", APAR, "--raw-root", str(raw), *out, *config]) == INCOMPLETE
         assert recorded(db)[0][1:4] == acquired[0][1:4] and recorded(db)[1] == acquired[1]
         assert [count(db, table) for table in tables] == stored
+
+
+def _reinterpret(generation: Path, tmp_path: Path) -> None:
+    """Closing review 1: FIVE-COMPANY-TEST §5.2's first-party recipe over onboarding's retained
+    generation (stage it, then ingest the latest filing under another mapping set) stores new
+    interpretations of the onboarded package."""
+    stage = tmp_path / "stage"
+    assert main(["evidence", "stage", "--generation", str(generation), "--stage", str(stage)]) == 0
+    manifest = stage / onboard_cli.RETRIEVAL_NAME
+    quarter = json.loads(manifest.read_text())["entries"][0]["quarter"]
+    issuer = json.loads((generation / MANIFEST_NAME).read_text())["issuer"]
+    argv = [
+        *("evidence", "ingest", "--retrieval-manifest", str(manifest), "--issuer", issuer),
+        *("--quarter", quarter, "--period-end", quarter, "--basis", "consolidated"),
+        *("--member", "xbrl=xbrl-consolidated", "--raw-root", str(stage)),
+        *("--snapshot-root", str(tmp_path / "snapshots"), "--mapping-set", "v9"),
+        *("--dictionary", "v2"),
+    ]
+    assert main(argv) == 0

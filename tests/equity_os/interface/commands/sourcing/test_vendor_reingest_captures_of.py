@@ -4,7 +4,8 @@ from the retained captures cited at a source period, in two passes.
 Each test ingests the retained Apar Screener page (first) and Tijori financials capture (second)
 at the source period ``PE0`` on its own ``eqos_test_*`` database, as onboarding does. The entity
 is read back by key, so no symbol is written here. A refusal must leave every attempt,
-occurrence and interpretation count unchanged at every period.
+occurrence and interpretation count unchanged at every period, and the version pins' rows and
+sequence unchanged (closing review 5: pins are registered only after the check pass).
 """
 
 from __future__ import annotations
@@ -68,6 +69,11 @@ ADAPTERS = len(SCREENER_SECTIONS) + 1
 COUNTS = (
     "SELECT (SELECT count(*) FROM eqos.acquisition_attempts), "
     "(SELECT count(*) FROM eqos.occurrences), (SELECT count(*) FROM eqos.interpretations)"
+)
+# Pin rows and the identity sequence, which even a conflicting pin insert advances.
+PINS = (
+    "SELECT (SELECT count(*) FROM eqos.version_pins), "
+    "pg_sequence_last_value('eqos.version_pins_id_seq')"
 )
 PERIODS = "SELECT period_end, count(*) FROM eqos.acquisition_attempts GROUP BY 1 ORDER BY 1"
 RECORDED = "SELECT recorded_at FROM eqos.interpretations WHERE mapping_set_version = %s"
@@ -239,10 +245,10 @@ def test_a_gap_refuses_before_any_write(
     naming the gap, with every count unchanged."""
     if edit is not None:
         edit(apar)
-    before = apar.read(COUNTS), apar.read(PERIODS)
+    before = apar.read(COUNTS), apar.read(PERIODS), apar.read(PINS)
     with pytest.raises(ReingestIncompleteError, match=gap):
         apar.reingest(target, source, basis)
-    assert (apar.read(COUNTS), apar.read(PERIODS)) == before
+    assert (apar.read(COUNTS), apar.read(PERIODS), apar.read(PINS)) == before
 
 
 @pytest.mark.parametrize(
@@ -274,10 +280,10 @@ def test_an_identity_rejected_capture_is_fatal(
             section=SCREENER_SECTIONS[0],
         )
     apar.ingest(rejected, extract, "screener")
-    before = apar.read(COUNTS), apar.read(PERIODS)
+    before = apar.read(COUNTS), apar.read(PERIODS), apar.read(PINS)
     with pytest.raises(ReingestIncompleteError, match=f"{record.capture_id} is rejected: .*{why}"):
         apar.reingest(YEAR_END)
-    assert (apar.read(COUNTS), apar.read(PERIODS)) == before
+    assert (apar.read(COUNTS), apar.read(PERIODS), apar.read(PINS)) == before
 
 
 def test_a_failed_section_records_its_failure(
@@ -368,10 +374,10 @@ def test_a_capture_failing_issuer_or_basis_is_fatal(
     store = _copy(tmp_path)
     apar = Fixture(pg_db, monkeypatch, tmp_path)
     capture = variant(apar, store)
-    before = apar.read(COUNTS), apar.read(PERIODS)
+    before = apar.read(COUNTS), apar.read(PERIODS), apar.read(PINS)
     with pytest.raises(ReingestIncompleteError, match=f"{capture[3]} is rejected: .*{why}"):
         apar.reingest(YEAR_END)
-    assert (apar.read(COUNTS), apar.read(PERIODS)) == before
+    assert (apar.read(COUNTS), apar.read(PERIODS), apar.read(PINS)) == before
 
 
 def test_a_standalone_only_page_reingests(
@@ -403,9 +409,9 @@ def test_a_standalone_only_page_reingests(
         *("--snapshot-root", str(tmp_path), "--config-root", str(CONFIG)),
         *("--captures-of", str(PE0), "--period-end", str(YEAR_END)),
     ]
-    before = apar.read(COUNTS), apar.read(PERIODS)
+    before = apar.read(COUNTS), apar.read(PERIODS), apar.read(PINS)
     assert main(argv) == 4  # the seeded status files both bases
-    assert (apar.read(COUNTS), apar.read(PERIODS)) == before
+    assert (apar.read(COUNTS), apar.read(PERIODS), apar.read(PINS)) == before
     with apar.db.runtime_pool() as pool:
         repository = EvidenceRepository(pool)
         evidence = repository.put_evidence_input(EvidenceInputKind.DISCOVERY, apar.key, "e" * 64)

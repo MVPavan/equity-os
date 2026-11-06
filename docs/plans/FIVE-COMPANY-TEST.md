@@ -174,11 +174,18 @@ Stage 4 freeze, the holdout record or the manifest.)
 ### 5.2 Re-interpret under `v12`
 
 ```
-eqos evidence ingest --retrieval-manifest <ROOT>/gen-<G>/retrieval-manifest.json --issuer <KEY> \
-  --quarter <Q> --period-end <PE> --basis <b> --raw-root <ROOT>/gen-<G> --snapshot-root <SNAP> \
-  --mapping-set v12 --dictionary v5
+eqos evidence stage --generation <ROOT>/gen-<G> --stage <STAGE>
+eqos evidence ingest --retrieval-manifest <STAGE>/retrieval-manifest.json --issuer <KEY> \
+  --quarter <PE> --period-end <PE> --basis <b> --member xbrl=xbrl-<b> --raw-root <STAGE> \
+  --snapshot-root <SNAP> --mapping-set v12 --dictionary v5
 eqos vendor reingest --entity <KEY> --period-end <PE> --basis <b> --mapping-set v12 --dictionary v5
 ```
+Onboarding keeps its package members as numbered bodies (`NN.bin`) beside the discovery manifest;
+`evidence stage` copies each retrieval-manifest member into intake's `nse/<filename>` layout under
+`<STAGE>` (a new, ordinary directory), refusing a body outside the generation or not matching
+both manifests' SHA-256; it opens no database. `--quarter` is the retrieval manifest's ISO period end (`<PE>`, the
+onboarded filing), and `<b>` is `consolidated` or `standalone` as onboarded. Onboarding's package
+is XBRL-only, so there is no PDF member and no `--issuer-config`.
 Apar is re-ingested live under `v5`/`v12` like the others. Per role (a) period:
 ```
 eqos evidence acquire --entity <KEY> --basis <b> --period-end <PE> --mapping-set v12 --dictionary v5 \
@@ -332,9 +339,15 @@ Per company, in this order:
    `git rev-parse HEAD` and the `config/` tree id (`git rev-parse HEAD:config`); both must equal the
    gated tip `commands.txt` names. An onboarding generation's recorded `acquisition_head` (its
    `acquisition.json`, which only onboarding writes) must equal it, and so must each entity
-   acquisition's HEAD and `config/` tree id recorded in `commands.txt` (step 2). A new gated
-   revision (§5.6.1) re-applies the rule on that revision with a re-inventoried `commands.txt`.
-   Any difference stops before the next command.
+   acquisition's HEAD and `config/` tree id recorded in `commands.txt` (step 2). Committed HEAD
+   does not show working-tree edits, so before every command the checkout must also show an empty
+   `git status --porcelain -- equity_os src config migrations scripts pyproject.toml uv.lock`
+   (`IMPLEMENTATION_PATHS`), and every `--config-root` must resolve to that checkout's `config/`
+   (the inventoried root is the gated checkout's config, never a copy). Entity acquisition and
+   replay (`evidence acquire`, `compare fallback`) also refuse uncommitted implementation paths
+   themselves, as the sanctioned acquisition does. A new gated revision (§5.6.1) re-applies the
+   rule on that revision with a re-inventoried `commands.txt`. Any difference stops before the
+   next command.
 6. **Checks after each command:** `eqos db check-live`; counts of every `eqos` table; business-key
    summaries (as Phase 1, plus admissions by label, counterexamples by class, fallback outcomes);
    fingerprints of pre-existing rows of touched tables, unchanged. Each command's delta stays within

@@ -302,9 +302,12 @@ behaviour). Without the flag, behaviour is today's. With it, `reingest` runs two
 `vendor_reingest.py`; no extractor, ingest or storage file changes (R3-01):
 
 1. **Check pass (no attempt, occurrence or interpretation write).** For every cited capture, read
-   its verified body and build `_adapters` as today, with the fiscal-year-end month at `PE`. Check
-   each adapter's version pin as `ingest_vendor` does first (`vendor_extractor_pin`,
-   `pin_versions`, which writes only `version_pins`), then call its extract on the body. An adapter
+   its verified body and build `_adapters` as today, with the fiscal-year-end month at `PE`. Compare
+   each adapter's version pin read-only against any stored one (`vendor_extractor_pin`; drift
+   refuses), then call its extract on the body. *Orchestrator ruling (closing review 5): no
+   writes on refusal wins over the earlier `pin_versions` call here, which committed pins and
+   advanced `version_pins_id_seq` on refusal; pins are registered only after the check pass, by
+   the write pass's `ingest_vendor`.* An adapter
    raising `VendorExtractionError` with outcome `IDENTITY_REJECTED` is a capture, entity or basis
    refusal (`vendor_tijori.py` `_NO_BASIS`; `vendor_screener.py` identity and basis checks). It is
    fatal: the command exits `INCOMPLETE` naming the capture, with nothing written (R4-01). Any other
@@ -506,7 +509,10 @@ both roots (path, sha256) must equal the rehearsal's. Additions:
   `config/` tree id, and all equal that tip; an onboarding generation's recorded
   `acquisition_head` (`acquisition.json`) equals it, and each entity acquisition's HEAD and
   `config/` tree id, recorded in `commands.txt` with its generation number and manifest sha256,
-  equal it. Any difference stops before the next command.
+  equal it. Before every command the working tree must also be clean over `IMPLEMENTATION_PATHS`
+  and the config root (empty `git status --porcelain`), and the inventoried config root must be
+  the gated checkout's `config/`; `entity_fetch` refuses uncommitted implementation paths on
+  acquisition and replay (closing review 7). Any difference stops before the next command.
 - **Windows.** Live write windows are mutually exclusive across FIVE-COMPANY-TEST, VENDOR-1 phases
   and anything else, as Phase 3's windows rule states.
 
@@ -516,9 +522,9 @@ is a reviewed amendment):
 | Command | Tables allowed to change |
 |---|---|
 | `onboard --sanction` replay | as Phase 3's `onboard` replay row |
-| `evidence acquire` replay | captures (`capture_refs`, `capture_addresses`, `capture_states`); document intake (`document_listings`, `document_observations`, `document_attempts`, from `announcement_documents`, with or without `pdf_parse`); package and extraction tables as Phase 3's `evidence ingest` row; `version_pins` |
+| `evidence acquire` replay | captures (`capture_refs`, `capture_addresses`, `retention_classes`, the last by 0027's `classify_capture` trigger on each new capture); document intake (`document_listings`, `document_observations`, `document_attempts`, from `announcement_documents`, with or without `pdf_parse`); package and extraction tables as Phase 3's `evidence ingest` row; `version_pins` |
 | `vendor reingest --captures-of` | as Phase 3's `vendor reingest` row |
-| `compare fallback` replay | as `evidence acquire`, plus the `compare run` row's tables, `fact_stores`, `fact_store_events`, `fact_rows`, `fact_selections`, `fact_admissions`, `vendor_counterexamples`, `vendor_fallback_outcomes` (derived from `admit_run`'s write paths before the rehearsal) |
+| `compare fallback` replay | as `evidence acquire` (captures `capture_refs`, `capture_addresses`, `retention_classes`), plus the `compare run` row's tables, `fact_stores`, `fact_store_events`, `fact_rows`, `fact_selections`, `fact_admissions`, `vendor_counterexamples`, `vendor_fallback_outcomes` (derived from `admit_run`'s write paths before the rehearsal) |
 
 Each listed table's own sequence may advance, no other. Coverage decisions and watchlist
 membership must be unchanged after every command.

@@ -17,7 +17,9 @@ from typing import Any
 import yaml
 
 from equity_os.companies.onboarding.discovery import (
+    MANIFEST_NAME,
     Capture,
+    DiscoveryManifest,
     Fetch,
     Send,
     acquiring_fetch,
@@ -60,6 +62,9 @@ _UNFROZEN = "the checkout does not satisfy the freeze protocol: {why}"
 _UNSANCTIONED = "the sanction does not authorise this acquisition: {why}"
 _PROTECTED = "{root} lies under a protected root"
 _GENERATION = "gen-"
+_UNCOMMITTED = "the implementation paths hold uncommitted changes"
+_UNBOUND = "{folder} does not bind generation {generation} of {issuer!r} under {authorization!r}"
+_OUTSIDE = "{path} lies outside {folder}"
 
 
 def ordinary_roots(*roots: Path) -> None:
@@ -69,6 +74,11 @@ def ordinary_roots(*roots: Path) -> None:
     for root in roots:
         if any(root.resolve().is_relative_to(checkout / held) for held in PROTECTED_ROOTS):
             raise ValueError(_PROTECTED.format(root=root))
+
+
+def uncommitted() -> str:
+    """The running checkout's working-tree status over the implementation paths."""
+    return _git(SOURCE_CHECKOUT.resolve(), "status", "--porcelain", "--", *IMPLEMENTATION_PATHS)
 
 
 def entity_fetch(
@@ -81,10 +91,23 @@ def entity_fetch(
     """A fetch with no NSE master, and the writer to call after the work: ``gen-<generation>``
     under ``raw_root`` replayed in entity mode (the writer does nothing), or with ``None`` the
     live ``send()``, whose exchanges the writer keeps as the next generation. ``raw_root`` must
-    be ordinary, checked before anything else."""
+    be ordinary, checked before anything else, and the implementation committed. A replayed
+    generation must resolve to an ordinary folder holding its manifest and every body, and its
+    manifest must declare ``generation``, ``issuer`` and ``authorization``."""
     ordinary_roots(raw_root)
+    if uncommitted():
+        raise ValueError(_UNCOMMITTED)
     if generation is not None:
-        return replay_fetch(raw_root / f"{_GENERATION}{generation}", entity=True), lambda: None
+        folder = raw_root / f"{_GENERATION}{generation}"
+        ordinary_roots(folder)
+        manifest = DiscoveryManifest.model_validate_json(inside(folder, MANIFEST_NAME).read_bytes())
+        binding = {"generation": generation, "issuer": issuer, "authorization": authorization}
+        if manifest.model_dump(include=set(binding)) != binding:
+            raise ValueError(_UNBOUND.format(folder=folder, **binding))
+        for entry in manifest.entries:
+            if entry.filename is not None:
+                inside(folder, entry.filename)
+        return replay_fetch(folder, entity=True), lambda: None
     taken = [int(path.name.removeprefix(_GENERATION)) for path in raw_root.glob(f"{_GENERATION}*")]
     after = max(taken, default=0) + 1
     log: list[Capture] = []
@@ -95,6 +118,14 @@ def entity_fetch(
             write_generation(folder, issuer, authorization, after, log, entity=True)
 
     return acquiring_fetch(send(), partial(datetime.now, UTC), log), write
+
+
+def inside(folder: Path, name: str) -> Path:
+    """``folder / name``, which must resolve (symlinks followed) inside ``folder``."""
+    path = folder / name
+    if not path.resolve().is_relative_to(folder.resolve()):
+        raise ValueError(_OUTSIDE.format(path=path, folder=folder))
+    return path
 
 
 def sanctioned(path: Path, config_root: Path, symbol: str) -> dict[str, Any]:
@@ -116,7 +147,7 @@ def sanctioned(path: Path, config_root: Path, symbol: str) -> dict[str, Any]:
         "--config-root is not the config",
     )
     relative = str(resolved.relative_to(repo))
-    need(not _git(repo, "status", "--porcelain", "--", *IMPLEMENTATION_PATHS), "uncommitted")
+    need(not uncommitted(), "uncommitted")
     head = _git(repo, "rev-parse", "HEAD")
     committed = subprocess.run(
         ["git", "-C", str(repo), "show", f"{head}:{relative}"], check=True, capture_output=True

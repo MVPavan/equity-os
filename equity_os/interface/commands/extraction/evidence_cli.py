@@ -9,6 +9,7 @@
         [--issuer-config <yaml>] [--config-root config] [--generation <n>]
     evidence transcript --retrieval-manifest <json> --issuer <symbol> --quarter <FYyy_Qn>
         --raw-root <dir> --snapshot-root <dir> --issuer-config <yaml>
+    evidence stage --generation <root>/gen-<n> --stage <new dir>
 
 The composition root: ``PgSettings``, the runtime pool, the retained intake and the
 source catalog (design decision 12) are built here and nowhere else. ``--issuer-config``
@@ -21,12 +22,18 @@ attempt failed (``EXIT_INCOMPLETE`` otherwise; ``NOT_PUBLISHED`` is not a failur
 entity generation under ``--raw-root``, and ``--generation`` replays one with no socket. It prints
 the stored package id, ``FILING_UNAVAILABLE`` or ``FILING_UNRESOLVED`` and exits
 ``EXIT_INCOMPLETE`` unless the filing was ingested.
+
+``stage`` copies an onboarding generation's retrieval-manifest members (XBRL only) from their
+numbered bodies into intake's layout under a new directory, each body confined to the generation
+and matching both manifests' SHA-256, so ``ingest`` can re-interpret them.
 """
 
 from __future__ import annotations
 
 import argparse
 import contextlib
+import hashlib
+import json
 import sys
 from collections.abc import Mapping
 from datetime import date
@@ -37,6 +44,7 @@ import structlog
 from pydantic import ValidationError
 
 from equity_os.companies.identity.identity_seed import SettingKey
+from equity_os.companies.onboarding.discovery import MANIFEST_NAME, DiscoveryManifest
 from equity_os.contracts.measurement.canonical import Basis, Representation
 from equity_os.contracts.measurement.evidence import FilingFamily
 from equity_os.contracts.measurement.observation import AccountingFramework
@@ -46,7 +54,11 @@ from equity_os.contracts.sourcing.source_catalog import BUILTIN_SOURCES
 from equity_os.contracts.verification.comparison import SourceState
 from equity_os.contracts.verification.config_versions import ConfigVersions
 from equity_os.contracts.verification.vendor_first import FallbackOutcome
-from equity_os.extraction.packages.capture_intake import IntakeError, retained_intake_from_manifest
+from equity_os.extraction.packages.capture_intake import (
+    XBRL_INPUT_DIR,
+    IntakeError,
+    retained_intake_from_manifest,
+)
 from equity_os.extraction.packages.first_party_ingest import (
     IngestError,
     admit_transcript,
@@ -55,9 +67,10 @@ from equity_os.extraction.packages.first_party_ingest import (
 from equity_os.extraction.results_pdf.pdf_statement_pages import specs_from_config
 from equity_os.interface.commands.companies.acquisition_authority import (
     entity_fetch,
+    inside,
     ordinary_roots,
 )
-from equity_os.interface.commands.companies.onboard_cli import live_transport
+from equity_os.interface.commands.companies.onboard_cli import RETRIEVAL_NAME, live_transport
 from equity_os.interface.commands.sourcing.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from equity_os.interface.entry.config import load_config
 from equity_os.interface.entry.watchlist_config import with_issuer_pdfs
@@ -84,6 +97,7 @@ INGEST_ACTION = "ingest"
 ACQUIRE_ACTION = "acquire"
 NAMED_PERIOD = "named-period acquisition of {key} {period_end}"
 TRANSCRIPT_ACTION = "transcript"
+STAGE_ACTION = "stage"
 TRANSCRIPT_KIND = "transcript"
 TRANSCRIPT_DECLARATION = "transcript_pdf"
 DEFAULT_CONFIG_ROOT = "config"
@@ -107,6 +121,9 @@ _HELP = "ingest first-party filings into the evidence store"
 _INGEST_HELP = "stage, extract and interpret one results package from retained originals"
 _ACQUIRE_HELP = "fetch and ingest one named period's results filing, as the fallback does"
 _TRANSCRIPT_HELP = "register one quarter's transcript PDF as a diagnostic first-party capture"
+_STAGE_HELP = "stage an onboarding generation's package members for ingest"
+_STAGED = "staged\t{count}\n"
+_ALTERED = "{path} does not match its manifest SHA-256"
 _MEMBER_HELP = "a package member as <representation>=<manifest kind>, e.g. xbrl=xbrl-consolidated"
 _BAD_MEMBER = "--member {value!r} is not xbrl=<kind> or pdf=<kind>"
 _NO_MEMBER = "name at least one --member"
@@ -160,6 +177,9 @@ def add_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Argument
         transcript.add_argument(flag, required=True, type=Path)
     transcript.add_argument("--issuer", required=True)
     transcript.add_argument("--quarter", required=True)
+    stage = actions.add_parser(STAGE_ACTION, help=_STAGE_HELP)
+    stage.add_argument("--generation", required=True, type=Path)
+    stage.add_argument("--stage", required=True, type=Path)
 
 
 def dispatch_evidence_command(args: argparse.Namespace) -> int | None:
@@ -169,6 +189,8 @@ def dispatch_evidence_command(args: argparse.Namespace) -> int | None:
     try:
         if args.evidence_action == ACQUIRE_ACTION:
             return _acquire(args)
+        if args.evidence_action == STAGE_ACTION:
+            return _stage(args.generation, args.stage)
         return _transcript(args) if args.evidence_action == TRANSCRIPT_ACTION else _ingest(args)
     except (
         EvidenceCommandError,
@@ -308,6 +330,26 @@ def _acquire(args: argparse.Namespace) -> int:
     )
     sys.stdout.write(_NOT_ACQUIRED.format(period_end=args.period_end, outcome=outcome.value))
     return EXIT_INCOMPLETE
+
+
+def _stage(generation: Path, stage: Path) -> int:
+    """Stage the generation's retrieval-manifest members as ``<stage>/nse/<filename>`` beside a
+    copy of that manifest; print how many."""
+    ordinary_roots(generation, stage)
+    package = inside(generation, RETRIEVAL_NAME).read_bytes()
+    found = DiscoveryManifest.model_validate_json(inside(generation, MANIFEST_NAME).read_bytes())
+    bodies = {entry.url: (str(entry.filename), entry.sha256) for entry in found.entries}
+    entries = json.loads(package)["entries"]
+    (stage / XBRL_INPUT_DIR).mkdir(parents=True)
+    for entry in entries:
+        name, digest = bodies[entry["url"]]
+        body = inside(generation, name).read_bytes()
+        if not hashlib.sha256(body).hexdigest() == digest == entry["sha256"]:
+            raise EvidenceCommandError(_ALTERED.format(path=generation / name))
+        inside(stage / XBRL_INPUT_DIR, entry["filename"]).write_bytes(body)
+    (stage / RETRIEVAL_NAME).write_bytes(package)
+    sys.stdout.write(_STAGED.format(count=len(entries)))
+    return EXIT_OK
 
 
 def _transcript(args: argparse.Namespace) -> int:

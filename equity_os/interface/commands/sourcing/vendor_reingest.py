@@ -6,16 +6,16 @@ onboarding built (``onboard_cli._vendor_adapters``): read from the stored identi
 settings, the capture's own bytes and, for Screener, the identity evidence its earlier
 occurrences cite. Earlier rows are never changed; new ones are added beside them.
 
-With ``captures_of`` (FIVE-1 Task 3) the captures are those the attempts at that source period
-cite, and the evidence is recorded at ``period_end``, in two passes. The check pass parses every
-adapter with no attempt, occurrence or interpretation write. Each whole capture must first prove
-the issuer and the requested basis (Tijori's company symbol; Screener's page basis evidence under
-the stored basis status), and an ``IDENTITY_REJECTED`` section refusal is fatal; ordinary section
-failures stay recoverable. Each of Screener and Tijori must hold an occurrence ending at
-``period_end`` in some section; each parsed occurrence must equal any stored one under its
-capture, extractor version and anchor. Any gap raises ``ReingestIncompleteError`` before the
-first write. Only then does today's ingest run at ``period_end``, which reuses the stored
-occurrences and adds one attempt per adapter. Nothing is relabelled and nothing is fetched.
+With ``captures_of`` (FIVE-1 Task 3) the captures are those the attempts at that source period cite,
+and the evidence is recorded at ``period_end``, in two passes. The check pass parses every adapter
+with no write: version pins are compared, and registered only by the write pass. Each whole capture
+must first prove the issuer and the requested basis (Tijori's company symbol; Screener's page basis
+evidence under the stored basis status), and an ``IDENTITY_REJECTED`` section refusal is fatal;
+ordinary section failures stay recoverable. Each of Screener and Tijori must hold an occurrence
+ending at ``period_end`` in some section; each parsed occurrence must equal any stored one under its
+capture, extractor version and anchor. Any gap raises ``ReingestIncompleteError`` before the first
+write. Only then does today's ingest run at ``period_end``, which reuses the stored occurrences and
+adds one attempt per adapter. Nothing is relabelled and nothing is fetched.
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ from equity_os.contracts.measurement.observation import AccountingFramework
 from equity_os.contracts.sourcing.acquisition_outcome import ExtractionOutcome, OutcomeCode
 from equity_os.contracts.sourcing.source_catalog import SCREENER_PAGE, TIJORI_PAGE
 from equity_os.contracts.verification.config_versions import ConfigVersions
+from equity_os.contracts.verification.versioning import VersionContentDriftError
 from equity_os.extraction.packages.member_identity import IssuerIdentifiers
 from equity_os.extraction.surfaces.vendor_ingest import (
     VendorExtraction,
@@ -69,6 +70,7 @@ from equity_os.sourcing.vendors.tijori.tijori_capture import (
 from equity_os.storage.raw_files.capture_retention import ingest_vendor_retained
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records.repository import EvidenceRepository
+from equity_os.storage.records.repository_rows import SELECT_VERSION_PIN
 from equity_os.verification.comparison.run_config import (
     load_run_config,
     vendor_extractor_pin,
@@ -152,7 +154,7 @@ def reingest(
     ordered = [capture for _, capture in sorted(captures.items())]
     if captures_of is not None:
         verify = partial(_verify, ids=ids, basis=basis, status=status)
-        _check(repository, ordered, parsed, verify, request, captures_of, period_end)
+        _check(pool, ordered, parsed, verify, request, captures_of, period_end)
     reports = []
     for capture in ordered:
         for (extract, version), _, _ in parsed(capture):
@@ -174,7 +176,7 @@ def reingest(
 
 
 def _check(
-    repository: EvidenceRepository,
+    pool: ConnectionPool,
     captures: list[CaptureReference],
     parsed: Callable[[CaptureReference], Iterator[tuple[Adapter, Any, bytes]]],
     verify: Callable[[CaptureReference, bytes], None],
@@ -184,7 +186,8 @@ def _check(
 ) -> None:
     """The check pass (module docstring): refuse before any write unless every capture proves its
     issuer and basis and parses without an identity refusal, both vendors cover the target and
-    stored rows agree."""
+    stored rows agree. Version pins are compared read-only; the write pass registers them."""
+    repository = EvidenceRepository(pool)
     covered = dict.fromkeys((SCREENER_PAGE, TIJORI_PAGE), False)
     cited = {(capture.source_id, capture.surface) for capture in captures}
     if absent := sorted(covered.keys() - cited):
@@ -195,8 +198,18 @@ def _check(
         adapters = list(parsed(capture))
         verify(capture, adapters[0][2])
         for (extract, version), record, body in adapters:
-            pin = vendor_extractor_pin(capture.source_id, capture.surface, version=version)
-            repository.pin_versions([vendor_version_pin(pin)])
+            pin = vendor_version_pin(
+                vendor_extractor_pin(capture.source_id, capture.surface, version=version)
+            )
+            with pool.connection() as conn:
+                pinned = conn.execute(SELECT_VERSION_PIN, (pin.artifact, pin.version)).fetchone()
+            if pinned is not None and pinned[0] != pin.content_sha256:
+                raise VersionContentDriftError(
+                    artifact=pin.artifact,
+                    version=pin.version,
+                    pinned_sha256=pinned[0],
+                    actual_sha256=pin.content_sha256,
+                )
             try:
                 extraction = extract(
                     body, capture=capture, record=record, extractor_version=version

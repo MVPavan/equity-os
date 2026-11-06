@@ -47,6 +47,12 @@ def _send(request: Request) -> tuple[int, bytes]:
     return SERVED[request.url]
 
 
+@pytest.fixture(autouse=True)
+def committed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The running checkout's implementation paths read as committed (no git repo is needed)."""
+    monkeypatch.setattr(acquisition_authority, "uncommitted", lambda: "")
+
+
 def _no_socket() -> Callable[[Request], tuple[int, bytes]]:
     """A transport that must never be built on replay."""
     raise AssertionError("replay opened a transport")
@@ -201,3 +207,72 @@ def test_evidence_acquire_refuses_a_protected_root(
     ]
     assert main(argv) == 2
     assert not any((checkout / "data").rglob("*.*"))
+
+
+@pytest.mark.parametrize("generation", [None, 1])
+def test_an_uncommitted_implementation_refuses_acquire_and_replay(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, generation: int | None
+) -> None:
+    """FIVE-1 closing review 7: entity acquisition and replay run only on a committed
+    implementation, as the sanctioned acquisition does."""
+    monkeypatch.setattr(acquisition_authority, "uncommitted", lambda: " M equity_os/zz.py")
+    with pytest.raises(ValueError, match="uncommitted"):
+        entity_fetch(tmp_path, generation, "1", "SYNTHETIC fallback", _no_socket)
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize(
+    ("generation", "issuer", "authorization"),
+    [(7, "1", "SYNTHETIC fallback"), (1, "2", "SYNTHETIC fallback"), (1, "1", "SYNTHETIC other")],
+    ids=["generation", "issuer", "authorization"],
+)
+def test_replay_needs_the_requested_binding(
+    tmp_path: Path, generation: int, issuer: str, authorization: str
+) -> None:
+    """FIVE-1 closing review 6: a replayed manifest must declare the requested generation,
+    issuer and authorization; here gen-7 holds a manifest declaring generation 1."""
+    _acquire(tmp_path)
+    (tmp_path / "gen-1").rename(tmp_path / f"gen-{generation}")
+    with pytest.raises(ValueError, match="does not bind"):
+        entity_fetch(tmp_path, generation, issuer, authorization, _no_socket)
+
+
+def _linked_generation(checkout: Path, root: Path) -> None:
+    """``gen-1`` under ``root`` links to a SYNTHETIC generation under a protected root."""
+    _acquire(root)
+    held = checkout / "data/holdout/gen-1"
+    (root / "gen-1").rename(held)
+    (root / "gen-1").symlink_to(held, target_is_directory=True)
+
+
+def _escaping_name(checkout: Path, root: Path) -> None:
+    """A manifest naming a body outside its generation, with the right hash."""
+    del checkout
+    _acquire(root)
+    path = root / "gen-1" / MANIFEST_NAME
+    manifest = json.loads(path.read_text())
+    (root / "out.bin").write_bytes((root / "gen-1" / "00.bin").read_bytes())
+    manifest["entries"][0]["filename"] = "../out.bin"
+    path.write_text(json.dumps(manifest))
+
+
+def _linked_body(checkout: Path, root: Path) -> None:
+    """A body linked to a file under a protected root, with the right hash."""
+    _acquire(root)
+    held = checkout / "data/holdout/00.bin"
+    held.write_bytes((root / "gen-1" / "00.bin").read_bytes())
+    (root / "gen-1" / "00.bin").unlink()
+    (root / "gen-1" / "00.bin").symlink_to(held)
+
+
+@pytest.mark.parametrize("breach", [_linked_generation, _escaping_name, _linked_body])
+def test_replay_stays_inside_an_ordinary_generation(
+    checkout: Path, tmp_path: Path, breach: Callable[[Path, Path], None]
+) -> None:
+    """FIVE-1 closing review 2: an ordinary raw root whose ``gen-N`` links into a protected
+    root, or whose manifest names a body outside the generation or linked out of it, refuses
+    before the manifest or that body is read."""
+    root = tmp_path / "raw"
+    breach(checkout, root)
+    with pytest.raises(ValueError, match="protected root|outside"):
+        entity_fetch(root, 1, "1", "SYNTHETIC fallback", _no_socket)
