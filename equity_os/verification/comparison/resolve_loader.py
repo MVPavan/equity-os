@@ -150,6 +150,8 @@ class RunLoader:
         packages = self._eligible(entity_id, basis, end)
         calendar = RUN_FAMILIES[self._family].fiscal_calendar
         fiscal_month = self._fiscal_month(entity_id, end) if calendar else None
+        if calendar and not packages:  # a vendor-only group's framework (spec §6.3)
+            self._setting(entity_id, SettingKey.REPORTING_FRAMEWORK, end)
         if fiscal_month is not None and any(
             package.reporting_kind is PeriodKind.YEAR for package in packages
         ):
@@ -207,14 +209,17 @@ class RunLoader:
 
     def _fiscal_month(self, entity_id: int, period_end: date) -> int | None:
         """Load the fiscal-year-end row governing the period by the cutoff; its month, if any."""
-        record = self._repository.settings_as_of(
-            entity_id, SettingKey.FISCAL_YEAR_END_MONTH, self._request.cutoff, period_end
-        )
+        found = self._setting(entity_id, SettingKey.FISCAL_YEAR_END_MONTH, period_end)
+        return None if found is None else int(found)
+
+    def _setting(self, entity_id: int, key: SettingKey, period_end: date) -> str | None:
+        """Load one setting's row governing the period by the cutoff; its value, if any."""
+        record = self._repository.settings_as_of(entity_id, key, self._request.cutoff, period_end)
         if record is None:
             return None
         self._settings[record.id] = record
         self._evidence_ids.add(record.evidence_input_id)
-        return int(record.value_text)
+        return record.value_text
 
     def _eligible(self, entity_id: int, basis: Basis, period_end: date) -> list[FilingPackage]:
         """Eligible packages of the run's family, one basis, framework and period end."""

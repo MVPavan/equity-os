@@ -25,14 +25,12 @@ from datetime import date
 from equity_os.contracts.measurement.canonical import (
     ApplicabilityStatus,
     Basis,
-    PeriodKind,
     PeriodNature,
     ReportingRegime,
     Representation,
     StatementFamily,
     TemporalRole,
     ValueIdentity,
-    ValueKind,
 )
 from equity_os.contracts.measurement.evidence import (
     EligibilityBoundary,
@@ -66,7 +64,7 @@ from equity_os.normalisation.dictionary.applicability import (
     decide_applicability,
     reporting_kinds,
 )
-from equity_os.normalisation.dictionary.dictionary import DictionaryRow, PeriodAggregationKind
+from equity_os.normalisation.dictionary.dictionary import DictionaryRow
 from equity_os.storage.records.repository import SegmentMemberRecord
 from equity_os.verification.comparison.engine_attempts import (
     AttemptStates,
@@ -91,6 +89,7 @@ from equity_os.verification.comparison.engine_rows import (
     Side,
     as_counterpart,
     calculated_side,
+    derives_q4,
     extraction_pairs,
     family_has_pair,
     not_applicable_row,
@@ -98,6 +97,7 @@ from equity_os.verification.comparison.engine_rows import (
     selected_side,
     sorted_values,
 )
+from equity_os.verification.comparison.engine_vendor_context import VendorGroups
 from equity_os.verification.comparison.resolve_models import ResolvedInputs
 from equity_os.verification.comparison.run_config import LoadedConfig
 from equity_os.verification.comparison.run_family import ANY_FISCAL_MONTH, RUN_FAMILIES
@@ -192,6 +192,7 @@ class RunEngine:
         self._formulas = FormulaRows(self, config=config, traces=traces, proofs=inputs.proofs)
         self._vendors = VendorSides(inputs, request, config=config, traces=traces)
         self.selected_package_ids: set[int] = set()
+        self._vendor_groups = VendorGroups(self._vendors, inputs, request, config)
 
     @property
     def bound_segment_member_ids(self) -> set[int]:
@@ -285,7 +286,10 @@ class RunEngine:
         for results; the instant alone and no currency for shareholding (plan D8 R6)."""
         if self._family is FilingFamily.SHAREHOLDING:
             return (PeriodInterval.at(end),), None
-        periods = fiscal_periods(end, self._fiscal_year_end(entity_id, end))
+        month = self._fiscal_year_end(entity_id, end)
+        periods, group = fiscal_periods(end, month), (entity_id, basis, end)
+        if not any(self._in_group(item, *group) for item in self._inputs.packages):
+            return periods, self._vendor_groups.context(group, periods, month)[0]
         items = (
             item
             for package in self._inputs.packages
@@ -322,7 +326,8 @@ class RunEngine:
                     continue
                 reported = self._reported_row(row, key, decision)
                 rows.append(reported)
-                if self._derives_q4(row, key, decision, periods):
+                package = self.package(key.entity_id, key.basis, period_end(key.period), row.family)
+                if derives_q4(row, key, decision, periods, package):
                     rows.append(self._q4_row(row, key, periods, reported))
         return rows
 
@@ -408,7 +413,9 @@ class RunEngine:
         families: frozenset[StatementFamily],
         periods: tuple[PeriodInterval, ...],
     ) -> ApplicabilityContext:
-        """What the families' selected packages tell before any value is read."""
+        """What the families' selected packages (else the vendors') tell before any value."""
+        if (found := self._vendor_groups.known((entity_id, basis, end))) is not None:
+            return found
         selected = (self.package(entity_id, basis, end, family) for family in sorted(families))
         packages = [package for package in selected if package is not None]
         fiscal_month = self._fiscal_year_end(entity_id, end)
@@ -668,26 +675,6 @@ class RunEngine:
             surfaced=[],
             extraction=evaluated.extraction,
         )
-
-    def _derives_q4(
-        self,
-        row: DictionaryRow,
-        key: MeasurementKey,
-        decision: ApplicabilityDecision,
-        periods: tuple[PeriodInterval, ...],
-    ) -> bool:
-        """Whether a reported row also gets Q4 = FY − 9M (a ``YEAR`` package's quarter)."""
-        if (
-            len(periods) != 2
-            or key.period != periods[0]
-            or decision.status is not ApplicabilityStatus.APPLICABLE
-            or row.period_aggregation is not PeriodAggregationKind.ADDITIVE_DURATION
-            or row.period_nature is not PeriodNature.DURATION
-            or row.value_kind is not ValueKind.CURRENCY_AMOUNT
-        ):
-            return False
-        package = self.package(key.entity_id, key.basis, period_end(key.period), row.family)
-        return package is not None and package.reporting_kind is PeriodKind.YEAR
 
     def _q4_row(
         self,

@@ -55,6 +55,7 @@ from equity_os.verification.comparison.run_models import (
     SourceValue,
 )
 from equity_os.verification.comparison.run_store import PublishHook, RunStore
+from equity_os.verification.comparison.vendor_sides import NO_ATTEMPT as NO_CAPTURE
 from equity_os.verification.review_queue.routing import route_run
 
 __all__ = [
@@ -238,7 +239,7 @@ def load_results(run_id: int, *, pool: ConnectionPool) -> tuple[ResultRow, ...]:
 
 
 def run_status(rows: tuple[ResultRow, ...]) -> RunStatus:
-    """``INCOMPLETE`` when any non-diagnostic source state is ``UNAVAILABLE``."""
+    """``INCOMPLETE`` when the rows hold any ``operational_failures``."""
     return RunStatus.INCOMPLETE if operational_failures(rows) else RunStatus.COMPLETE
 
 
@@ -247,8 +248,9 @@ def operational_failures(rows: tuple[ResultRow, ...]) -> tuple[str, ...]:
 
     A failure is the representation (a vendor's ``source/surface``), the reason that decided
     the state and the attempt that recorded it (``-`` when the state comes from the pins,
-    e.g. nothing extracted under the pinned extractor). Non-empty exactly when the run is
-    ``INCOMPLETE``.
+    e.g. nothing extracted under the pinned extractor). A vendor surface with no capture for
+    the period (``NO_ATTEMPT``) is absence, not failure (spec §6.3). Non-empty exactly when
+    the run is ``INCOMPLETE``.
     """
     return tuple(
         sorted(
@@ -262,7 +264,9 @@ def operational_failures(rows: tuple[ResultRow, ...]) -> tuple[str, ...]:
                 )
                 for row in rows
                 for value in row.source_values
-                if value.source_role in _NON_DIAGNOSTIC and value.state is SourceState.UNAVAILABLE
+                if value.source_role in _NON_DIAGNOSTIC
+                and value.state is SourceState.UNAVAILABLE
+                and not (value.source_id is not None and value.reason == NO_CAPTURE)
             }
         )
     )

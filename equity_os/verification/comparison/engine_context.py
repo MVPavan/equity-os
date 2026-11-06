@@ -67,29 +67,41 @@ def reporting_currency(
 def fiscal_year_end(
     settings: Sequence[SettingsRecord], entity_id: int, cutoff: datetime, period_end: date
 ) -> int:
-    """The fiscal-year-end month governing the period by the cutoff: latest ``valid_from``
-    on or before it (null last), then latest recorded (``settings_as_of``'s rule, D6 D5)."""
+    """The fiscal-year-end month governing the period by the cutoff."""
+    found = setting_as_of(settings, entity_id, SettingKey.FISCAL_YEAR_END_MONTH, cutoff, period_end)
+    if found is None:
+        raise RunResolutionError(_NO_FISCAL_YEAR_END.format(entity_id=entity_id))
+    return int(found)
+
+
+def setting_as_of(
+    settings: Sequence[SettingsRecord],
+    entity_id: int,
+    key: SettingKey,
+    cutoff: datetime,
+    period_end: date,
+) -> str | None:
+    """One setting's value governing the period by the cutoff: latest ``valid_from`` on or
+    before it (null last), then latest recorded (``settings_as_of``'s rule, D6 D5)."""
     records = [
         record
         for record in settings
         if record.entity_id == entity_id
-        and record.setting_key is SettingKey.FISCAL_YEAR_END_MONTH
+        and record.setting_key is key
         and record.recorded_at <= cutoff
         and (record.valid_from is None or record.valid_from <= period_end)
     ]
     if not records:
-        raise RunResolutionError(_NO_FISCAL_YEAR_END.format(entity_id=entity_id))
-    return int(
-        max(
-            records,
-            key=lambda record: (
-                record.valid_from is not None,
-                record.valid_from or date.min,
-                record.recorded_at,
-                record.id,
-            ),
-        ).value_text
-    )
+        return None
+    return max(
+        records,
+        key=lambda record: (
+            record.valid_from is not None,
+            record.valid_from or date.min,
+            record.recorded_at,
+            record.id,
+        ),
+    ).value_text
 
 
 def basis_status(

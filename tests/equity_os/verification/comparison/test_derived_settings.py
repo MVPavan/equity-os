@@ -342,19 +342,11 @@ def test_acquire_replay_ingest_and_the_printed_run_end_to_end(
 
     controls: list[tuple[str, Path, dict[str, Any], tuple[str, set[str]]]] = [
         ("no-exclusion", raw, {"exclude_pdf": lambda *args: None}, ("COMPLETE", set())),
-        (
-            "no-tijori",
-            _denied(tmp_path, TIJORI_SEARCH),
-            {},
-            ("INCOMPLETE", {"PDF", "tijori/financials"}),
-        ),
+        # No consolidated Tijori capture: its side is NO_ATTEMPT, absence, not failure
+        # (VENDOR-1 spec §6.3).
+        ("no-tijori", _denied(tmp_path, TIJORI_SEARCH), {}, ("INCOMPLETE", {"PDF"})),
         ("no-upstox", _denied(tmp_path, UPSTOX_INSTRUMENTS), {}, ("INCOMPLETE", {"PDF"})),
-        (
-            "tijori-standalone",
-            _standalone_tijori(tmp_path),
-            {},
-            ("INCOMPLETE", {"PDF", "tijori/financials"}),
-        ),
+        ("tijori-standalone", _standalone_tijori(tmp_path), {}, ("INCOMPLETE", {"PDF"})),
     ]
     for tag, root, patches, expected in controls:
         db, command, context = replayed(tag, root, **patches)

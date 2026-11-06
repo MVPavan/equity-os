@@ -18,7 +18,8 @@ The composition root: ``PgSettings`` and the runtime pool are built here and now
 The default cutoff is the store clock, never the host clock. Any database, configuration or
 resolution failure before commit exits ``FAILURE`` with a structlog error that names no
 credential. A report refuses a dictionary whose content differs from the run's pin.
-``run`` exits ``SUCCESS_WITH_OPEN_HIGH`` when the run's queue holds an open ``HIGH`` item.
+``run`` exits ``SUCCESS_WITH_OPEN_HIGH`` when the run's queue holds an open ``HIGH`` item; a
+results run without ``--vendor`` has Screener and Tijori sides (``DEFAULT_VENDORS``).
 Queue reads default to the current overlay boundary; ``--as-of`` may not be later. A
 disposition's time is the store clock's; ``dispose`` runs as the owner role, its login read
 from the owner credential file (plan D3, D2 and D11). ``propose`` runs as the runtime role and
@@ -43,6 +44,7 @@ from pydantic import ValidationError
 
 from equity_os.contracts.measurement.canonical import Basis
 from equity_os.contracts.measurement.evidence import FilingFamily, RunMode
+from equity_os.contracts.sourcing.source_catalog import SCREENER_PAGE, TIJORI_PAGE
 from equity_os.contracts.storage.retention import OriginalExpiredError
 from equity_os.contracts.verification.review_queue import (
     DispositionKind,
@@ -140,6 +142,7 @@ _BASES = {basis.value.lower(): basis for basis in Basis}
 _MODES = {mode.value.lower(): mode for mode in RunMode}
 _FAMILIES = {family.value.lower(): family for family in FilingFamily}
 _RESULTS = FilingFamily.FINANCIAL_RESULTS.value.lower()
+DEFAULT_VENDORS: tuple[tuple[str, str], ...] = (SCREENER_PAGE, TIJORI_PAGE)
 
 
 class CompareCommandError(ValueError):
@@ -157,7 +160,7 @@ def add_compare_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     run.add_argument("--cutoff", type=_aware_cutoff)
     run.add_argument("--mode", choices=sorted(_MODES), default=RunMode.AS_KNOWN.value.lower())
     run.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
-    run.add_argument("--vendor", action="append", default=[], type=_vendor)
+    run.add_argument("--vendor", action="append", type=_vendor)
     run.add_argument("--dictionary", default=DEFAULT_VERSION)
     run.add_argument("--mapping-set", default=DEFAULT_VERSION)
     run.add_argument("--normalisation-policy", default=DEFAULT_VERSION)
@@ -277,7 +280,7 @@ def run_compare(args: argparse.Namespace) -> RunRecord:
                 host=settings.host, port=settings.port, name=settings.db
             ),
             mode=_MODES[args.mode],
-            vendors=tuple(args.vendor),
+            vendors=_vendors(args.vendor, _FAMILIES[args.family]),
             versions=ConfigVersions(
                 dictionary=args.dictionary,
                 mapping_set=args.mapping_set,
@@ -440,6 +443,15 @@ def _vendor(value: str) -> tuple[str, str]:
     if not (source_id and separator and surface):
         raise argparse.ArgumentTypeError(_NOT_VENDOR.format(value=value))
     return source_id, surface
+
+
+def _vendors(
+    named: list[tuple[str, str]] | None, family: FilingFamily
+) -> tuple[tuple[str, str], ...]:
+    """The named vendor sides, else Screener and Tijori for a results run (spec §6.3)."""
+    if named:
+        return tuple(named)
+    return DEFAULT_VENDORS if family is FilingFamily.FINANCIAL_RESULTS else ()
 
 
 def _amount(value: str) -> Decimal:

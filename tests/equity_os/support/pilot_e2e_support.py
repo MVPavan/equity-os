@@ -188,6 +188,11 @@ def disclosed(quarter: str, durations: set[str], instant: str) -> set[tuple[str,
     return {(c, p, ",".join(f"{k}={v}" for k, v in sorted(d))) for c, p, d in rows}
 
 
+def _first_party(row: Any) -> list[Any]:
+    """A result row's first-party sides (vendor sides are default since VENDOR-1 §6.3)."""
+    return [side for side in row.source_values if side.source_id is None]
+
+
 def pilot1(
     pilot: Pilot, quarter: str, dictionary: CanonicalDictionary, version: VersionDraft
 ) -> None:
@@ -202,7 +207,7 @@ def pilot1(
     for row in rows:
         canonical, period, _, dims, identity = row.row_id.split("|")
         found.add((canonical, period, dims, identity))
-        sides = {side.representation for side in row.source_values}
+        sides = {side.representation for side in _first_party(row)}
         applicable = row.applicability is not ApplicabilityStatus.NOT_APPLICABLE
         assert sides == (SIDES if applicable else set()), f"PILOT-1: {row.row_id} sides {sides}"
         for side in row.source_values:
@@ -230,10 +235,10 @@ def pilot1(
             Representation.PDF: Fraction(node["pdf"]["lex"].replace(",", ""))
             * UNIT_SCALE[located["u"]],
         }
-        assert sorted(side.representation for side in row.source_values) == sorted(SIDES), (
+        assert sorted(side.representation for side in _first_party(row)) == sorted(SIDES), (
             f"PILOT-1: {quarter} {key} sides are not one XBRL and one PDF"
         )
-        for side in row.source_values:
+        for side in _first_party(row):
             want = lexemes[side.representation]
             assert side.state is SourceState.VALUE and Fraction(side.value or 0) == want, (
                 f"PILOT-1: {quarter} {key} {side.representation.value} side is not VALUE {want}"

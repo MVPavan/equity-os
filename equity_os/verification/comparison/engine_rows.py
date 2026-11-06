@@ -10,7 +10,14 @@ from collections.abc import Mapping, Sequence
 
 from pydantic import BaseModel, ConfigDict
 
-from equity_os.contracts.measurement.canonical import Representation, ValueIdentity, ValueKind
+from equity_os.contracts.measurement.canonical import (
+    ApplicabilityStatus,
+    PeriodKind,
+    PeriodNature,
+    Representation,
+    ValueIdentity,
+    ValueKind,
+)
 from equity_os.contracts.measurement.evidence import (
     FilingPackage,
     Interpretation,
@@ -20,7 +27,7 @@ from equity_os.contracts.measurement.evidence import (
     exact_decimal,
 )
 from equity_os.contracts.measurement.evidence_tier import EvidenceTier
-from equity_os.contracts.measurement.measurement_key import MeasurementKey
+from equity_os.contracts.measurement.measurement_key import MeasurementKey, PeriodInterval
 from equity_os.contracts.measurement.qualification import (
     ProvenCondition,
     QualificationContext,
@@ -37,7 +44,7 @@ from equity_os.extraction.packages.capture_intake import SURFACE_OF
 from equity_os.normalisation.derivation.derived import operand_value
 from equity_os.normalisation.derivation.formula import CalculationResult
 from equity_os.normalisation.dictionary.applicability import ApplicabilityDecision
-from equity_os.normalisation.dictionary.dictionary import DictionaryRow
+from equity_os.normalisation.dictionary.dictionary import DictionaryRow, PeriodAggregationKind
 from equity_os.normalisation.mapping.alignment import AlignmentProof
 from equity_os.normalisation.mapping.interpret import prove_conditions
 from equity_os.normalisation.mapping.mapping import CONTEXT_SCHEMA_IDENTITY
@@ -348,4 +355,24 @@ def output_context(
         surface=member.capture.surface if member else SURFACE_OF[representation].value,
         fiscal_year_end_month=fiscal_month,
         proven=proven,
+    )
+
+
+def derives_q4(
+    row: DictionaryRow,
+    key: MeasurementKey,
+    decision: ApplicabilityDecision,
+    periods: tuple[PeriodInterval, ...],
+    package: FilingPackage | None,
+) -> bool:
+    """Whether a reported row also gets Q4 = FY − 9M (a ``YEAR`` package's quarter)."""
+    return (
+        len(periods) == 2
+        and key.period == periods[0]
+        and decision.status is ApplicabilityStatus.APPLICABLE
+        and row.period_aggregation is PeriodAggregationKind.ADDITIVE_DURATION
+        and row.period_nature is PeriodNature.DURATION
+        and row.value_kind is ValueKind.CURRENCY_AMOUNT
+        and package is not None
+        and package.reporting_kind is PeriodKind.YEAR
     )

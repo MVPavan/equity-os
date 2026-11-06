@@ -25,10 +25,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping
+from datetime import date
 
 from pydantic import BaseModel, ConfigDict
 
-from equity_os.contracts.measurement.canonical import ApplicabilityStatus, Representation
+from equity_os.contracts.measurement.canonical import ApplicabilityStatus, Basis, Representation
 from equity_os.contracts.measurement.evidence import (
     AcquisitionAttempt,
     Interpretation,
@@ -291,7 +292,7 @@ class VendorSides:
         """One table's state: the latest attempt first, then the capture's interpretation."""
         authority = surface_authority(source_id, surface)
         label = f"{surface}:{schema}" if (source_id, surface) in self._shared else surface
-        attempt = self._latest(source_id, surface, key)
+        attempt = self._latest(source_id, surface, key.entity_id, key.basis, period_end(key.period))
         chosen: Interpretation | None = None
         reason: str | None
         if attempt is None:
@@ -342,10 +343,24 @@ class VendorSides:
             occurrence=None if chosen is None else self._occurrences.get(chosen.occurrence_id),
         )
 
+    def group_interpretations(
+        self, entity_id: int, basis: Basis, end: date
+    ) -> list[Interpretation]:
+        """Current interpretations under the pins of each requested surface's latest complete
+        capture for one (entity, basis, period end): what a vendor-only group reads."""
+        found: list[Interpretation] = []
+        for source_id, surface in sorted(self._vendors):
+            attempt = self._latest(source_id, surface, entity_id, basis, end)
+            if attempt is not None and outcome_source_state(attempt.outcome) is None:
+                pinned = self._pinned(attempt)
+                superseded = {item.supersedes_interpretation_id for item in pinned}
+                found.extend(item for item in pinned if item.interpretation_id not in superseded)
+        return found
+
     def _latest(
-        self, source_id: str, surface: str, key: MeasurementKey
+        self, source_id: str, surface: str, entity_id: int, basis: Basis, end: date
     ) -> AcquisitionAttempt | None:
-        """The key's latest attempt whose capture (if any) is registered by the cutoff.
+        """The group's latest attempt whose capture (if any) is registered by the cutoff.
 
         One capture read section by section (Screener) records an attempt per section; the
         capture's outcome is then the first non-``COMPLETE`` one among each section's latest
@@ -356,9 +371,9 @@ class VendorSides:
                 attempt
                 for attempt in self._attempts
                 if (attempt.source_id, attempt.surface) == (source_id, surface)
-                and attempt.entity_id == key.entity_id
-                and attempt.basis is key.basis
-                and attempt.period_end == period_end(key.period)
+                and attempt.entity_id == entity_id
+                and attempt.basis is basis
+                and attempt.period_end == end
                 and (
                     attempt.capture is None or attempt.capture.registered_at <= self._request.cutoff
                 )
@@ -388,21 +403,8 @@ class VendorSides:
     ) -> tuple[SourceState, Interpretation | None, str | None]:
         """The complete capture's one current interpretation of the key in one table."""
         assert attempt.capture is not None and attempt.capture.capture_ref_id is not None
-        capture = attempt.capture.capture_ref_id
-        self._decided.add(capture)
-        extractor = self._triple.extractor(
-            attempt.representation, source_id=attempt.source_id, surface=attempt.surface
-        )
-        pinned = [
-            item
-            for item in self._by_capture[capture]
-            if (item.mapping_set_version, item.normalisation_policy_version, item.extractor_version)
-            == (self._triple.mapping_set, self._triple.normalisation_policy, extractor)
-            and (
-                self._request.mode is RunMode.RETROSPECTIVE
-                or item.recorded_at <= self._request.cutoff
-            )
-        ]
+        self._decided.add(attempt.capture.capture_ref_id)
+        pinned = self._pinned(attempt)
         if not pinned:
             return SourceState.UNAVAILABLE, None, NOT_INTERPRETED_UNDER_PINS
         superseded = {item.supersedes_interpretation_id for item in pinned}
@@ -423,6 +425,24 @@ class VendorSides:
             state = SourceState.VALUE if chosen.value is not None else SourceState.NO_VALUE
             return state, chosen, None
         return SourceState.INVALID, chosen, (chosen.reason or chosen.status).value
+
+    def _pinned(self, attempt: AcquisitionAttempt) -> list[Interpretation]:
+        """A complete attempt's capture interpretations under the pinned triple (and, in
+        ``AS_KNOWN``, recorded by the cutoff)."""
+        assert attempt.capture is not None and attempt.capture.capture_ref_id is not None
+        extractor = self._triple.extractor(
+            attempt.representation, source_id=attempt.source_id, surface=attempt.surface
+        )
+        return [
+            item
+            for item in self._by_capture[attempt.capture.capture_ref_id]
+            if (item.mapping_set_version, item.normalisation_policy_version, item.extractor_version)
+            == (self._triple.mapping_set, self._triple.normalisation_policy, extractor)
+            and (
+                self._request.mode is RunMode.RETROSPECTIVE
+                or item.recorded_at <= self._request.cutoff
+            )
+        ]
 
 
 def internal_conflict(
