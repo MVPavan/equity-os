@@ -487,6 +487,7 @@ def _seed_bytes(relative: str) -> bytes:
 
 # The seed commit predates the (source, surface) shareholding extractors (D8).
 SEED_VENDORS = [key for key in VENDOR_EXTRACTORS if isinstance(key, str)]
+SEED_VENDOR_VERSIONS = {"tijori": "tijori-v4"}  # bumped since the seed commit (VENDOR-1 T2)
 
 
 def _seed_pins(root: Path) -> list[VersionPin]:
@@ -509,6 +510,7 @@ def _seed_pins(root: Path) -> list[VersionPin]:
     vendors = []
     for source_id in SEED_VENDORS:  # a seed-era database pinned these over their old paths
         version, sources = VENDOR_EXTRACTORS[source_id]
+        version = SEED_VENDOR_VERSIONS.get(source_id, version)
         old = tuple(_seed_path(path).split("/", 2)[2] for path in sources)  # under the old root
         for path, moved in zip(old, sources, strict=True):
             (root / path).parent.mkdir(parents=True, exist_ok=True)

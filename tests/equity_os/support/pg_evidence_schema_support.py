@@ -41,8 +41,9 @@ PERIOD_END = date(2025, 9, 30)
 SHA_A = "a" * 64
 SHA_B = "b" * 64
 # 0001's 33 tables, 0003's version_pins, 0006's four queue tables, 0007's construction_traces,
-# 0008's queue_item_traces, 0010's seven fact-store tables and 0011's fact_admissions.
-EXPECTED_TABLE_COUNT = 48
+# 0008's queue_item_traces, 0010's seven fact-store tables, 0011's fact_admissions and 0047's
+# vendor_counterexamples and vendor_fallback_outcomes.
+EXPECTED_TABLE_COUNT = 50
 
 
 def _connect(db: PgTestDatabase, role: PgRole) -> psycopg.Connection:
@@ -591,6 +592,18 @@ def seeded(pg_db: PgTestDatabase, runtime: psycopg.Connection) -> dict[str, int]
             },
         )
     _seed_legacy_store(runtime, ids)
+    with runtime.transaction():
+        ids["vendor_counterexamples"] = _insert(
+            runtime,
+            "vendor_counterexamples",
+            {"class_digest": SHA_A, "result_id": ids["results"], "run_id": ids["runs"]},
+        )
+        ids["vendor_fallback_outcomes"] = _insert(
+            runtime,
+            "vendor_fallback_outcomes",
+            {"run_id": ids["runs"], "entity_id": ids["_entity"], "period_end": PERIOD_END}
+            | {"basis": "CONSOLIDATED", "outcome": "FILING_UNAVAILABLE", "cells": Jsonb([])},
+        )
     return ids
 
 

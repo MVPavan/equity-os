@@ -92,8 +92,8 @@ EXISTING_PINS = {
         "9ffad9ac400ba8913edf7bdc69151ce24448ed53311ee4d9c7e82f64d90b15a0",
     ),
     ("tijori", "financials"): (
-        "tijori-v4",
-        "f7f3689c338667cae8a99adcc2ba4bf0fade9294a3ccea690c3b63c57f099901",
+        "tijori-v5",
+        "46b534f205691fcfc173657098858175bb3b35ba5e69a1120a8e3d7810ef99c9",
     ),
     ("upstox", "income-statement"): (
         "upstox-v2",
@@ -280,7 +280,7 @@ def test_tree_a_deeper_drilldown_level_is_unsupported_schema(
 def test_pins_existing_vendor_extractors_are_unchanged_and_tree_sources_are_pinned(
     guarded: PgTestDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The ``screener-v1``, ``tijori-v4`` and ``upstox-v2`` pins equal HEAD's. The tree surfaces
+    """The ``screener-v1``, ``tijori-v5`` and ``upstox-v2`` pins equal HEAD's. The tree surfaces
     pin their own versions, and one changed byte in the tree extractor under its pinned version
     is drift, refused before any vendor evidence is written."""
     for pair, pinned in EXISTING_PINS.items():
