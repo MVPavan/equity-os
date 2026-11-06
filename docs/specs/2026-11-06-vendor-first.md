@@ -405,6 +405,10 @@ surface in `config/sourcing/vendor_surface/surfaces.yaml`.
 - **Bound to the report.** A span is usable in a report only if code resolves the span's company
   reference to the report's issuer (a market page carries many issuers) and its capture was
   registered at or before the report's cutoff.
+  For vendor text, capture registration must be at or before the report's source cutoff S, while
+  the selected extraction outcome, its claim rows and the issuer-binding evidence must be recorded
+  at or before its knowledge cutoff K; the same boundaries apply during drafting, checking and
+  sealing.
 - **Resolvable reference.** A report cites a span as (`capture_ref_id`, offsets, capture hash);
   citation resolution re-reads the offsets from the retained capture and refuses a mismatch.
 - **Never a number source.** `vendor_text_claims` never produce occurrences or interpretations.

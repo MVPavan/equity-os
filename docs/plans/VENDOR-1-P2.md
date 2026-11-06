@@ -1,10 +1,10 @@
 # VENDOR-1 Phase 2 Implementation Plan
 
-**Status:** revised after Sol plan review 1 (REQUEST_CHANGES, 17 findings, 2026-11-06); for
+**Status:** revised after Sol plan review 2 (REQUEST_CHANGES, R2-01–R2-04, 2026-11-06); for
 re-review. **Bead:** `eqos-awnc`.
 **Origin:** `docs/specs/2026-11-06-vendor-first.md` §7, approved by gpt-6.1-sol in round 3 on
 2026-11-06, as amended by the Phase 2 scope amendment (§7, from this review). §1–§4 give the
-owner's order and defaults. Code facts were read at `19545c8e` and rechecked at `517198f6`.
+owner's order and defaults. Code facts were read at `19545c8e` and rechecked at `b9e96e4a`.
 Retained page formats come from `data/raw/vendor-surface/2026-10-28/` and `data/raw/snapshots/v1/`,
 read for structure only. The store was **not queried** for this plan; read-only authentication
 failed, so no store fact below is established.
@@ -148,7 +148,9 @@ phase's only live write: it captures Apar's Screener concall summaries. Task 6 i
 | `equity_os/extraction/surfaces/vendor_text_readers.py` | create | `READERS`, `ReaderText`, `TextItem`, the four Screener readers |
 | `equity_os/extraction/model/vendor_surface_claims.py` | modify | keyed query, address input, `spans.v3` |
 | `migrations/0051_version_source_cutoff.sql` | create | `eqos.version_source_cutoffs` |
-| `equity_os/contracts/measurement/evidence.py`, `equity_os/storage/records/store.py` | modify | `VersionDraft.source_cutoff`; `create_version` writes the row |
+| `equity_os/contracts/publication/ledger.py`, `equity_os/storage/records/store.py` | modify | `VersionDraft.source_cutoff`; `create_version` writes the row, `read_version` loads it |
+| `equity_os/interface/commands/sourcing/vendor_surface_cli.py`, `equity_os/sourcing/surfaces/vendor_surface_capture.py` | modify | `--frozen` request set and `--budget` for `vendor capture` |
+| `equity_os/publication/revision/rework.py` | modify | the vendor section is regenerated, never a preserved scaffold |
 | `equity_os/publication/checking/vendor_text.py` | create | `VT_ANCHOR`, `vendor_ids`, `eligible_spans` |
 | `equity_os/publication/checking/numeral_scan.py` | modify | `has_numeral` |
 | `equity_os/publication/checking/citations.py` | modify | `resolve_location` vendor branch, `source_cutoff` argument |
@@ -169,8 +171,10 @@ Every other AI route stays denied.
 
 Files:
 - Modify: `vendor_surface_fetch.py`, `surfaces.yaml`, `sources.yaml` (Screener `capture_specs`),
-  `catalog.yaml`, `vendor_surface_expand.py`, `runbook.md`, `not-capturable.md`
-- Test: `test_vendor_surface_fetch.py`, plus one replay case in `test_vendor_surface_company.py`
+  `catalog.yaml`, `vendor_surface_expand.py`, `vendor_surface_capture.py`,
+  `vendor_surface_cli.py`, `runbook.md`, `not-capturable.md`
+- Test: `test_vendor_surface_fetch.py`, plus replay and frozen-set cases in
+  `test_vendor_surface_company.py`
 
 Interfaces:
 - Produces:
@@ -181,7 +185,14 @@ Interfaces:
     evidence status "not yet captured", updated from Task 2's structure record;
   - `parent_surface` maps it to `company-page`;
   - `EXPANSIONS["screener_concall_summaries"]`, one `child(spec, context, concall_id=...)` per
-    distinct advertised id.
+    distinct advertised id;
+  - `vendor capture --frozen <file> --budget <n>` (R2-03): `<file>` lists the permitted registered
+    addresses, one per line; `capture_company(..., frozen: frozenset[str] | None = None)` refuses
+    any request outside it before fetching, and once the parent pages are fetched and expanded
+    (they run first), stops if the requested-or-pending set differs from it in either direction,
+    before any child is fetched. The stop exits non-zero and names the differing addresses'
+    coordinates. `--budget` sets `VendorFetcher(site_budget=n)`, which counts every actual
+    request, parents and identity pages included.
 
 Approach: Reading 1. Remove only the `/concalls/summary/` entry. The expansion reads the Notes
 button addresses from the `#documents` concalls rows of the parent page, which `read_identity` has
@@ -193,6 +204,9 @@ Verification:
 - `is_denied` is false for `/concalls/summary/1/` and still true for `/results/concall-summaries/`
   and `/annual-reports/1/summary/`.
 - Replay over Apar's retained company page yields one request per distinct Notes button.
+- With a scripted opener, a parent advertising a child outside the frozen set, or missing one,
+  stops with no child fetched; a budget smaller than the set stops at the budget, and no unlisted
+  child is ever fetched.
 - `test_screener_documents.py` and the vendor-surface suites pass unchanged.
 
 Dependencies: None.
@@ -215,10 +229,17 @@ Phase 1's live protocol (`docs/plans/VENDOR-1-P1.md`, steps 1–6) applies, with
 - **Equivalence.** Live must equal rehearsal on the set of `(surface, registered address,
   issuer)` requests, their outcome codes, and table deltas and row counts. Only body and blob
   hashes may differ.
-- **Stops.** Stop before live if: the advertised summary set changed, any auth refusal occurred,
-  or a site `STOP-<site>` marker exists. A stop is never cleared to continue.
-- **Budget preflight.** From the latest retained Apar company page (read-only), count the parent,
-  identity pages and advertised summaries; twice that count must be ≤ 350, or stop.
+- **Frozen request set.** Preflight (read-only, no network request) replays Task 1's expansion
+  over the latest retained Apar company page and writes `frozen.txt`: the parent, identity pages
+  and advertised summary addresses, P of them. It is hashed with `commands.txt`. Rehearsal and
+  live both run with `--frozen frozen.txt`, so a changed parent stops the command before any child
+  is fetched (Task 1).
+- **Combined budget.** 2P ≤ 350, or stop. Rehearsal runs with `--budget P`; live runs with
+  `--budget min(P, 350 − R)`, where R is the rehearsal's actual request count from its log.
+  Preflight makes no request, so rehearsal plus live never exceeds 350.
+- **Stops.** Stop before live if: rehearsal stopped on the frozen set or budget, any auth refusal
+  occurred, or a site `STOP-<site>` marker exists. A stop is never cleared to continue; its log
+  stays in `p2-ground/`. The post-command equivalence comparison remains a separate check.
 - **Serial ownership.** The orchestrator runs Task 2 and Phase 1 Tasks 13–14 one at a time, never
   overlapping. Each baseline and rehearsal is taken on the main revision after the preceding live
   task; no earlier rehearsal is reused.
@@ -232,7 +253,8 @@ Files: none committed except the catalog evidence update (orchestrator). Logs, c
 and the structure record go in `scratchpad/vendor-first/p2-ground/`.
 
 Commands, from the main checkout on Task 1's tip:
-`eqos vendor capture --symbol APARINDS --surface screener:concall-summary`.
+`eqos vendor capture --symbol APARINDS --surface screener:concall-summary --frozen
+frozen.txt --budget <n>` (live protocol).
 
 Record, from the retained bodies and as structure only:
 - the summary region's xpath;
@@ -321,8 +343,8 @@ Files:
 - Create: `equity_os/publication/checking/vendor_text.py`,
   `migrations/0051_version_source_cutoff.sql`
 - Modify: `numeral_scan.py` (`has_numeral`), `citations.py` (`resolve_location`), `lifecycle.py`
-  (the two `resolve_location` partials), `evidence.py` (`VersionDraft.source_cutoff`), `store.py`
-  (`create_version`)
+  (the two `resolve_location` partials), `contracts/publication/ledger.py`
+  (`VersionDraft.source_cutoff`), `store.py` (`create_version`, `read_version`)
 - Test: `test_vendor_text_citation.py` (`pg`, retained captures), `test_audit_numeral_scan.py`
 
 Interfaces:
@@ -334,11 +356,25 @@ Interfaces:
   - `eligible_spans(cursor, *, entity_id, source_cutoff, knowledge_cutoff, snapshots,
     capture_ref_id=None) -> tuple[IssuerSpan, ...]` with `IssuerSpan(capture_ref_id, site,
     surface, registered_at, start, end, sha256, text)`;
-  - `eqos.version_source_cutoffs(version_id PK → report_versions, source_cutoff NOT NULL)`,
-    insert-only, `source_cutoff <= knowledge_cutoff`. `create_version` writes it when
-    `VersionDraft.source_cutoff` is set; a revision inherits its predecessor's row.
-  - `resolve_location(..., source_cutoff: datetime | None)`; `lifecycle.py` passes the version's
-    row, or `None`.
+  - `VersionDraft.source_cutoff: datetime | None = None` (outside `content_hash`, which covers
+    sections and claims only);
+  - `eqos.version_source_cutoffs(version_id PK → report_versions, source_cutoff NOT NULL)`, below;
+  - `resolve_location(..., source_cutoff: datetime | None)`; `lifecycle.py` passes
+    `draft.source_cutoff` from `read_version`.
+
+The cutoff row (R2-02, R2-04). Migration `0051`:
+- a `BEFORE INSERT` trigger takes `eqos.lock_subject('REPORT_VERSION', NEW.version_id)` and
+  refuses unless the version's `created_xid = txid_current()` (the row is written only in the
+  version's creating transaction, so never attached late or to an old sealed version) and
+  `NEW.source_cutoff <= report_versions.knowledge_cutoff`;
+- `check_version_seal` (`0012`) is installed on the table too;
+- `reject_mutation` refuses update, delete and truncate, as for `report_sections`.
+
+`create_version` writes at most one row, right after the version row: the draft's
+`source_cutoff` if set (an explicit run cutoff wins); otherwise the predecessor's row if one
+exists; otherwise none, and the version resolves no vendor location. `read_version` loads the
+row by a left join, so narration, which copies `read_version`'s draft with `predecessor_id`, keeps
+its predecessor's boundary and never widens it. Existing sealed digests are untouched.
 
 Approach: §7 "Bound to the report" and "Resolvable reference", readings 3, 4, 5 and 7.
 `eligible_spans` applies reading 7's selection, then per selected capture, once:
@@ -352,7 +388,8 @@ equals the stored text, one item contains `[start, end)` with a reference equal 
 
 `resolve_location` routes an anchor matching `VT_ANCHOR` to `eligible_spans(...,
 capture_ref_id=<capture>)` and passes only if the anchor's offsets and hash are among the results.
-A `None` source cutoff (an imported or pre-migration version) resolves nothing. The first-party
+A `None` source cutoff (no row: pre-migration, or no explicit or inherited cutoff) resolves
+nothing. The first-party
 PDF branch is unchanged. `SOURCE_QUOTE` resolution is not touched; a vendor capture stays
 unresolvable as a claim citation. `ResolvedCitation.admission_label` stays `None` for
 non-admission references. The global `scan_section` rules are not changed.
@@ -368,6 +405,15 @@ Verification, each on one retained span:
 - after licence end (tombstoned text) it fails; a monkeypatched reader that moves the slice fails;
 - `has_numeral` unit cases: a digit, a non-ASCII numeral, a number word, a date and a period label
   are numerals; plain prose is not.
+
+The cutoff row (`pg`):
+- inserting a first row for an existing version in a later transaction fails, sealed or not;
+  update, delete and truncate fail; S > K fails;
+- a version with no row resolves nothing, and every sealed digest recorded before the migration
+  still verifies;
+- narration of a version with S1 stores S1; a fresh same-period successor with S2 ≠ S1 stores S2
+  and resolves against S2 at drafting, checking and sealing; a draft with no cutoff whose
+  predecessor has S1 stores S1; one with neither stores no row.
 
 A `NumericClaim` whose `SOURCE_QUOTE` names the span's capture checks `UNRESOLVED`; the same claim
 citing an admitted fact id checks `MATCH`, with Task 9's label and witnesses. If the store refuses
@@ -388,7 +434,7 @@ draft that adds one cannot seal.
 
 Files:
 - Create: `equity_os/publication/drafting/vendor_summary.py`
-- Modify: `run_draft.py`
+- Modify: `run_draft.py`, `rework.py`
 - Test: `test_data_stage2_e2e.py`
 
 Interfaces:
@@ -405,7 +451,12 @@ capture date):
 - one `{{e:inferred}}` paragraph per span with its location marker.
 
 With no spans the section is omitted. `write_run_draft` adds the section when present and sets
-`VersionDraft.source_cutoff = update.source_cutoff`. After Task 9 lands, remeasure `run_draft.py`
+`VersionDraft.source_cutoff = update.source_cutoff`.
+
+Rework (R2-01): the section is regenerated on every run, so it is neither a carried line nor a
+preserved scaffold. `rework.py:255` excludes `VENDOR_SUMMARY` alongside `DERIVED | DISCLOSED |
+NARRATIVE`, which keeps it out of `Rework.scaffolds` and `Rework.lines`; `Gate.close` therefore
+never calls `section_body` for it. No other section's scaffold check changes. After Task 9 lands, remeasure `run_draft.py`
 and move one coherent, self-contained part of it into a new module so it ends at ≤ 800 lines; no
 line folding and no unrelated refactor.
 
@@ -415,8 +466,10 @@ digit, one with a number word, one with a date or period label, one holding a va
 `{{c:…}}` key):
 - the sealed body holds the first span under its heading, and none of the others;
 - the draft validates `AS_KNOWN`;
+- claim rework: rejecting an ordinary results claim and rerunning through the normal rework path
+  regenerates the same vendor section and reaches checking and sealing;
 - a revision that adds the number-word span, the date span or the `{{c:…}}` span with its valid
-  marker fails checking and sealing;
+  marker fails checking and sealing with the vendor citation refusal, not a rework error;
 - a report for another issuer has no vendor section and seals.
 
 Dependencies: Task 4. Phase 1 Task 9 must have landed (`run_draft.py`, the Stage 2 e2e).
