@@ -482,7 +482,9 @@ or capture. So the bank route starts from evidence:
    through the existing hash-pinned intake contract; unsupported PDFs stay retained with an
    explicit limitation.
 5. **Refuse the rest.** Any capability the filing does not support (e.g. a statement or segment
-   table absent from it) stays refused with a stated reason; nothing is guessed.
+   table absent from it) stays refused with a stated reason wherever its row applies; a row the
+   unchanged period, disclosure or basis rules make inapplicable stays `NOT_APPLICABLE` by that
+   rule. Nothing is guessed.
 
 **Acceptance.** The grounding record exists with its capture ids, retained before any onboarding
 check ran. ICICIBANK onboards as `BANK` with the evidenced framework; an NBFC fixture stays

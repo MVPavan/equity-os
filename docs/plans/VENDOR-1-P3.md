@@ -1,7 +1,9 @@
 # VENDOR-1 Phase 3 Implementation Plan: banks
 
-**Status:** fix round 1 after Sol plan review 1 (`REQUEST_CHANGES`, 26 findings F01–F26, branch
-rulings and amendments A1–A6, all applied); for Sol re-review. **Bead:** `eqos-awnc`.
+**Status:** fix round 2 after Sol plan review 2 (`REQUEST_CHANGES`: R2-01–R2-05, F08/F19
+confirmations, rulings on items 1–4, notes; all applied over round 1's F01–F26 and A1–A6); for Sol
+re-review. **Bead:** `eqos-awnc`. **Prerequisite:** FIVE-1 Tasks 1–2
+(`docs/plans/FIVE-1-enablement.md`) gate Task 11 and phase completion; Tasks 1–10 proceed.
 **Origin:** `docs/specs/2026-11-06-vendor-first.md` §8 (authoritative, amended per A1–A5), §6.1
 (A6), §6.6 (A3), §1–§4 (owner order; decision 2: ICICIBANK's analysis basis is standalone) and §6.8
 step 1. Code facts read at `517198f6`. Phase 1 Task 10 (`results_filing.py`, `fallback.py`,
@@ -18,7 +20,8 @@ eligibility evidence (§6.5 row 3 stays unavailable for `BANK`); report drafting
 the Stage 2 report path for a bank; vendor text (Phase 2); moving Apar's pilot pins
 (`PILOT_VERSIONS`, `interface/entry/cli.py`); admitting facts on live; the five-company test (§9);
 bank KPIs, segments or divisions beyond the filed statements (Data Extraction rule); re-ingesting
-Apar on live under the bumped extractors (see Interactions).
+Apar on live under the bumped extractors (a follow-up that gates Apar's next live run; see
+Interactions); the acquisition route itself (FIVE-1).
 
 **Constraints:**
 - Grounding comes first, and nothing later presumes a bank filing format. Content that depends on
@@ -125,7 +128,7 @@ is unconditional; only the cells below vary.
 | | | **B1b** another framework | Task 4 adds one value named from the declaration; Task 5 adds its phrases with the cited locator |
 | | | **B1c** none, ambiguous or conflicting | stop |
 | B1′ | where the declaration is | **X** the instance (text block, QName and context) | existing `verify_xbrl_framework` path |
-| | | **P** the results PDF only | Task 5's PDF framework evidence path; needs B7 identity, period and basis association, else B1c |
+| | | **P** the results PDF only | Task 5's PDF framework evidence path, carried into every ingest, reuse and fallback (Tasks 5, 7); needs B7 identity, period and basis association, else B1c |
 | B2 | IntegratedFinance form namespace segment, every grounded instance | **B2a** uncontested `Banking` on all | Task 5 maps `Banking` → `BANK` |
 | | | **B2b** another, mixed or contested form | stop |
 | B3 | fact namespace, scope concept, reporting-period concept | **B3a** a registered `in-capmkt` `TaxonomySpec` whose scope and period concepts the instance uses | no parser change; reuse entries per Task 8's inventory |
@@ -139,10 +142,10 @@ is unconditional; only the cells below vary.
 | B6 | raw collapsed integrated rows' `type` | **B6a** `Integrated Filing- Financials` | no change |
 | | | **B6b** one other value on every bank integrated row | Task 5 lets `qualifies` accept that value; the instance's form check then admits only `Banking` |
 | | | **B6c** tie, missing broadcast or no instance | stop |
-| B7 | results PDF against the full intake contract: `Scrip Symbol :` marker (`member_identity.py:181`), text layer, period and basis heading, statement lines | **B7a** contract passes on the retained PDF | Task 8 writes PDF entries and `config/runs/icicibank-<period>.yaml` (`pdf_parse`, sha256); Task 13 ingests the XBRL+PDF package |
-| | | **B7b** any part fails or no PDF | XBRL-only package, PDF retained with an explicit limitation, PDF claims `NOT_ASSESSED`; with B1′ P → B1c |
-| B8 | per statement, period kind and basis: presence in the XBRL; statement anchor fit (`statement_anchors/v1`, `v2`) | present | mapped in Task 8; ledger `VALUE` |
-| | | absent | rows and required-period rules unchanged; ledger `UNSUPPORTED` with reason; the run's existing missing/refusal state |
+| B7 | results PDF against the full intake contract: `Scrip Symbol :` marker (`member_identity.py:181`), text layer, period and basis heading, statement lines | **B7a** contract passes on the retained PDF | Task 5's staged inputs carry the PDF member; Task 8 writes PDF entries and `config/runs/icicibank-<period>.yaml` (`pdf_parse`, sha256); Task 13 ingests the XBRL+PDF package from the staged inputs |
+| | | **B7b** any part fails or no PDF | XBRL-only package and staged inputs, PDF retained with an explicit limitation, PDF claims `NOT_ASSESSED`; with B1′ P → B1c |
+| B8 | per statement, period kind and basis: presence in the XBRL; statement anchor fit (`statement_anchors/v1`, `v2`) | present | mapped in Task 8; capability `SUPPORTED` |
+| | | absent | rows and required-period rules unchanged; capability `UNSUPPORTED` with reason; each key's expected result follows the unchanged rules (ledger, Task 3) |
 | | | anchors do not match bank statements | Task 8 adds `statement_anchors/v3.yaml` from the evidenced elements, in v10 |
 | B9 | vendor tables in Task 11's captures: sections, unit and precision evidence (pending until Task 12) | **B9a** a section's unit and precision are evidenced and its layout is distinct | Task 12 adds a rule to `tijori/v6/display.yaml` |
 | | | **B9b** no evidence, or an incompatible layout shares a section key without an evidenced distinction | section stays `UNKNOWN_UNIT`, fails closed; no global rule overwritten |
@@ -154,13 +157,19 @@ is unconditional; only the cells below vary.
 
 | Pin | Bytes changed by | Consequence |
 |---|---|---|
-| `XBRL_EXTRACTOR_VERSION` (hashes `member_identity.py`, `xbrl_taxonomies.py`) | Task 5; Task 8 on B3b | bumped once in Task 5; later Phase 3 edits before Task 11 stay under it (no pin of it exists yet); any edit after Task 11 bumps again |
-| `PDF_EXTRACTOR_VERSION` (hashes `member_identity.py`) | Task 5 | bumped in Task 5 |
+| `XBRL_EXTRACTOR_VERSION` (hashes `member_identity.py`, `first_party_extract.py`, `xbrl_taxonomies.py`) | Task 5; Task 8 on B3b | bumped once in Task 5 (F08 rule below) |
+| `PDF_EXTRACTOR_VERSION` (hashes `member_identity.py`, `first_party_extract.py`) | Task 5 | bumped once in Task 5 (F08 rule below) |
 | `SHP_EXTRACTOR_VERSION` (hashes `member_identity.py`) | Task 5 | bumped in Task 5 |
 | Tijori vendor extractor (`VENDOR_EXTRACTORS`) | Task 12 (display loaded from the mapping set) | bumped in Task 12 |
 | `formula_set_version` | Task 6 (`derived.yaml` applicability) | v4 `metadata.yaml` declares `formula_set_version: v4` |
 | `_SEMANTICS_VERSION` (`run_config.py:195`) | Task 7 (framework and issuer applicability change how inputs become results) | bumped; `require_pins` refuses an earlier semantics pin |
 | mapping set content | Task 8 (v10), Task 12 (v11, names `tijori/v6/display.yaml`) | the display file joins the set's content hash via the new `display_file` key |
+
+**F08 rule (Sol confirmed).** One development version per extractor may span Tasks 5–8 while its
+bytes are unfinalised and pinned only in disposable `eqos_test_*` databases (recreated when bytes
+change). Any durable pin of it (live, a retained rehearsal copy, another phase's use) before its
+bytes are final forces a new version; "Task 11 has not run" is not proof that none exists — Task 10
+queries for it. Any edit after Task 10's gate bumps again.
 
 No compatibility hash alias. Old stored evidence keeps its pins; replaying a pre-Phase-3 run at the
 new code is refused by version, never recomputed (historical replay needs the old checkout).
@@ -180,9 +189,10 @@ new code is refused by version, never recomputed (historical replay needs the ol
 | `equity_os/companies/identity/identity_seed.py` | modify | 4 | two setting keys, `OWNER_DECISION` |
 | `equity_os/contracts/measurement/observation.py` | modify | 4 (B1b) | one `AccountingFramework` value |
 | `migrations/0050_issuer_class.sql` | create | 4 | settings-key and evidence-kind CHECKs |
-| `equity_os/companies/onboarding/{verification,discovery,derived_settings}.py`, `nse_filings.py` | modify | 5 | form, framework, identity, bank PDF acquisition, analysis-basis selection, basis status, B6b, B10b |
+| `equity_os/companies/onboarding/{verification,discovery,derived_settings}.py`, `nse_filings.py` | modify | 5 | form, framework, identity, bank PDF acquisition, analysis-basis selection, basis status, B6b, B10b; `derived_settings.framework_evidence` reader (R2-01) |
 | `equity_os/extraction/packages/{member_identity,capture_intake}.py` | modify | 5 | bank form predicate, PDF framework evidence, B1b phrases; `xbrl_source_id(issuer_class, basis)`; refuse `nse-grounding` members |
-| `equity_os/companies/onboarding/bank_onboarding.py` | create | 5 | decision binding, issuer-class inputs, pin choice |
+| `equity_os/extraction/packages/{first_party_extract,first_party_ingest}.py` | modify | 5 | `IngestRequest.framework_evidence`; `_read_xbrl` verifies with it on fresh extraction and reuse; its sha256 joins the extraction context (R2-01) |
+| `equity_os/companies/onboarding/bank_onboarding.py` | create | 5 | decision binding, issuer-class inputs, pin choice, `stage_inputs` (R2-02) |
 | `equity_os/contracts/companies/onboarding.py` | modify | 5 | `BANK_ONBOARDING_VERSIONS` |
 | `config/companies/basis_decisions/icicibank.yaml` | create | 5 | the decision binding |
 | `equity_os/verification/admission/vendor_first.py` | modify | 4, 5 | `IssuerClass.NON_FINANCIAL` (4); `issuer_class` per reading 4 (5) |
@@ -191,7 +201,7 @@ new code is refused by version, never recomputed (historical replay needs the ol
 | `equity_os/normalisation/dictionary/{dictionary,applicability}.py` | modify | 6 | `issuer_applicability`, context `issuer_class` |
 | `equity_os/verification/comparison/engine_issuer_context.py` | create | 7 | `issuer_context(settings, entity_id, period_end, cutoff)` |
 | `equity_os/verification/comparison/{engine,engine_vendor_context,run_family,fact_view}.py` | modify | 7 | pass the context where keys, packages and lookups are chosen (engine net ≤ +10) |
-| `evidence_cli.py`, `vendor_reingest.py`, `verification/admission/fallback.py` | modify | 7 (+12 `vendor_reingest`) | entity framework and source; display from the set (12) |
+| `evidence_cli.py`, `vendor_reingest.py`, `verification/admission/fallback.py` | modify | 7 (+12 `vendor_reingest`) | entity framework, framework evidence and source; reingest's Screener binding via `verification.screener_topology` (R2-04); display from the set (12) |
 | `config/normalisation/mappings/xbrl/v6/*`, `statement_anchors/v3.yaml` (B8), `pdf/v3/results_layout_banking.yaml` and `config/runs/icicibank-<period>.yaml` (B7a), `mappings/v10.yaml` | create | 8 | bank first-party entries and set |
 | `equity_os/extraction/xbrl/xbrl_taxonomies.py` | modify | 8 (B3b) | evidenced `TaxonomySpec` |
 | `equity_os/normalisation/mapping/mapping.py` | modify | 12 | optional `display_file` set key |
@@ -262,8 +272,8 @@ request and response with sha256) is the retained response manifest. The rehears
 fresh root copies) and live run the same command in replay mode (`--generation N`), so inputs are
 identical by construction; the generation manifest's sha256 is in `commands.txt`. A drift restart
 replays the same generation. Delta normalisation stays ids and timestamps only. After each command,
-the new files under the snapshot and raw roots (path, sha256) are listed; live's must equal the
-rehearsal's.
+the new files under the snapshot and raw roots (path, sha256), including Task 11's staged inputs
+under `<raw-root>/inputs/`, are listed; live's must equal the rehearsal's.
 
 **Allowlists (F14).** Fixed in `commands.txt` before the rehearsal from this table, never widened
 from rehearsal output; each listed table's own sequence may advance, no other.
@@ -274,12 +284,16 @@ from rehearsal output; each listed table's own sequence may advance, no other.
 | `onboard --ground` replay | `capture_refs`, `capture_addresses`, `capture_states` |
 | `onboard` replay | identity: `reporting_entities`, `securities`, `listings`, `identifier_relationships`, `identity_events`, `identity_event_edges`, `namespace_verifications`; onboarding: `onboarding_records`, `settings_records`, `evidence_inputs`, `evidence_input_captures`, `entity_basis_status`; captures as above; package: `filing_packages`, `package_members`, `package_statements`, `package_statement_evidence`, `segment_members`, `segment_member_evidence`; extraction: `occurrences`, `interpretations`, `interpretation_operands`, `interpretation_condition_evidence`, `acquisition_attempts`; vendor: `vendor_values`, `vendor_outcomes`, `vendor_parser_versions`, `vendor_basis_bindings`; `version_pins` |
 | `evidence ingest` | package and extraction tables as above; captures; `version_pins` |
-| `vendor reingest` | `vendor_values`, `vendor_outcomes`, `vendor_parser_versions`, `interpretations`, `interpretation_operands`, `version_pins` |
-| `compare run` | `runs`, `run_versions`, `run_inputs`, `results`, `result_source_values`, `result_surfaced_restatements`, `calculation_traces`, `calculation_trace_operands`, `construction_traces`, `pair_outcomes`, `queue_items`, `queue_item_inputs`, `queue_item_traces`, `queue_run_items`, `version_pins` |
+| `vendor reingest` (`ingest_vendor_retained`) | `acquisition_attempts`, `occurrences` (`put_generation`; a new generation under Task 12's Tijori bump), `interpretations`, `interpretation_operands`, `interpretation_condition_evidence`, `version_pins`; conditional: `calculation_traces`, `calculation_trace_operands`, `construction_traces` (constructions); `capture_refs` sequence only (`put_capture_ref` re-registers an existing capture, `ON CONFLICT DO NOTHING`, no row) |
+| `compare run` | `runs`, `run_versions`, `run_inputs`, `results`, `result_source_values`, `result_surfaced_restatements`, `calculation_traces`, `calculation_trace_operands`, `construction_traces`, `pair_outcomes`, `alignment_proofs`, `alignment_proof_participants` (`resolve.py`), `queue_items`, `queue_item_inputs`, `queue_item_traces`, `queue_run_items`, `version_pins`; conditional: `pair_adjustments` (`run_store.py`, applicable adjustments), `definition_sets`, `definition_records` (`run_config.pin_config`; rows or sequence effects when v4/v11 definitions are first published) |
 
-Task 11 confirms the onboarding row against onboarding's write paths (`record`, `store_captures`,
-`derive`, `_ingest`, vendor capture) before its rehearsal; a needed table outside it is an
-amendment, not an edit.
+`evidence ingest` writes no `vendor_*` table; `vendor reingest` writes none either (those belong to
+the vendor-surface path). Conditional rows may be absent; a listed table's sequence may advance
+without a row. Before its rehearsal, Task 11 confirms the onboarding row against onboarding's final
+write paths (`record`, `store_captures`, `derive`, `_ingest`, the PDF member and binding paths,
+vendor capture), and Task 13 re-derives its three rows from the final call paths (ruling 3). A
+missing legitimate table is a reviewed plan amendment before the rehearsal; a rehearsal never
+widens a list.
 
 **Rehearsal-only segment.** Admissions and the Apar regression run on the rehearsal copy only after
 every live-equivalent command's delta is recorded, with their own inventory; their writes never
@@ -326,10 +340,14 @@ each later task implements.
 
 Files: modify this plan ("Resolved branches"; arms not taken struck from Tasks 4–8) and the record
 (two appended sections):
-- **Ledger** (F12, F13): per v4 key, period kind and basis for the acceptance period: `VALUE`
-  (shared and bank lines the filing carries), `NOT_APPLICABLE` (non-financial-only), or
-  `UNSUPPORTED` with reason (capabilities the filing lacks); and the admissible cells expected to
-  admit on the rehearsal (§6.5 rows 1, 2 or 5).
+- **Ledger** (F12, F13, R2-05): for every v4 key in the acceptance run's family and scope (each
+  excluded family named with its disposition), per period kind and basis, two separate columns:
+  *capability* (`SUPPORTED`, or `UNSUPPORTED` with reason) and *expected result*: `VALUE`;
+  `NOT_APPLICABLE` with its rule (`ISSUER_RULE_ID` for issuer-excluded rows; the unchanged
+  period, disclosure or basis rule otherwise, e.g. `total_assets` in a Q1/Q3 filing with no
+  balance sheet under `results.balance_sheet`); or refusal with its stated reason (an applicable
+  key the filing cannot supply). Plus the admissible cells expected to admit on the rehearsal
+  (§6.5 rows 1, 2 or 5).
 - **Evidence pins** (F16): the two period ends, analysis basis, instance sha256 per period and
   basis, and the PDF sha256 (B7a or B1′ P).
 
@@ -339,7 +357,9 @@ question. Sol reviews the amendment as a plan review, checking each claim's mean
 basis, period), not only that its quote exists. If the contract text changes (e.g. the B1b
 framework name), the amendment carries the spec wording and Task 9 applies it.
 
-Verification: every arm and ledger line cites a record locator; Sol `APPROVE`.
+Verification: every arm and ledger line cites a record locator; code evaluates each ledger line's
+expected result against the v4 rules for the period's statements present, and every
+`NOT_APPLICABLE` line names the rule that returns it; Sol `APPROVE`.
 
 Dependencies: Task 2.
 
@@ -379,7 +399,9 @@ Files:
   basis)`, `nse-grounding` refused), `contracts/companies/onboarding.py`
   (`BANK_ONBOARDING_VERSIONS = ConfigVersions(dictionary="v4", mapping_set="v10")`),
   `onboard_cli.py` (two flags; pins from `bank_onboarding.versions(args)` for config load, printed
-  compare command and the descriptor's `onboarding_versions` check), `vendor_first.py`
+  compare command and the descriptor's `onboarding_versions` check; the staging block and
+  `package_manifest` call replaced by one `bank_onboarding.stage_inputs` call),
+  `first_party_extract.py` and `first_party_ingest.py` (framework evidence), `vendor_first.py`
   (`issuer_class` per reading 4), `run_config.py` (three extractor bumps)
 - Test: `test_onboarding_verification.py` (HDFCBANK moves to the bank route; BAJFINANCE, HDFCLIFE
   unchanged); `test_bank_onboarding.py` (`pg`, `retained`); `test_issuer_class.py` (unit)
@@ -387,7 +409,11 @@ Files:
 Interfaces:
 - Produces: `issuer_form(body) -> IssuerClass | None`; `issuer_class(conn, entity_id, period_end,
   cutoff) -> IssuerClass | None`; `verify_xbrl_framework(body, framework, pdf=None)`;
-  `bank_onboarding.versions(args) -> ConfigVersions`; `bank_onboarding.binding(path, isin, basis)`.
+  `IngestRequest.framework_evidence: FrameworkEvidence | None` (PDF capture id, sha256, filed time);
+  `derived_settings.framework_evidence(conn, entity_id, period_end, cutoff) -> FrameworkEvidence |
+  None` (the framework setting's retained PDF input for that filing); `bank_onboarding.versions(args)
+  -> ConfigVersions`; `bank_onboarding.binding(path, isin, basis)`;
+  `bank_onboarding.stage_inputs(raw_root, symbol, filings, pdf, issuer_config) -> Path`.
 
 Approach (F04, F05, F19, F20):
 - Pins: `--analysis-basis` selects `BANK_ONBOARDING_VERSIONS`; without it `ONBOARDING_VERSIONS`.
@@ -402,6 +428,21 @@ Approach (F04, F05, F19, F20):
   declarations name exactly the evidenced value; the PDF capture is retained as framework evidence.
   Contradiction between instance and PDF, or several frameworks, refuses. A `Banking` form alone is
   never framework evidence.
+- Framework evidence at ingest (R2-01): every first-party ingest caller passes
+  `IngestRequest.framework_evidence` (onboarding here; `evidence_cli` and fallback in Task 7, read
+  by `derived_settings.framework_evidence`). `_read_xbrl` loads the PDF's bytes from the snapshot
+  store by capture and sha256 and calls `verify_xbrl_framework(instance, framework, body, pdf)`
+  with the same issuer, period, basis and declaration checks as discovery, on fresh extraction and
+  on the reuse check alike; a contradiction stays fatal. The evidence sha256 joins the XBRL
+  extraction context, so a generation made under other evidence is not reused. X-arm filings pass
+  `None` and behave as today.
+- Staged inputs (R2-02): `stage_inputs` replaces onboarding's temporary staging for every issuer.
+  It writes, deterministically from retained bytes, `<raw-root>/inputs/<SYMBOL>/<period-end>/`:
+  `xbrl/` originals, on B7a `pdf/` original, and `retrieval-manifest.json` from `package_manifest`
+  extended with the PDF kind, sha256 and filed time (B7b: XBRL only). On B7a it requires
+  `config/runs/<symbol>-<period>.yaml` (refused if absent) and passes it with both member kinds to
+  `retained_intake_from_manifest`. Acquisition and replay write identical files; Task 13 ingests
+  from this directory. Grounding captures are never staged.
 - Binding: reading 3; checked before any settings write.
 - Settings: framework and `ISSUER_CLASS` (`DISCOVERY`), `ANALYSIS_BASIS` (`OWNER_DECISION`), basis
   status from the listed bases (`_BASIS_STATUS` no longer keys on the selected basis).
@@ -412,13 +453,18 @@ unavailable response: ICICIBANK → `PARTIAL`, settings with their evidence kind
 package whose instance sha256s equal the evidence pins, both filings verified. Refusals before any
 write: bank form without `--analysis-basis`; binding for another ISIN; binding value `STANDALONE`
 with `--analysis-basis consolidated`; a path outside `basis_decisions/`; a quote absent from the
-spec. Apar replay unchanged (existing onboarding suite); BAJFINANCE, HDFCLIFE `UNSUPPORTED`. P arm
-(if taken): PDF-only declaration accepted; a contradictory PDF refused; an existing-enum framework
-case. Unit (`issuer_form`, `issuer_class`): the four retained forms; NBFC under Ind AS → `None`;
+spec. Apar replay unchanged (existing onboarding suite); BAJFINANCE, HDFCLIFE `UNSUPPORTED`.
+Staged inputs: the replay's `inputs/` files equal a second replay's on a fresh database (path,
+sha256); Apar's staged XBRL-only layout ingests as before. P arm (if taken), through package
+ingest: onboarding ingests the PDF-only-declared instance; the reuse check passes with the same
+evidence; a contradictory PDF refuses at ingest; other evidence yields a new context, not reuse;
+an existing-enum framework case. Unit (`issuer_form`, `issuer_class`): the four retained forms; NBFC under Ind AS → `None`;
 mixed forms → `None`; Apar's legacy provenance → `NON_FINANCIAL`; a cutoff before a new entity's
 setting → `None` (no fallback); a superseding setting wins from its `valid_from`.
 
-Dependencies: Task 4.
+Dependencies: Task 4. Code and unit tests need only Task 4; the ICICIBANK replay integration
+(v4/v10 pins) runs after Tasks 6 and 8 land, and Task 5 is not verified until it passes — never
+against missing config, never counted as passed while deferred.
 
 Risks: characterize first (current onboarding suite). HDFCBANK pin tests change meaning; stated in
 the commit.
@@ -446,7 +492,8 @@ any row whose v3 `meaning` holds for a bank per the record) declare both classes
 only for lines the retained filing carries, each `meaning` citing the record. Non-financial-only
 rows and their formulas declare `NON_FINANCIAL`. Nothing is deleted or weakened for absence (F12):
 period requirements and `when_statement_present` rules stay as in v3; an absent statement is a
-ledger `UNSUPPORTED` line, not a removed row. No unevidenced bank concept is added.
+capability `UNSUPPORTED` line whose expected result the unchanged rule decides, not a removed row;
+no Apar rule changes. No unevidenced bank concept is added.
 
 Verification: unit: shared × both → rule decides; bank × `NON_FINANCIAL` → `NOT_APPLICABLE` by
 `ISSUER_RULE_ID`; v3 × `BANK` → unchanged; v4 × `None` → `IssuerContextMissingError`. Tree diff:
@@ -466,10 +513,10 @@ Files:
 - Modify: `engine.py`, `engine_vendor_context.py`, `run_family.py` (`FINANCIAL_RESULTS.framework`
   per entity), `fact_view.py`, `evidence_cli.py`, `onboard_cli.py`, `vendor_reingest.py`,
   `results_filing.py` (`acquire_results(..., source: tuple[str, str])`), `fallback.py` (`_acquire`
-  passes `XBRL_SOURCES[(issuer_class, basis)]`; `_ingest` the entity's framework),
-  `run_config.py` (`_SEMANTICS_VERSION`)
+  passes `XBRL_SOURCES[(issuer_class, basis)]`; `_ingest` the entity's framework and
+  `framework_evidence`), `evidence_cli.py` (same two), `run_config.py` (`_SEMANTICS_VERSION`)
 - Test: `test_bank_run.py` (`pg`, `retained`); `test_bank_fallback.py` (`pg`, replay through
-  `eqos compare fallback`)
+  `eqos compare fallback`); `test_bank_reingest.py` (`pg`, `retained`, public `vendor reingest`)
 
 Interfaces: `issuer_context(settings, entity_id, period_end, cutoff) -> IssuerContext` (frozen:
 `framework`, `issuer_class`), a pure function over loaded settings via `setting_as_of`.
@@ -479,13 +526,25 @@ package selection and comparative/formula lookups (`engine.py:223–255`, `:465�
 whose framework differs from the context refuses. `SHAREHOLDING` keeps its `UNKNOWN` framework.
 `xbrl_parser.py:538` (legacy parser, off the results path) is not touched.
 
+Reingest basis binding (R2-04): `vendor_reingest._adapters` builds the Screener topology with
+`verification.screener_topology(warehouse_id, basis)` for the requested basis instead of the fixed
+consolidated topology. The warehouse id and identity evidence still come from the retained page and
+its first occurrence; `read_page_evidence` still verifies the page's own basis marker, so a page of
+the other basis refuses. The binding states only which basis this page evidences; it records no
+claim that the vendor lacks the other basis and relaxes no required basis evidence.
+
 Verification: Apar comparison suites pass; bank run: ledger `VALUE` keys valued, non-financial-only
 rows `NOT_APPLICABLE` by `ISSUER_RULE_ID`, a v4 group without class refused; results equal whether
 bank or non-bank groups run first; an entity whose framework setting changes at a `valid_from`
 between two periods gets each period's framework; a run pinned at the old semantics version is
 refused by `require_pins`. Bank fallback: a triggered ICICIBANK cell acquires under the bank source
 and ingests with the bank framework; a listing without the period ends `FILING_UNAVAILABLE`; B7a: the
-PDF member joins with the issuer config.
+PDF member joins with the issuer config; P arm: fallback and `evidence ingest` verify the instance
+with the setting's PDF evidence, and refuse when that evidence contradicts it. Reingest: `eqos
+vendor reingest --basis standalone` over a retained standalone Screener page stores
+interpretations under the current extractor with standalone keys; the same command over a
+consolidated page refuses; Apar's consolidated reingest is unchanged. Task 12 reruns this test
+over ICICIBANK's retained bank page (no bank page is retained before Task 11).
 
 Dependencies: Tasks 5, 6.
 
@@ -521,9 +580,12 @@ Verification: per ledger `VALUE` line, code compares the interpretation's canoni
 sign, period, interval and provenance with the retained fact; `statements_present`, reporting kind
 and period shape as the record states; Apar's retained packages give equal interpretations per
 canonical key, value and status under v9 and v10; B7a: a PDF ingest of the retained PDF yields
-`MAPPED` occurrences, not only a text layer.
+`MAPPED` occurrences, not only a text layer. Task 13's intake (R2-02): onboarding replay over the
+Task 2 bodies (Task 5's test folder) stages `inputs/`, then the exact Task 13 command 1 over that
+directory, on the same and on a fresh database after a second replay, builds the package with the
+XBRL and (B7a) PDF members and the issuer config, every member `COMPLETE`.
 
-Dependencies: Task 6; Task 3.
+Dependencies: Task 6; Task 3; the intake test also needs Tasks 5 and 7.
 
 ## Task 9: Document amendments
 
@@ -544,7 +606,9 @@ Dependencies: Task 5.
 Goal: the tip holding Tasks 1 and 4–9 passes `scripts/verify.sh gate vendor-1-p3` (a
 `systemd-run --user` unit; log and revision in `scratchpad/vendor-first/gate-3/`); mypy strict and
 ruff clean. Task 12 reruns the gate before Task 13. A passed gate is code evidence, not live
-acceptance.
+acceptance. The gate fixes the final extractor bytes (F08 rule): a read-only query of live and every
+retained rehearsal copy shows no `version_pins` row for a Phase 3 development extractor version
+whose bytes differ from the gated ones; one found forces a new version and a rerun.
 
 Dependencies: Tasks 4–9 committed. Task 2 needs only Task 1's affected suites, mypy, ruff and the
 authority-negative tests (capture writes only); no schema, settings or package write precedes this
@@ -559,22 +623,26 @@ Commands (main checkout on the Task 10 tip):
 1. `eqos db migrate` (0050).
 2. Acquisition on the throwaway copy: `eqos onboard ICICIBANK --acquire --analysis-basis standalone
    --basis-decision config/companies/basis_decisions/icicibank.yaml --raw-root R --snapshot-root S
-   --config-root config --freeze-descriptor D`. Before the rehearsal, code checks that discovery's
+   --config-root config --sanction config/acquisition/sanctions/five-company.yaml` (FIVE-1 Task 1's
+   route; flags as FIVE-1 lands them). Before the rehearsal, code checks that discovery's
    selected filings' sha256 equal the Task 3 evidence pins; any difference stops the task for
    re-grounding (Task 2) and a Task 3 amendment review.
 3. Rehearsal and live: the same command with `--generation N` in place of `--acquire` and
-   `--freeze-descriptor`.
+   `--sanction`.
 
 Verification: protocol passes; read-only queries show `ISSUER_CLASS = BANK` and the framework with
 `DISCOVERY` evidence, `ANALYSIS_BASIS = STANDALONE` with the binding as `OWNER_DECISION` input, the
-B5 basis status, the pinned instances in the package; the Task 2 log's grounding completion precedes
-this task's first onboarding invocation.
+B5 basis status, the pinned instances in the package, and the staged `inputs/` files (path,
+sha256) equal the rehearsal's; the Task 2 log's grounding completion precedes this task's first
+onboarding invocation.
 
-Dependencies: Task 10; Phase 1 Task 13 done; windows rule; **a sanctioned acquisition
-authorization**: `--acquire` requires a freeze descriptor (`onboard_cli._frozen`, `_check_entry`,
-whose `onboarding_versions` check now uses the bank pins). Either a satisfied freeze entry with
-`onboarding_versions` v4/v10 or the route `docs/plans/FIVE-COMPANY-TEST.md` §8 Q1 sanctions; until
-one exists, Task 11 is blocked.
+Dependencies: Task 10; Phase 1 Task 13 done; windows rule; **FIVE-1 Tasks 1–2 (tracked
+prerequisite, ruling 1)**, evidenced before Task 11 starts by: FIVE-1's plan `APPROVE` and its
+reviewed sanction route for an already-known issuer; Tasks 1–2 committed and inside a gated tip
+this task runs on; the committed, `APPROVE`-stamped sanction listing ICICIBANK; the bank pins
+(v4/v10) accepted by that route; and a sanctioned generation replaying under `--generation N` as
+this protocol requires. The held-out freeze is never repurposed or weakened for ICICIBANK. Until
+all hold, Task 11, and so the phase, is blocked; this plan supplies no acquisition authority.
 
 Risks: permanent; a wrong setting is superseded, never edited.
 
@@ -603,7 +671,8 @@ replacement under the Task 8 rule. Bank labels whose definition differs from the
 
 Verification: inventory complete for ICICIBANK and unchanged for Apar; mapped vendor facts' keys,
 units, scale, precision and periods checked by code; Tijori `INVALID`/`UNIT_MISMATCH` = 0 in
-sections with a rule; v9/v10 still load `tijori/v5/display.yaml`; gate rerun.
+sections with a rule; v9/v10 still load `tijori/v5/display.yaml`; Task 7's standalone reingest
+test passes over ICICIBANK's page; gate rerun.
 
 Dependencies: Task 11 (captures), Task 8.
 
@@ -614,21 +683,27 @@ captures under v11, and one comparison run on the pinned period matching the led
 rehearsal copy, positive admissions and the Apar regression pass.
 
 Commands, under the live protocol (no acquisition):
-1. `eqos evidence ingest --mapping-set v11 --dictionary v4` over ICICIBANK's retrieval manifest:
-   the pinned instance and, B7a, the onboarding-retained PDF with `config/runs/icicibank-<period>.yaml`.
-2. `eqos vendor reingest --mapping-set v11 --dictionary v4` for the period end.
+1. `eqos evidence ingest --mapping-set v11 --dictionary v4 --basis standalone --retrieval-manifest
+   <raw-root>/inputs/ICICIBANK/<period-end>/retrieval-manifest.json` over Task 11's staged inputs
+   (the pinned instance and, B7a, the PDF with `--issuer-config config/runs/icicibank-<period>.yaml`;
+   the manifest's sha256 equals Task 11's).
+2. `eqos vendor reingest --entity ICICIBANK --basis standalone --mapping-set v11 --dictionary v4`
+   for the period end.
 3. `eqos compare run --mapping-set v11 --dictionary v4 --basis standalone` for the period (vendor
    sides by default).
 Rehearsal-only segment, after the three deltas are recorded:
 4. `admit_run` on the run.
 5. Apar: run `compare run --mapping-set v9 --dictionary v2` per retained Apar period from a scratch
-   worktree at the pre-Phase-3 base (baseline); at the Phase 3 tip, `evidence ingest` and
+   worktree at the pre-Phase-3 base SHA recorded in `commands.txt`, with that checkout's code,
+   config and environment (baseline); at the Phase 3 tip, `evidence ingest` and
    `vendor reingest` of Apar's packages and captures under v9/v3 and v11/v4, then a v3/v9 control
    and a v4/v11 candidate run; same explicit cutoff and scope throughout.
 
 Verification (F13, F17, F24, F25), by code over stored results:
-- ICICIBANK: every ledger `VALUE` key has a `VALUE` result; every `NOT_APPLICABLE` key is so by
-  `ISSUER_RULE_ID`; every `UNSUPPORTED` key refuses with a stated reason; the run's `run_inputs`
+- ICICIBANK: every result equals its ledger line's expected result: `VALUE` keys valued;
+  `NOT_APPLICABLE` keys by the rule the ledger names (`ISSUER_RULE_ID` only for issuer-excluded
+  rows); expected refusals with their stated reason; every capability `UNSUPPORTED` line listed in
+  the report. Vendor sides carry v11 Screener standalone interpretations. The run's `run_inputs`
   name the acceptance package. An unexpected refusal of a `VALUE` key blocks completion.
 - Admissions: each ledger-admissible cell admits under §6.5 with its selected source, label and
   witnesses checked; expected refusals refuse; no row 3.
@@ -643,23 +718,26 @@ Verification (F13, F17, F24, F25), by code over stored results:
 
 The phase report is generated by code from these outputs (counts and ids only).
 
-Dependencies: Task 12 and its gate rerun.
+Dependencies: Task 12 and its gate rerun; FIVE-1 Tasks 1–2 (as Task 11).
 
 **Then: Sol phase-end review** of the phase diff (Tasks 1, 4–9, 12), the grounding record, the
 Task 3 amendment and B9 addendum, the gate logs, the Task 2, 11 and 13 logs and the drafted report,
 by the loop in `.claude/rules/core/04-agent-stack.md`, then one fresh closing review. After
 `APPROVE`: commit the report, refresh `docs/status/dashboard.html`, record the verdict on
-`eqos-awnc`, file beads for anything parked.
+`eqos-awnc`, file beads for anything parked. Phase close requires FIVE-1 Tasks 1–2 done and the
+Apar re-ingest follow-up filed and linked (Interactions).
 
 ## Dependency order and file ownership
 
-1 → 2 → 3 → 4 → {5, 6} → 7 (after 5, 6); 8 after 6; 9 after 5; 10 after 4–9; 11 after 10; 12 after
-11 and 8; 13 after 12's gate rerun.
+1 → 2 → 3 → 4 → {5, 6} → 7 (after 5, 6); 8 after 6; 9 after 5; 10 after 4–9; 11 after 10 and FIVE-1
+Tasks 1–2; 12 after 11 and 8; 13 after 12's gate rerun. Task 5's replay integration and Task 8's
+intake test run after Tasks 6 and 8 (and 7 for the intake test) land.
 
 Parallel: 5 and 6; 8 and 9 alongside 7 (disjoint files). One writer at a time, in this order, for
 shared files: `results_filing.py` (1, 7), `source_catalog.py` (1, 5), `onboard_cli.py` (1, 5, 7,
 12), `vendor_first.py` (4, 5), `run_config.py` (5, 7, 12), `vendor_reingest.py` (7, 12),
-`nse_filings.py` (5). Other phases' edits to these files are preserved; a worker rebases its reading
+`evidence_cli.py` (7), `first_party_extract.py` and `first_party_ingest.py` (5), `nse_filings.py`
+(5); FIVE-1's edits to `onboard_cli.py`, `discovery.py`, `fallback.py` come first. Other phases' edits to these files are preserved; a worker rebases its reading
 on the current tip at task start.
 
 ## Interactions
@@ -669,18 +747,28 @@ on the current tip at task start.
   and `_ingest`. Phase 1's Apar fallback test stays green; the bank path has its own test.
 - **Phase 1 Task 9** (in flight): owns `interface/entry/cli.py`; Phase 3 does not touch it.
 - **Phase 1 Tasks 13–14** (live, pending): windows rule; Task 11 needs 0047–0049 live. They run on
-  their own gated tip. After Phase 3's extractor bumps land, Apar's stored interpretations keep their
-  pins and a later live Apar run needs a re-ingest under the new extractors (bead to file; not
-  Phase 3 live scope).
+  their own gated tip.
+- **Apar live re-ingest (ruling 2; bead to be filed: Apar re-ingest under Phase 3 extractors).**
+  After Phase 3's extractor bumps land, Apar's stored interpretations keep their pins. The bead is a
+  prerequisite of Apar's next live run on Phase 3 code: that run first re-ingests the first-party
+  and vendor inputs it needs on its own gated, rehearsed tip. Historical rows, the old replay
+  checkout, dictionary/mapping pilot pins and eligibility authority stay separate; no vendor-only
+  admission is promised under changed classes. Not Phase 3 live scope; filed and linked before
+  phase close.
+- **FIVE-1** (plan in review): Tasks 1–2 are this phase's tracked acquisition prerequisite (Task
+  11, phase close). Its Task 6 edits this plan's Task 11 command after this round; the
+  orchestrator serialises the two writers.
 - **Eligibility:** Phase 1's artifact holds `NON_FINANCIAL` classes under the pilot pins; every
   changed version is a new class, so Apar's pins do not move and no `BANK` eligibility exists.
 - **Phase 2:** no shared code files expected; `CONTEXT.md` edits serialised; migration numbers
   rechecked at landing.
 
-## Spec amendments applied in this round
+## Spec amendments
 
-A1 (§8 step 1), A2 (after §8 step 4, governing steps 2 and 4), A3 (§8 step 2; §6.6 issuer-class
-paragraph), A4 and A5 (§8 acceptance), A6 (§6.1 standalone bullet), worded as Sol drafted them.
+Round 1: A1 (§8 step 1), A2 (after §8 step 4, governing steps 2 and 4), A3 (§8 step 2; §6.6
+issuer-class paragraph), A4 and A5 (§8 acceptance), A6 (§6.1 standalone bullet), worded as Sol
+drafted them. Round 2 (R2-05): §8 step 5 refuses an unsupported capability wherever its row applies
+and keeps a row the unchanged period, disclosure or basis rules make inapplicable `NOT_APPLICABLE`.
 
 ## Self-review
 
