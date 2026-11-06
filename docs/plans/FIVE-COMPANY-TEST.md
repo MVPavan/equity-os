@@ -93,9 +93,9 @@ applied live** (Phase 1 Task 13 pending). The one entity is APARINDS (entity 1, 
 | Eligibility artifact `v1` (Apar) | Task 14 + Sol `APPROVE` | pending |
 | Vendor text readers, numeral rule | Phase 2 | not planned |
 | Bank framework, issuer class `BANK`, dictionary v5, bank mappings | Phase 3 | not planned |
-| A sanctioned live acquisition route outside the Stage 4 freeze | owner/orchestrator decision (§8 Q1) | open |
+| A sanctioned live acquisition route outside the Stage 4 freeze | `eqos onboard --acquire --sanction` (FIVE-1 Task 1; §8 Q1) | closed |
 | MTARTECH series | `EQ` on the 2026-11-06 master (§8 Q2) | resolved |
-| Vendor ingest for periods other than the onboarded one | decision (§8 Q3) | open |
+| Vendor ingest for periods other than the onboarded one | `evidence acquire` and `vendor reingest --captures-of` (FIVE-1 Task 3; §8 Q3) | closed |
 
 ## 4. Order and why
 
@@ -119,11 +119,32 @@ Each company finishes (or stops with a recorded outcome) before the next starts.
 
 Placeholders: `<KEY>` entity key (the NSE symbol), `<PE>` period end, `<b>` basis
 (`consolidated` | `standalone`), `<RUN>` run id, `<G>` generation, `<ROOT>` =
-`data/raw/five-company/<KEY>`, `<SNAP>` = `data/raw/snapshots/v1`. Every argument is resolved by
-read-only queries and written into `commands.txt` before rehearsal (§6). Dictionary `v2` unless
-Phase 3 replaces it for all five (§8 Q5).
+`data/raw/five-company/<KEY>`, `<SNAP>` = `data/raw/snapshots/v1`, `<STORE>` the store id
+`compare fallback` requires, `<SAN>` = `config/acquisition/sanctions/five-company.yaml`, `<PE0>` a
+source period end whose cited vendor captures also hold `<PE>`. Every argument is resolved by
+read-only queries and written into `commands.txt` before rehearsal (§6). Every command that takes
+versions uses `--dictionary v5 --mapping-set v12`, the Phase 3 sets, for all five (§8 Q5).
+`eqos onboard` takes no version flags: it keeps its own pins, and §5.2 re-ingests under `v5`/`v12`.
 
 Standard checks run after **every** command (§6 step 3); the per-step checks below are additional.
+
+### Periods and roles (Q5, F09)
+
+Per entity and basis, `commands.txt` enumerates the period ends that both vendors' captures cover
+and onboarding's settings window admits (read-only queries saved beside it; settings are never
+extended; a period before the window refuses) and freezes each one's role before rehearsal:
+
+- (a) *filing-check*: `evidence acquire` then `vendor reingest --captures-of`, both before its run.
+- (b) *fallback*: a genuinely vendor-only period, with `vendor reingest --captures-of` but **no**
+  `evidence acquire`; it is run, then `compare fallback` acquires it.
+- (c) the fresh post-fallback rerun that fallback creates.
+- (d) *final-pin positive*: an evidenced cell where both vendors agree and no admissible filed
+  value exists, in a class that can qualify from the (a)–(c) checks alone, with **no**
+  `evidence acquire` and no fallback for that cell before the final-pin segment (§5.6.1).
+
+If live history offers no package-free eligible period for (b), the fallback branch is shown on
+the isolated rehearsal fixture and the live limitation is reported; live evidence is never deleted
+to make one.
 
 ### 5.0 Baseline (read-only)
 
@@ -136,10 +157,11 @@ committed.
 ### 5.1 Onboard
 
 ```
-eqos onboard <KEY> --raw-root <ROOT> --snapshot-root <SNAP> --generation <G>
+eqos onboard <KEY> --raw-root <ROOT> --snapshot-root <SNAP> --acquire --sanction <SAN>   # rehearsal
+eqos onboard <KEY> --raw-root <ROOT> --snapshot-root <SNAP> --generation <G>             # live replay
 ```
-(replay of a generation acquired by the route §8 Q1 sanctions; `--acquire --freeze-descriptor`
-only if the freeze is satisfied.)
+(the sanction route of §8 Q1; each acquisition runs on a recorded gated tip. It never uses the
+Stage 4 freeze, the holdout record or the manifest.)
 
 | Company | Expected outcome | Checked | Pass |
 |---|---|---|---|
@@ -149,28 +171,39 @@ only if the freeze is satisfied.)
 | NETWEB | `ONBOARDED`/`PARTIAL`; basis status `STANDALONE_ONLY` | `entity_basis_status = STANDALONE_ONLY`; package basis standalone, XBRL source the standalone NSE entry; Screener page fetched on the standalone path; no consolidated vendor occurrence pairs with the package | all hold (acceptance 4 on live) |
 | ICICIBANK | Phase 3 route: grounding record first (§8 step 1), then `ONBOARDED`/`PARTIAL` as issuer class `BANK`, analysis basis standalone stored apart from reported bases | grounding record capture ids precede every onboarding check; framework the filing evidences; issuer class `BANK` | all hold; an NBFC/insurer is still `UNSUPPORTED` (fixture, not live) |
 
-### 5.2 Re-interpret under `v9`
+### 5.2 Re-interpret under `v12`
 
 ```
 eqos evidence ingest --retrieval-manifest <ROOT>/gen-<G>/retrieval-manifest.json --issuer <KEY> \
   --quarter <Q> --period-end <PE> --basis <b> --raw-root <ROOT>/gen-<G> --snapshot-root <SNAP> \
-  --mapping-set v9 --dictionary v2
-eqos vendor reingest --entity <KEY> --period-end <PE> --basis <b> --mapping-set v9 --dictionary v2
+  --mapping-set v12 --dictionary v5
+eqos vendor reingest --entity <KEY> --period-end <PE> --basis <b> --mapping-set v12 --dictionary v5
 ```
-Not for APARINDS (Task 13 did it). **Checked:** interpretations under `v9` per (representation,
+Apar is re-ingested live under `v5`/`v12` like the others. Per role (a) period:
+```
+eqos evidence acquire --entity <KEY> --basis <b> --period-end <PE> --mapping-set v12 --dictionary v5 \
+  --snapshot-root <SNAP> --raw-root <ROOT> [--issuer-config <yaml>] [--generation <G>]
+eqos vendor reingest --entity <KEY> --period-end <PE> --basis <b> --mapping-set v12 --dictionary v5 \
+  --captures-of <PE0>
+```
+One period per `evidence acquire` command and generation. It prints `<PE> package <id>`,
+`FILING_UNAVAILABLE` or `FILING_UNRESOLVED` and exits `INCOMPLETE` unless ingested. Role (b)
+periods run only the `vendor reingest --captures-of` line. **Checked:** interpretations under `v12` per (representation,
 status); Tijori `INVALID`/`UNIT_MISMATCH` in sections with a display rule; NETWEB vendor
 interpretations on standalone sections only. **Pass:** zero `UNIT_MISMATCH` in ruled sections;
 every Tijori row in an unruled section is `UNKNOWN_UNIT`, never a value; per package, first-party
-counts per (representation, status) under `v9` equal those under `v5`.
+counts per (representation, status) under `v12` equal those under `v5`.
 
 ### 5.3 Compare
 
 ```
 eqos compare run --entity <KEY> --period-end <PE> --basis <b> --mode as_known \
-  --dictionary v2 --mapping-set v9 --eligibility v1
+  --dictionary v5 --mapping-set v12 --eligibility v1
 ```
+`v1` is Apar's pilot artifact; under `v5`/`v12` it matches no class, so these runs cannot admit
+under §6.5 row 3 (FIVE-1 reading 4). Row 3 under the final pins is exercised in §5.6.1.
 No `--vendor` (Screener and Tijori by default). APARINDS: every period end in its Task 14 scope,
-plus the vendor-only period ends chosen for fallback (5.5). Others: the onboarded `<PE>`.
+plus the vendor-only period ends chosen for fallback (5.5). Others: the onboarded `<PE>` and their role (a)/(b) periods.
 **Checked:** run status; `run_versions` pins (`vendor_first_policy`, `eligibility`); three-way
 cells per (canonical id, period); T1 outcomes and filing states from results and pair records;
 the `COVERAGE` lines; open `HIGH` queue items. **Pass:** run complete (exit `SUCCESS` or
@@ -192,12 +225,17 @@ counterexample; no FY `finance_costs` cell under row 3; every row with T1 `VENDO
 ### 5.5 Fallback
 
 ```
-eqos compare fallback --run <RUN>
+eqos compare fallback --run <RUN> --store-id <STORE> --snapshot-root <SNAP> --raw-root <ROOT> \
+  [--issuer-config <yaml>] [--generation <G>]
 ```
-**APARINDS:** on runs over period ends with vendor occurrences and no package (vendor-only).
-Expected per company-period: `ADMITTED`, `FILING_UNAVAILABLE`, `FILING_UNRESOLVED` or
-`STILL_REFUSED`. **Others:** on their one run; expected no triggers (filing present), so no
-acquisition. **Checked:** `vendor_fallback_outcomes` rows; the fetch log names only that issuer and
+Rehearsal acquires into its raw root; live replays with `--generation` (§8 Q4). A run's trigger
+groups are its stored `CHECK_REQUIRED`, `VENDOR_UNMAPPED`, `VENDORS_DISAGREE` and
+`VENDORS_IMPRECISE` refusals, so a filing-present run may still trigger; expectations are derived
+from those stored refusals, not from filing presence. Fallback refuses before fetching if one run
+triggers more than one group. **Role (b) periods** (all companies): expected per company-period
+`ADMITTED`, `FILING_UNAVAILABLE`, `FILING_UNRESOLVED` or `STILL_REFUSED`; the fallback period is
+not pre-acquired. **Other runs:** a run with no such refusal expects no trigger and no
+acquisition; one with such a refusal expects the outcome its refusal group implies. **Checked:** `vendor_fallback_outcomes` rows; the fetch log names only that issuer and
 period; new captures and packages only for triggered (entity, period end, basis); watchlist and
 coverage tables unchanged. **Pass:** every trigger group has exactly one stored terminal outcome;
 no other issuer fetched; `ADMITTED` groups have no refused trigger cell in the rerun.
@@ -209,9 +247,30 @@ eqos vendor measure --available-from <T> --out scratchpad/five-company/eligibili
 ```
 Once, after all five. `<T>` fixed before the command and later than every counted run.
 **Checked:** classes, `FILING_AGREES`/`FILING_DIFFERS` key-period counts per class, run ids; rerun
-gives identical bytes. **Pass:** byte-identical rerun; no vendor value in the file; counts match
+gives identical bytes. `measure` reads every policy-pinned stored run, older classes included;
+final-pin classes (dictionary `v5`, mapping set `v12`) are reported separately from older ones.
+**Pass:** byte-identical rerun; no vendor value in the file; counts match
 read-only queries over the same runs. The file is a draft; it is committed only after Sol's
 `APPROVE` and pinned in later runs, never in the runs it measured.
+
+### 5.6.1 Final-pin segment (F04, Q6)
+
+Sol reviews and the orchestrator commits the measured draft as a new eligibility version (never
+`v1`, never backdated, no mapping promoted, BANK classes excluded as Phase 3 specifies).
+**Artifact boundary:** `commands.txt` then names a new gated revision that contains that artifact
+(the loaded config tree, `run_config.py`), and the remaining commands are re-inventoried on it
+before this segment's rehearsal; the equal-revision rule (§6) applies to that revision, and nothing
+runs the artifact from the older tree. Immediately before the positive run, a read-only query saved
+beside `commands.txt` shows the role-(d) cell still has no admissible filed value. Fresh `compare
+run` commands at a cutoff at or after the artifact's `available_from`, over the role-(d) periods,
+then admit. **Pass:** the role-(d) cell admits as `VENDORS_AGREE_NOT_CHECKED` with both witnesses
+and the artifact pin; its citation shows the label; a calculation over it shows the weaker label.
+On isolated rehearsal copies: the same cell at a cutoff before `available_from` refuses, and a
+counterexample in the class blocks it. If no suitable live role-(d) cell exists (no class
+qualifies, no vendor-only agreeing input remains, or the pre-run query finds a filed value), the
+limitation is recorded and the positive case runs on a clearly identified isolated fixture; live
+unchecked admission is then not claimed. Evidence is never deleted and no cutoff is backdated to
+make a cell.
 
 ### 5.7 Report draft
 
@@ -243,9 +302,8 @@ As `docs/plans/VENDOR-1-P1.md` "Live protocol", per company:
    before each later command, baseline plus rehearsed deltas. Any drift restarts from step 2.
 6. **Network steps.** Onboarding and fallback fetch. Rehearsal acquires into a rehearsal raw root
    and snapshot root; live **replays** the rehearsal's retained generation (`--generation`) so its
-   writes equal the rehearsal's. Fallback needs the same replay mode (§8 Q4); without it, live
-   fallback is not rehearsable and its deltas are compared with ids, times and capture hashes
-   normalised.
+   writes equal the rehearsal's. Fallback and `evidence acquire` replay the same way
+   (`--generation`, §8 Q4).
 7. Drop the rehearsal database and rehearsal snapshot root at the end.
 
 Live writes are permanent. Admissions in 5.4/5.5 are the first on live (Phase 1 admitted none) and
@@ -263,18 +321,16 @@ it contributed.
 
 ## 8. Open questions
 
-1. **Live acquisition route.** `--acquire` is bound to the Stage 4 freeze. Re-freeze (and what it
-   does to the held-out attempt), a non-Stage-4 acquisition flag, or scratch-acquired generations
-   replayed through the CLI?
+1. **Live acquisition route.** Answered by `docs/plans/FIVE-1-enablement.md` Task 1:
+   `eqos onboard --acquire --sanction <file>`, a committed, stamped sanction listing the symbols;
+   no re-freeze, and the Stage 4 freeze checks are unchanged.
 2. **MTARTECH series.** Resolved: `EQ` on the 2026-11-06 master; no `BE` widening, no swap
    (FIVE-1 Task 5).
-3. **More than one period per new company.** Add a route that ingests a retained vendor capture
-   for a named period, or accept one three-way period per new company (weak evidence for
-   `measure`)?
-4. **Fallback replay.** Will Task 10's CLI accept a replay root, so live fallback equals rehearsal?
-5. **Dictionary.** Phase 3 brings v5. Run all five under v5 (one class set) or non-banks under v2?
-   The check class includes the dictionary version.
+3. **More than one period per new company.** Answered by FIVE-1 Task 3: `evidence acquire` per
+   named period and `vendor reingest --captures-of`.
+4. **Fallback replay.** Answered by FIVE-1 Task 2: `compare fallback --generation N`.
+5. **Dictionary.** Answered by FIVE-1 reading 4: all five under dictionary `v5`, mapping set `v12`.
 6. **Live admission scope.** Owner decision 4 covers the pilot. Admitting live also changes
    APARINDS's future report selection; confirm, or admit into a separate fact store.
-7. **ICICIBANK in the comparison set.** It is not in `config/coverage/watchlist.yaml`; Phase 3
-   decides whether it is added there or onboarded from the symbol alone.
+7. **ICICIBANK in the comparison set.** Answered by FIVE-1 Task 4: a comparison-config entry
+   written only from identifiers a retained capture shows; a missing identifier blocks it.

@@ -89,6 +89,10 @@ _Avoid_: the universe registry (every listed stock, no coverage implied), captur
 The result of onboarding a company from its identifier alone: `ONBOARDED` (run `COMPLETE`), `PARTIAL` (run `INCOMPLETE`, listing exactly the excluded verification units), `IDENTITY_CONFLICT` or `UNSUPPORTED`. `NOT_AUTHORISED` is a per-unit state, not an outcome. Defined in the D6 plan.
 _Avoid_: onboarding status (ambiguous with run status)
 
+**Acquisition sanction**:
+A committed, stamped file under `config/acquisition/sanctions/` that lists the symbols a live acquisition may fetch, authorising `eqos onboard --acquire` without the Stage 4 freeze; it authorises symbols and purpose only, never an implementation.
+_Avoid_: freeze descriptor (the Stage 4 record), approval of code
+
 **Verification unit**:
 One namespace or source whose identity binding onboarding verifies separately (exchange, XBRL entity, each vendor, the results PDF), with its own evidence and state.
 _Avoid_: check (unqualified)
