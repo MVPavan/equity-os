@@ -423,10 +423,11 @@ first A7 sentence, "with no other exchange code cited", is withdrawn. It contrad
   identity-verified instance names it, above the basis heading, and which carries the period
   heading and the framework declaration. Text matching does not authenticate the document."
 
-## B1c release amendment (draft)
+## B1c release amendment
 
-**Status: draft for Sol review (eqos-awnc). Not in force.** B1c stands and the phase stays halted
-at Task 3 until Sol approves this amendment *and* Sol approves step R's implementation diff and
+**Status: amendment approved 2026-11-06 (gpt-6.1-sol, `APPROVE` in review 2 at `d8d86c00`); step R
+not yet run (eqos-awnc).** B1c stands and the phase stays halted
+at Task 3 until Sol approves step R's implementation diff and
 its complete release proof (below). This amendment does not touch the Task 8 mapping-isolation stop, which binds separately and still
 stops Task 8. A7's rule is unchanged; this amendment only supplies the reader that item 3 needs.
 
@@ -528,8 +529,11 @@ production callers: discovery's P-arm check, `_read_xbrl`'s ingest re-check, `fi
 contracts.
 - Step R needs no migration. A failed proof must never leave a committed migration behind.
 - Implementer: Opus.
-- Step R is developed and its proof is run before anything is committed. If the proof fails,
-  nothing is committed and the phase stays halted for a further amendment.
+- Order: the baseline characterization is committed on its own first (below). The reader and A7
+  implementation is then developed and its proof run before it is committed. If the proof fails,
+  that implementation is not committed and the phase stays halted for a further amendment.
+- Import direction: `pdf_adapter.py` imports `pdf_statement_pages.py`. R2's month-count
+  comparison must not add a reciprocal top-level import; use a local import at the call site.
 
 **Files:**
 - Modify `equity_os/extraction/results_pdf/pdf_statement_pages.py`: R1, R2 call site,
