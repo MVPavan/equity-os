@@ -38,9 +38,10 @@ WITH RECURSIVE edges(from_kind, from_id, to_kind, to_id) AS MATERIALIZED (
         JOIN eqos.fact_rows f ON (f.origin, f.origin_id) = (c.fact_origin, c.fact_origin_id)
         JOIN eqos.legacy_evidence_bindings b
             ON (b.target_store, b.row_handle) = (f.target_store, f.handle)
-    UNION ALL SELECT 'K', c.id, 'I', a.interpretation_id FROM eqos.numeric_claims c
+    UNION ALL SELECT 'K', c.id, 'I', w.id FROM eqos.numeric_claims c
         JOIN eqos.fact_admissions a
             ON (a.fact_origin, a.fact_origin_id) = (c.fact_origin, c.fact_origin_id)
+        CROSS JOIN LATERAL (VALUES (a.interpretation_id), (a.witness_interpretation_id)) w(id)
     UNION ALL SELECT 'K', c.id, s.kind, s.id FROM eqos.numeric_claims c
         JOIN eqos.pair_outcomes p ON p.id = c.pair_outcome_id
         JOIN eqos.result_source_values v ON v.id IN (p.left_value_id, p.right_value_id)
@@ -63,6 +64,9 @@ WITH RECURSIVE edges(from_kind, from_id, to_kind, to_id) AS MATERIALIZED (
         FROM eqos.calculation_trace_operands
     UNION ALL SELECT 'T', calculation_trace_id, 'T', operand_trace_id
         FROM eqos.calculation_trace_operands
+    UNION ALL SELECT 'T', o.calculation_trace_id, 'I', a.witness_interpretation_id
+        FROM eqos.calculation_trace_operands o
+        JOIN eqos.fact_admissions a ON a.interpretation_id = o.interpretation_id
 ), roots(root, kind, id) AS (
     SELECT 'REPORT_VERSION', 'V', id FROM eqos.report_versions
     UNION ALL SELECT 'MEMORY_SUPPORT', t.kind, t.id FROM eqos.memory_supports s
