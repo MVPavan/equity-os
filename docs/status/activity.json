@@ -1,15 +1,20 @@
 {
   "now": {
-    "title": "RESEARCH-4 S1: fixing Sol's closing review before the assumption book",
-    "detail": "S1's code is built on branch research-4 in a dedicated worktree. Gate 5 passed at fbc23416 (5,650 tests), but Sol's fresh closing review returned REQUEST_CHANGES with 3 P1, 3 P2 and 1 P3 findings. An Opus fix round is running, followed by a new gate and a Sol re-review. Then the assumption book, a rehearsal on a test database and close. Nothing reaches the live database until the live close."
+    "title": "VENDOR-1 Phase 1: Screener and Tijori as main sources, filings as fallback",
+    "detail": "Tasks 1-8 and 11 are on main: migration 0047/0048, Tijori display rules, mapping set v9, standalone-only onboarding, vendor-only runs with default vendors, the policy and run pins, eligibility measurement, and one admission path with the two labels. Task 9 (report values, labels, citation) and Task 10 (fallback to the filing) are running. Next: the pre-live gate, Sol's phase-end and closing reviews, then the live migration and the Apar re-measurement."
   },
   "next": [
-    "RESEARCH-4 S1: closing-review fixes, gate 6 and Sol re-review; check annual reports for capacity and cash notes; then assumption book (Task 10), rehearsal (Task 11) and close (Task 12)",
-    "RESEARCH-4 S2 (working capital, funding gap), S3 (bear and bull, triggers), then one live publication",
-    "eqos-pds3: check whether approved thesis versions were drafted by the unisolated client",
-    "Owner: materiality extended to a third slice (eqos-7t96); Tijori macro charts and index widgets later (eqos-tyuk)"
+    "VENDOR-1 P1: Tasks 9 and 10, pre-live gate (Task 12), Sol phase-end review and fresh closing review",
+    "VENDOR-1 P1 live: migrate 0047/0048, re-interpret and re-ingest Apar (Task 13), re-measure (Task 14)",
+    "VENDOR-1 Phase 2 (vendor text: concall summaries) and Phase 3 (banks, ICICIBANK), each with a plan and Sol review",
+    "Five-company test: APARINDS, ICICIBANK, LAURUSLABS, MTARTECH, NETWEB",
+    "Parked: RESEARCH-4 S1 replay onto the moved tree (eqos-o1yl); daily document intake paused by the owner"
   ],
   "log": [
+    {
+      "date": "2026-11-06",
+      "text": "Restructure landed. VENDOR-1 spec and Phase 1 plan approved by Sol; Tasks 1-8 and 11 landed. Test suite trimmed (25 static tests cut, 55 clones merged, -886 lines) after Sol review. Dashboard redrawn as the bucket architecture with a vendor-first data-flow diagram."
+    },
     {
       "date": "2026-11-05",
       "text": "Found a filed July 2026 presentation stating FY26 capacity for all three divisions. Intake had listed it but never fetched it because of its NSE category (bug filed). Earlier statement that no FY26 figure exists corrected."
