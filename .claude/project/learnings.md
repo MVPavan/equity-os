@@ -401,7 +401,7 @@ Format per entry:
 - Why it matters: tmp_path under `/tmp` turns that refusal into a flake; tmp_path under a
   checkout breaks the `test_verify_*` sandbox repos (they inherit its `pyproject.toml`).
 - Apply: run the full suite through `scripts/verify.sh` (`suite_pytest`), or pass the same
-  `-n 8 --dist loadfile` and `PYTEST_DEBUG_TEMPROOT`. Keep `verify.sh red` serial: it reads
+  `-n 24 --dist loadfile` and `PYTEST_DEBUG_TEMPROOT`. Keep `verify.sh red` serial: it reads
   `sys.modules` in-process, which xdist workers would hide.
 - Owner cap: lifted 2026-11-05 ("utilise all the CPUs available"), replacing the 2026-10-29 cap of
   8. The gate uses 24 of 32; PostgreSQL shares the machine.
