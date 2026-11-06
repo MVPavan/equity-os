@@ -212,7 +212,7 @@ STANDALONE = (*FULL[:2], STANDALONE_URL, *FULL[3:])
 STAGE_FAILURES = {
     _unlisted: None,
     _truncated: "EXTRACTION_FAILED",
-    _repinned: "INTAKE_REFUSED",
+    _repinned: "PDF_UNACQUIRED",  # no acquired PDF has the approved digest
     _pdf_missing: "PDF_UNACQUIRED",
 }
 

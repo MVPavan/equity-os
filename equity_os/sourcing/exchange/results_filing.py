@@ -1,10 +1,12 @@
 """One period's NSE results filing for the fallback workflow (spec 2026-11-06-vendor-first §6.8):
 both results listings of the named issuer, the requested period's XBRL instance on its basis,
-and the results PDF its announcements carry from the period end to seven days after the XBRL
-broadcast. Every body is retained and registered; nothing else is requested."""
+and the results PDFs its announcements carry from the period end to seven days after the XBRL
+broadcast, of which the one with the approved digest is the filing's. Every body is retained and
+registered; nothing else is requested."""
 
 from __future__ import annotations
 
+import hashlib
 import time
 from datetime import date, datetime, timedelta
 from typing import Any, cast
@@ -63,7 +65,8 @@ class ListingUnparsedError(ValueError):
 
 
 class ResultsFiling(BaseModel):
-    """The acquired filing: its XBRL instance and the earliest results PDF of its span."""
+    """The acquired filing: its XBRL instance and the results PDF of its span with the approved
+    digest."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -81,10 +84,13 @@ def acquire_results(
     isin: str,
     period_end: date,
     basis: Basis,
+    pdf_sha256: str | None,
 ) -> ResultsFiling | None:
     """The results filing of one period end and basis; ``None`` when no single filing with an
-    instance is acquirable (a tie, a missing broadcast or a failed fetch). A retained listing
-    that does not parse raises ``ListingUnparsedError``."""
+    instance is acquirable (a tie, a missing broadcast or a failed fetch). Its PDF is the one
+    retained results PDF whose digest is ``pdf_sha256``; none when no digest is approved or no
+    single PDF matches it. A retained listing that does not parse raises
+    ``ListingUnparsedError``."""
     legacy, integrated = (
         retain(conn, store, fetch, VerificationUnit.EXCHANGE, pair, listing_url(path, symbol, p))
         for pair, (path, p) in (
@@ -110,14 +116,19 @@ def acquire_results(
     documents = announcement_documents(
         conn, store, fetch, entity_id=entity_id, symbol=symbol, isin=isin, span=span
     )
+    matches = {
+        link.url: (link, record, body)
+        for link, record in documents
+        if hashlib.sha256(body := store.read_body(record)).hexdigest() == pdf_sha256
+    }
     pdf = None
-    if documents:
-        link, record = documents[0]
+    if len(matches) == 1:
+        ((link, record, body),) = matches.values()
         pdf = Filing(
             period_end=period_end,
             filed_at=cast(Any, link.filed_at),
             url=link.url,
-            body=store.read_body(record),
+            body=body,
             retrieved_at=record.retrieved_at,
         )
     xbrl = Filing(

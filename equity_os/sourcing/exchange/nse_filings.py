@@ -8,8 +8,8 @@ a period end in the window, identical parsed rows counted once, collapse to the 
 per ``(period_end, basis)``; a group holding a row with a missing or empty broadcast time is left
 out; a tie on the latest broadcast is reported.
 Qualifying filings are collapsed integrated ``Financials`` rows on the window's basis: the
-consolidated basis when the window holds any consolidated row, else the standalone basis (spec
-2026-11-06-vendor-first §6.2).
+consolidated basis when the window holds any consolidated row before the collapse, else the
+standalone basis (spec 2026-11-06-vendor-first §6.2).
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ LEGACY_LISTING = ("corporates-financial-results", "quarterly")
 INTEGRATED_LISTING = ("integrated-filing-results", "Quarterly")
 WINDOW_QUARTERS = 6
 CONSOLIDATED = "Consolidated"
+NON_CONSOLIDATED = "Non-Consolidated"  # the legacy listing's standalone label
 LISTING_BASIS = {Basis.CONSOLIDATED: CONSOLIDATED, Basis.STANDALONE: "Standalone"}
 FINANCIALS = "Integrated Filing- Financials"
 _DAY = "%d-%b-%Y"
@@ -101,8 +102,9 @@ def listing_rows(legacy: bytes, integrated: bytes) -> list[ListingRow]:
 def filing_window(rows: Sequence[ListingRow], as_of: date) -> FilingWindow:
     """Collapse the rows in the window and keep the qualifying ones of its basis (D1.3)."""
     window = quarter_ends(as_of)
-    latest, tied = collapse([row for row in rows if row.period_end in window])
-    consolidated = any(row.basis == CONSOLIDATED for row in latest)
+    present = [row for row in rows if row.period_end in window]
+    latest, tied = collapse(present)
+    consolidated = any(row.basis == CONSOLIDATED for row in present)
     basis = Basis.CONSOLIDATED if consolidated else Basis.STANDALONE
     listed = LISTING_BASIS[basis]
     return FilingWindow(
@@ -115,7 +117,7 @@ def filing_window(rows: Sequence[ListingRow], as_of: date) -> FilingWindow:
             )
         ),
         consolidated=consolidated,
-        standalone=any(row.basis != CONSOLIDATED for row in latest),
+        standalone=any(row.basis != CONSOLIDATED for row in present),
         tied=tied,
     )
 
@@ -139,11 +141,18 @@ def collapse(rows: Sequence[ListingRow]) -> tuple[list[ListingRow], bool]:
 
 
 def filing_for(rows: Sequence[ListingRow], period_end: date, basis: str) -> ListingRow | None:
-    """The qualifying filing of one period end on the listing ``basis`` after the collapse rule;
-    ``None`` on a tie or a missing broadcast (spec 2026-11-06-vendor-first §6.8)."""
-    latest, tied = collapse([r for r in rows if (r.period_end, r.basis) == (period_end, basis)])
-    found = [row for row in latest if row.qualifies(basis)]
-    return found[0] if found and not tied else None
+    """The latest-broadcast row of either listing for one period end on the listing ``basis``
+    (a legacy ``Non-Consolidated`` row is standalone); ``None`` on a tie or a missing broadcast
+    (spec 2026-11-06-vendor-first §6.8)."""
+    labels = {basis} if basis == CONSOLIDATED else {basis, NON_CONSOLIDATED}
+    latest, tied = collapse(
+        [
+            row.model_copy(update={"basis": basis})
+            for row in rows
+            if row.period_end == period_end and row.basis in labels
+        ]
+    )
+    return latest[0] if latest and not tied else None
 
 
 def quarter_ends(as_of: date) -> set[date]:

@@ -156,7 +156,9 @@ def run_fallback(
     for group, refused in sorted(triggered.items()):
         rerun, filing, failure = None, None, None
         try:
-            filing, symbol = acquire_group(pool, SnapshotStore(snapshot_root), fetch, group)
+            filing, symbol = acquire_group(
+                pool, SnapshotStore(snapshot_root), fetch, group, pdf_config
+            )
             if filing is not None and filing.pdf is None and pdf_config is not None:
                 failure = FallbackFailure.PDF_UNACQUIRED
             elif filing is not None:
@@ -230,11 +232,16 @@ def pdf_issuer_config(issuer_config: Path | None) -> Path | None:
 
 
 def acquire_group(
-    pool: ConnectionPool, store: SnapshotStore, fetch: Fetch, group: Group
+    pool: ConnectionPool,
+    store: SnapshotStore,
+    fetch: Fetch,
+    group: Group,
+    pdf_config: Path | None,
 ) -> tuple[ResultsFiling | None, str]:
     """The group's filing, requested for the entity's one held NSE symbol and ISIN, which are
-    resolved before any output is prepared."""
+    resolved before any output is prepared; its PDF is the one ``pdf_config`` approves."""
     entity_id, end, basis = group
+    digest = load_config(pdf_config).results_pdf.sha256 if pdf_config else None
     with pool.connection() as conn:
         held = [h for h in latest_slice(conn) if h.entity_id == entity_id]
         (symbol,), (isin,) = (
@@ -253,6 +260,7 @@ def acquire_group(
                 isin=isin,
                 period_end=end,
                 basis=basis,
+                pdf_sha256=digest,
             )
         finally:
             conn.autocommit = False

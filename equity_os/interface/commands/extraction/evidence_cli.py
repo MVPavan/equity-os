@@ -306,7 +306,9 @@ def _acquire(args: argparse.Namespace) -> int:
             args.raw_root, args.generation, args.entity, authorization, live_transport
         )
         try:
-            filing, symbol = acquire_group(pool, SnapshotStore(args.snapshot_root), fetch, group)
+            filing, symbol = acquire_group(
+                pool, SnapshotStore(args.snapshot_root), fetch, group, pdf_config
+            )
         finally:
             write()
         report = None
