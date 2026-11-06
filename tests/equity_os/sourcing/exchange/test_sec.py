@@ -14,6 +14,8 @@ On network unavailability the test skips rather than failing spuriously.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -119,3 +121,21 @@ def test_provenance_binds_accession_and_file_hash(result: SecAnnualResult) -> No
         assert FY25_ACCESSION in provenance.source_id
         assert len(provenance.file_sha256) == 64
         assert all(char in "0123456789abcdef" for char in provenance.file_sha256)
+
+
+def test_facts_are_parsed_from_the_hashed_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The provenance hash must name the bytes the facts came from (audit F05): a response
+    edited before parsing yields the edited value under the edited response's hash."""
+    source = SecAnnualSource(SecSourceConfig(user_agent=TEST_USER_AGENT))
+    try:
+        document = json.loads(source._companyfacts_payload())
+    except SecFetchError as error:
+        pytest.skip(f"SEC EDGAR unreachable: {error}")
+    taxonomy, concept = SecConcept.REVENUE.value.split(":")
+    for fact in document["facts"][taxonomy][concept]["units"]["USD"]:
+        fact["val"] = 1_000_000
+    payload = json.dumps(document).encode()
+    monkeypatch.setattr(source, "_companyfacts_payload", lambda: payload)
+    revenue = _by_concept(source.fetch())[SecConcept.REVENUE.value]
+    assert revenue.normalized_value == Decimal("1")
+    assert revenue.provenance.file_sha256 == hashlib.sha256(payload).hexdigest()

@@ -29,6 +29,7 @@ so EPS loads as its true ``0.76``.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import time
 import urllib.error
@@ -38,7 +39,8 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
-from edgar import Company, set_identity
+from edgar import set_identity
+from edgar.entity.parser import EntityFactsParser
 from pydantic import BaseModel, ConfigDict
 
 from equity_os.contracts.measurement.observation import (
@@ -166,10 +168,12 @@ class SecAnnualSource:
         """Load the FY25 annual observations or raise a typed failure.
 
         Fails closed: on any fetch or validation error no observations are
-        returned. The company-facts document is hashed once for provenance.
+        returned. The facts are parsed from the one company-facts response whose bytes the
+        provenance hash covers.
         """
-        file_sha256 = self._companyfacts_sha256()
-        selected = self._select_annual_facts()
+        payload = self._companyfacts_payload()
+        file_sha256 = hashlib.sha256(payload).hexdigest()
+        selected = self._select_annual_facts(_parse_facts(payload, self._config.cik))
 
         observations = tuple(
             self._to_observation(concept, fact, file_sha256)
@@ -183,8 +187,8 @@ class SecAnnualSource:
         )
         return SecAnnualResult(observations=observations, knowledge_time=knowledge_time)
 
-    def _companyfacts_sha256(self) -> str:
-        """Fetch the company-facts JSON politely and return its sha256 digest."""
+    def _companyfacts_payload(self) -> bytes:
+        """Fetch the company-facts JSON politely and return its bytes."""
         url = COMPANYFACTS_URL_TEMPLATE.format(cik=self._config.cik)
         request = urllib.request.Request(url, headers={USER_AGENT_HEADER: self._config.user_agent})
         last_error: Exception | None = None
@@ -194,7 +198,7 @@ class SecAnnualSource:
                     request, timeout=self._config.request_timeout_seconds
                 ) as response:
                     payload: bytes = response.read()
-                return hashlib.sha256(payload).hexdigest()
+                return payload
             except (urllib.error.URLError, TimeoutError, OSError) as error:
                 last_error = error
                 _LOGGER.warning("companyfacts fetch attempt %d failed: %s", attempt, error)
@@ -203,9 +207,8 @@ class SecAnnualSource:
             f"companyfacts fetch failed after {self._config.max_retries} attempts"
         ) from last_error
 
-    def _select_annual_facts(self) -> dict[SecConcept, Any]:
+    def _select_annual_facts(self, facts: list[Any]) -> dict[SecConcept, Any]:
         """Return exactly one FY25 annual fact per tracked concept."""
-        facts = self._load_all_facts()
         concept_by_value = {concept.value: concept for concept in SecConcept}
         selected: dict[SecConcept, Any] = {}
         for fact in facts:
@@ -226,27 +229,6 @@ class SecAnnualSource:
         if missing:
             raise SecFetchError(f"FY25 annual facts not found for concepts: {sorted(missing)}")
         return selected
-
-    def _load_all_facts(self) -> list[Any]:
-        """Load all entity facts via edgartools with bounded retries."""
-        last_error: Exception | None = None
-        for attempt in range(1, self._config.max_retries + 1):
-            try:
-                company = Company(self._config.cik)
-                entity_facts = company.get_facts()
-                if entity_facts is None:
-                    raise SecFetchError(f"no XBRL facts for CIK {self._config.cik}")
-                facts: list[Any] = list(entity_facts.get_all_facts())
-                return facts
-            except SecFetchError:
-                raise
-            except Exception as error:
-                last_error = error
-                _LOGGER.warning("edgar facts fetch attempt %d failed: %s", attempt, error)
-                time.sleep(self._config.retry_backoff_seconds * attempt)
-        raise SecFetchError(
-            f"edgar facts fetch failed after {self._config.max_retries} attempts"
-        ) from last_error
 
     def _to_observation(self, concept: SecConcept, fact: Any, file_sha256: str) -> Observation:
         """Map one FY25 IFRS annual fact onto the Observation contract."""
@@ -304,6 +286,18 @@ class SecAnnualSource:
         """Fail closed if a monetary fact is not tagged USD (currency guard)."""
         if unit != USD:
             raise SecFetchError(f"expected USD for {concept.value}, got unit {unit!r}")
+
+
+def _parse_facts(payload: bytes, cik: int) -> list[Any]:
+    """Every entity fact in one company-facts response, parsed by edgartools; a malformed
+    response is a ``SecFetchError``, so the diagnostic step degrades instead of failing."""
+    try:
+        entity_facts = EntityFactsParser.parse_company_facts(json.loads(payload))
+    except (ValueError, KeyError, TypeError) as error:
+        raise SecFetchError(f"unparseable company facts for CIK {cik}") from error
+    if entity_facts is None:
+        raise SecFetchError(f"no XBRL facts for CIK {cik}")
+    return list(entity_facts.get_all_facts())
 
 
 def _filing_date_of(fact: Any) -> date:
