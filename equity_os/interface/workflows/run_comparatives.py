@@ -18,6 +18,7 @@ from equity_os.contracts.verification.comparative import (
     ComparativeChange,
     ComparatorKind,
     ConceptComparative,
+    calculate_change,
 )
 from equity_os.extraction.xbrl.xbrl_parser import (
     FactSelectionError,
@@ -30,7 +31,6 @@ from equity_os.interface.entry.config import ComparatorInstanceConfig, Fundament
 from equity_os.interface.workflows.comparatives import (
     REASON_INCOMPATIBLE,
     REASON_SELECTION_FAILED,
-    _calculate,
     _unavailable,
 )
 from equity_os.interface.workflows.pipeline_steps import normalize_entity
@@ -187,12 +187,13 @@ def _change(
             instance.period_end,
             REASON_INCOMPATIBLE.format(reasons="; ".join(compatibility.reasons)),
         )
-    change = _calculate(
+    change = calculate_change(
         kind=kind,
         period_start=instance.period_start,
         period_end=instance.period_end,
         current_value=current.normalized_value,
-        prior=prior,
+        prior_value=prior.normalized_value,
+        prior_source=prior.provenance,
     )
     percent = change.percent_change
     if percent is not None:

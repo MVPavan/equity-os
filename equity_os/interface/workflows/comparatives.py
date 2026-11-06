@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import hashlib
 from datetime import date, timedelta
-from decimal import Context, Decimal, DecimalException, localcontext
+from decimal import DecimalException
 from pathlib import Path
 
 from pydantic import ValidationError
 
 from equity_os.contracts.measurement.observation import Observation, PeriodType, Scope
 from equity_os.contracts.verification.comparative import (
-    PERCENT_CONTEXT_PRECISION,
     ComparativeChange,
     ComparatorKind,
     ConceptComparative,
+    calculate_change,
 )
 from equity_os.extraction.xbrl.xbrl_identity import validate_nse_entity_identities
 from equity_os.extraction.xbrl.xbrl_parser import (
@@ -50,8 +50,6 @@ from equity_os.verification.diagnostics.report import CollectedSource, SourceSta
 REASON_NSE_NOT_SELECTED = "NSE comparator source was not selected"
 REASON_NSE_CURRENT_UNAVAILABLE = "current NSE source is {status}: {reason}"
 REASON_NO_CURRENT = "no retained source-verified current value"
-REASON_PRIOR_ZERO = "prior value is zero"
-REASON_PERCENT_RANGE = "percent calculation exceeded safe range"
 REASON_NO_FIXTURE = "no {kind} NSE comparator fixture configured"
 REASON_SELECTION_FAILED = "comparator selection failed: {error}"
 REASON_INCOMPATIBLE = "comparator key incompatible: {reasons}"
@@ -216,57 +214,6 @@ def _unavailable(
     )
 
 
-def _calculate(
-    *,
-    kind: ComparatorKind,
-    period_start: date,
-    period_end: date,
-    current_value: Decimal,
-    prior: Observation,
-) -> ComparativeChange:
-    """Calculate Decimal absolute and percent changes over two sourced endpoints."""
-    delta = current_value - prior.normalized_value
-    absolute_trace = f"{current_value} - {prior.normalized_value}"
-    if prior.normalized_value == 0:
-        return ComparativeChange(
-            kind=kind,
-            period_start=period_start,
-            period_end=period_end,
-            prior_value=prior.normalized_value,
-            absolute_change=delta,
-            absolute_trace=absolute_trace,
-            prior_source=prior.provenance,
-            percent_unavailable_reason=REASON_PRIOR_ZERO,
-        )
-    try:
-        with localcontext(Context(prec=PERCENT_CONTEXT_PRECISION)):
-            percent = delta / prior.normalized_value * Decimal(100)
-    except DecimalException:
-        return ComparativeChange(
-            kind=kind,
-            period_start=period_start,
-            period_end=period_end,
-            prior_value=prior.normalized_value,
-            absolute_change=delta,
-            absolute_trace=absolute_trace,
-            prior_source=prior.provenance,
-            percent_unavailable_reason=REASON_PERCENT_RANGE,
-        )
-    return ComparativeChange(
-        kind=kind,
-        period_start=period_start,
-        period_end=period_end,
-        prior_value=prior.normalized_value,
-        absolute_change=delta,
-        percent_change=percent,
-        absolute_trace=absolute_trace,
-        percent_trace=(
-            f"({current_value} - {prior.normalized_value}) / {prior.normalized_value} * 100"
-        ),
-        prior_source=prior.provenance,
-    )
-
-
 def _one_change(
     *,
     kind: ComparatorKind,
@@ -309,12 +256,13 @@ def _one_change(
             REASON_INCOMPATIBLE.format(reasons="; ".join(compatibility.reasons)),
         )
     assert current.agreed_value is not None
-    return _calculate(
+    return calculate_change(
         kind=kind,
         period_start=period_start,
         period_end=period_end,
         current_value=current.agreed_value,
-        prior=canonical_prior,
+        prior_value=canonical_prior.normalized_value,
+        prior_source=canonical_prior.provenance,
     )
 
 

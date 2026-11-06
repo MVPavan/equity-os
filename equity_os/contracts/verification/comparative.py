@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
+from decimal import Context, Decimal, DecimalException, localcontext
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -25,6 +25,8 @@ class ComparatorKind(StrEnum):
 
 
 TAXONOMY_DRIFT_PREFIX = "taxonomy drift: "
+REASON_PRIOR_ZERO = "prior value is zero"
+REASON_PERCENT_RANGE = "percent calculation exceeded safe range"
 
 
 class ComparativeChange(BaseModel):
@@ -117,3 +119,43 @@ class ConceptComparative(BaseModel):
         ):
             raise ValueError("a current value requires its unit and at least one source anchor")
         return self
+
+
+def calculate_change(
+    *,
+    kind: ComparatorKind,
+    period_start: date,
+    period_end: date,
+    current_value: Decimal,
+    prior_value: Decimal,
+    prior_source: Provenance,
+) -> ComparativeChange:
+    """Calculate Decimal absolute and percent changes over two sourced endpoints."""
+    delta = current_value - prior_value
+    common = {
+        "kind": kind,
+        "period_start": period_start,
+        "period_end": period_end,
+        "prior_value": prior_value,
+        "absolute_change": delta,
+        "absolute_trace": f"{current_value} - {prior_value}",
+        "prior_source": prior_source,
+    }
+    if prior_value == 0:
+        return ComparativeChange.model_validate(
+            common | {"percent_unavailable_reason": REASON_PRIOR_ZERO}
+        )
+    try:
+        with localcontext(Context(prec=PERCENT_CONTEXT_PRECISION)):
+            percent = delta / prior_value * Decimal(100)
+    except DecimalException:
+        return ComparativeChange.model_validate(
+            common | {"percent_unavailable_reason": REASON_PERCENT_RANGE}
+        )
+    return ComparativeChange.model_validate(
+        common
+        | {
+            "percent_change": percent,
+            "percent_trace": f"({current_value} - {prior_value}) / {prior_value} * 100",
+        }
+    )

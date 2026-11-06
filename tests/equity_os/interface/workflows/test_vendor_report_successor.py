@@ -124,3 +124,21 @@ def test_vendor_fact_carries_through_rework_and_into_next_quarter(
     assert qoq.prior_source.file_sha256[:12] not in note
     assert vendor in _operands(pilot, claims[f"{QOQ}.abs"]) & _operands(pilot, claims[f"{QOQ}.pct"])
     assert _matched(pilot, result.draft_version_id)
+
+    # (c) an ordinary rework of FY26_Q3 keeps the approved vendor-valued QoQ prior.
+    q3 = result.draft_version_id
+    with pilot.pg_db.runtime_pool() as runtime:
+        lifecycle.submit(runtime, q3, **pilot.sources())
+    with pilot.pg_db.owner_pool() as owner:
+        lifecycle.decide(
+            owner,
+            subject_kind=SubjectKind.REPORT_VERSION,
+            subject_id=q3,
+            kind=DecisionKind.REQUEST_CHANGES,
+            ruling=RULING,
+            claims=(f"{YOY}.prior",),
+        )
+    rework = pilot.run("FY26_Q3").draft_version_id
+    assert rework is not None and rework != q3
+    assert _claims(pilot, rework)[f"{QOQ}.prior"] == prior
+    assert _matched(pilot, rework)

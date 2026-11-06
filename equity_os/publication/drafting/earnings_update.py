@@ -32,6 +32,7 @@ from equity_os.contracts.verification.comparative import (
     TAXONOMY_DRIFT_PREFIX,
     ComparativeChange,
     ConceptComparative,
+    calculate_change,
 )
 from equity_os.contracts.verification.vendor_first import LABEL_TEXT, AdmissionLabel, weakest
 from equity_os.publication.checking.claim_check import UNITS
@@ -296,16 +297,22 @@ def _qualifier(facts: Sequence[AdmittedFact | None]) -> str:
 def predecessor_change(
     change: ComparativeChange, current: Decimal, prior: AdmittedFact, unit: str
 ) -> ComparativeChange:
-    """An available QoQ change against the predecessor head's admitted fact: its value in
-    ``unit`` and file, the changes computed from it."""
-    value = prior.value / (UNITS[unit][2] or 1)
-    absolute, percent = current - value, change.percent_change
+    """An available QoQ change recalculated against the predecessor head's admitted fact: its
+    value in ``unit`` and file, the changes, traces and percent availability computed from it."""
+    rebuilt = calculate_change(
+        kind=change.kind,
+        period_start=change.period_start,
+        period_end=change.period_end,
+        current_value=current,
+        prior_value=prior.value / (UNITS[unit][2] or 1),
+        prior_source=prior.provenance,
+    )
+    percent = rebuilt.percent_change
     if percent is not None:
         with localcontext(Context(prec=PERCENT_CONTEXT_PRECISION)):
-            percent = (absolute / value * 100).quantize(_PERCENT, ROUND_HALF_EVEN)
-    update = {"prior_value": value, "prior_source": prior.provenance}
-    return change.model_copy(
-        update=update | {"absolute_change": absolute, "percent_change": percent}
+            percent = percent.quantize(_PERCENT, ROUND_HALF_EVEN)
+    return rebuilt.model_copy(
+        update={"percent_change": percent, "taxonomy_drift": change.taxonomy_drift}
     )
 
 
