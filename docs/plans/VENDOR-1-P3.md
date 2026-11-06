@@ -1,17 +1,26 @@
 # VENDOR-1 Phase 3 Implementation Plan: banks
 
+## Review 4 dispositions
+
+| Item | Disposition |
+|---|---|
+| R2-04 (P1) Screener markerless exception | Exchange basis status no longer grants it. The standalone-only topology comes only from the issuer's reviewed Screener topology evidence. This is the existing NETWEB mechanism: the committed `config/coverage/watchlist.yaml` entry with `screener_warehouse_id_consolidated: null`, read through `screener_page_cli.basis_topology` and matched on company and warehouse id. Onboarding (`discover` → `screener_page_state`, `_vendor_adapters`) and reingest read that entry through the new `watchlist_topology`. Without it a standalone page must carry its marker, or it refuses. The `basis_status` argument and reingest's `basis_status_as_of` lookup are removed. Case (5) is new: exchange `STANDALONE_ONLY` without the entry must not authorise an unmarked page. Case (4) keeps the NETWEB exception (Tasks 5, 7). |
+| R4-01 (P1) intake-command order | Before Task 10, Task 8 runs the full Task 13 command 1 with `--mapping-set v11`, the set Task 8 produces. After Task 12 publishes v12, Task 12's gate rerun runs the literal sealed v12 command, before Task 13's rehearsal and live run. Arguments, staged-member equality and the frozen live inventory are unchanged (Tasks 8, 12, 13). |
+| R4-02 (P2) shared shareholding file | The bumps stay: no smaller valid design exists (see the note under the inventory). `tijori-shp-v2` → `v3` and `upstox-shp-v2` → `v3` are added to the inventory and to Task 5's files, pin verification and Apar follow-up. The no-alias and durable-pin rules are unchanged. |
+| Notes | Fixed the formula-set parenthetical. Task 9 now reconciles §8's old dictionary, control and baseline numbers. Reingest case (1) uses a synthetic financial table and seeded occurrence provenance. The trigger reconciliation is scoped to `eqos` business tables. |
+
 ## Review 3 dispositions
 
 | Item | Disposition |
 |---|---|
-| R2-04 (P1) Screener basis binding | Selecting standalone no longer implies standalone-only topology. `verification.screener_topology(warehouse_id, basis, basis_status)` builds a standalone-only topology only when the entity's exchange-evidenced basis status is `STANDALONE_ONLY`; otherwise a standalone page must carry its `Standalone Figures` marker, through a new `BasisTopology.consolidated_published` flag (Task 5). Applied to onboarding (`screener_page_state`, `_vendor_adapters`) and reingest (Task 7). The four cases are tests before Task 10. The two edited files are content-pinned, so `screener-v1` → `screener-v2` and `screener-shp-v2` → `screener-shp-v3` (Version and pin inventory). |
+| R2-04 (P1) Screener basis binding (superseded by Review 4) | Selecting standalone no longer implies standalone-only topology. `verification.screener_topology(warehouse_id, basis, basis_status)` builds a standalone-only topology only when the entity's exchange-evidenced basis status is `STANDALONE_ONLY`; otherwise a standalone page must carry its `Standalone Figures` marker, through a new `BasisTopology.consolidated_published` flag (Task 5). Applied to onboarding (`screener_page_state`, `_vendor_adapters`) and reingest (Task 7). The four cases are tests before Task 10. The two edited files are content-pinned, so `screener-v1` → `screener-v2` and `screener-shp-v2` → `screener-shp-v3` (Version and pin inventory). |
 | R2-03 (P1) allowlist | `retention_classes` (0027 `classify_capture`, `AFTER INSERT ON capture_refs`) is added to every row that can register a new capture: grounding, onboarding, evidence ingest. Conditional `calculation_traces`, `calculation_trace_operands` and `construction_traces` (`put_interpretations`) are added to onboarding and evidence ingest. Reingest stays sequence-only for existing captures. `capture_states` is dropped, because registration writes none. A trigger reconciliation over migrations 0001–0049 is stated under the table. |
 | R3-01 (P2) ledger check | Task 3 freezes and reviews the evidence-backed ledger, recording its sha256. Task 6 runs the mechanical comparison against the implemented v5 rules and must pass before Task 10. Expected outcomes are read from the frozen ledger, never regenerated. A mismatch stops work until a reviewed ledger or branch amendment. |
 | Notes | The Interactions line now says FIVE-1 never edits this plan. Task 13's commands carry every argument, filled into `commands.txt` before Task 8's exact-command test and before sealing. The frozen ledger stays independent of the implementation (Task 6). |
 | PDF-fix renumbering (orchestrator, binding) | The base is `main` after `eqos-djv`, `eqos-ghv`, `eqos-dol` and `eqos-n21` (`f75892e8`): dictionary v4, mapping set v10, `pdf/v3`, `constructions/v3`, `pdf-occurrences/5`. Phase 3 now creates dictionary **v5** (v4 plus issuer applicability and bank rows), first-party set **v11**, vendor set **v12**, **`pdf/v4/results_layout_banking.yaml`** (alone; v11 keeps listing `pdf/v3/results_layout.yaml`) and PDF extractor **`pdf-occurrences/6`**. Phase 3 creates no constructions version; one, if needed, would be `constructions/v4`. Unchanged: `xbrl/v6`, `statement_anchors/v3`, `screener/v5`, `tijori/v6`, formula set label: v4 declares formula set v3 after the rebase (v4 adds rows, not formula-set changes, unless the rebase worker finds one is needed). |
 
-**Status:** fix round 3 after Sol plan review 3 (`CHANGES REQUIRED`: R2-03, R2-04, R3-01, notes),
-renumbered after the results-PDF fixes, over round 2's R2-01–R2-05 and round 1's F01–F26 and
+**Status:** fix round 4 (final) after Sol plan review 4 (`CHANGES REQUIRED`: R2-04, R4-01,
+R4-02, notes), over round 3 (R2-03, R2-04, R3-01), renumbered after the results-PDF fixes, over round 2's R2-01–R2-05 and round 1's F01–F26 and
 A1–A6; for Sol re-review. **Bead:** `eqos-awnc`. **Prerequisite:** FIVE-1 Tasks 1–2
 (`docs/plans/FIVE-1-enablement.md`) gate Task 11 and phase completion; Tasks 1–10 proceed.
 **Origin:** `docs/specs/2026-11-06-vendor-first.md` §8 (authoritative, amended per A1–A5), §6.1
@@ -178,9 +187,18 @@ is unconditional; only the cells below vary.
 | `PDF_EXTRACTOR_VERSION` (hashes `member_identity.py`, `first_party_extract.py`) | Task 5 | `pdf-occurrences/5` (the base) → `/6` once, in Task 5 (F08 rule below) |
 | `SHP_EXTRACTOR_VERSION` (hashes `member_identity.py`) | Task 5 | bumped in Task 5 |
 | Screener financials extractor (`vendor_screener.EXTRACTOR_VERSION`; hashes `screener_session_models.py`, `screener_session_page.py`) | Task 5 (`BasisTopology.consolidated_published`, R2-04) | `screener-v1` → `screener-v2` in Task 5 |
-| Screener shareholding extractor (`vendor_shareholding.SCREENER_VERSION`; hashes the same two files) | Task 5 (same edit) | `screener-shp-v2` → `screener-shp-v3` in Task 5; stored Screener SHP pins stay; a later SHP run re-ingests (Apar follow-up, Interactions) |
+| Screener shareholding extractor (`vendor_shareholding.SCREENER_VERSION`; hashes the same two files and `vendor_shareholding.py`) | Task 5 (same edit; the constant's bump edits `vendor_shareholding.py`) | `screener-shp-v2` → `screener-shp-v3` in Task 5; stored Screener SHP pins stay; a later SHP run re-ingests (Apar follow-up, Interactions) |
+| Tijori shareholding extractor (`vendor_shareholding.TIJORI_VERSION`; hashes `vendor_shareholding.py`; `run_config.py:132–139`) | Task 5 (the `SCREENER_VERSION` edit changes this file's bytes, R4-02) | `tijori-shp-v2` → `tijori-shp-v3` in Task 5; stored pins stay; a later Tijori SHP run re-ingests (Apar follow-up) |
+| Upstox shareholding extractor (`vendor_shareholding.UPSTOX_VERSION`; hashes `vendor_shareholding.py`; `run_config.py:140–146`) | Task 5 (same, R4-02) | `upstox-shp-v2` → `upstox-shp-v3` in Task 5; stored pins stay; a later Upstox SHP run re-ingests (Apar follow-up) |
 | Tijori vendor extractor (`VENDOR_EXTRACTORS`) | Task 12 (display loaded from the mapping set) | bumped in Task 12 |
-| `formula_set_version` | Task 6 (`derived.yaml` applicability) | v5 `metadata.yaml` declares `formula_set_version: v4` (dictionary v4 declares v2, v3 declares v3; v4 is unused) |
+| `formula_set_version` | Task 6 (`derived.yaml` applicability) | v5 `metadata.yaml` declares `formula_set_version: v4` (dictionary v3 and the rebased v4 declare v3; formula set v4 is new) |
+
+No smaller design avoids the shareholding bumps (R4-02). The flag must live in
+`screener_session_models.py`, because a standalone-only topology rejects a correctly marked page
+(`screener_session_page.py:220–226`) and no consolidated warehouse id is known at onboarding.
+`screener-shp` hashes that file (`run_config.py:104–127`), so it must bump. `SCREENER_VERSION` is
+read only by `run_config.py`, but declaring it there would leave a stale v2 constant in
+`vendor_shareholding.py`. Removing that constant would change the same hashed bytes anyway.
 | `_SEMANTICS_VERSION` (`run_config.py:195`) | Task 7 (framework and issuer applicability change how inputs become results) | bumped; `require_pins` refuses an earlier semantics pin |
 | mapping set content | Task 8 (v11; B7a `pdf/v4/`), Task 12 (v12, names `tijori/v6/display.yaml`) | the display file joins the set's content hash via the new `display_file` key; no constructions file changes (a needed one would be `constructions/v4`) |
 
@@ -208,8 +226,9 @@ new code is refused by version, never recomputed (historical replay needs the ol
 | `equity_os/companies/identity/identity_seed.py` | modify | 4 | two setting keys, `OWNER_DECISION` |
 | `equity_os/contracts/measurement/observation.py` | modify | 4 (B1b) | one `AccountingFramework` value |
 | `migrations/0050_issuer_class.sql` | create | 4 | settings-key and evidence-kind CHECKs |
-| `equity_os/companies/onboarding/{verification,discovery,derived_settings}.py`, `nse_filings.py` | modify | 5 | form, framework, identity, bank PDF acquisition, analysis-basis selection, basis status, B6b, B10b; `derived_settings.framework_evidence` reader (R2-01); `screener_topology(..., basis_status)` (R2-04) |
-| `equity_os/extraction/vendors/screener/screener_session_models.py`, `vendor_screener.py`, `extraction/surfaces/vendor_shareholding.py` | modify | 5 | `BasisTopology.consolidated_published` (R2-04); the two Screener extractor bumps |
+| `equity_os/companies/onboarding/{verification,discovery,derived_settings}.py`, `nse_filings.py` | modify | 5 | form, framework, identity, bank PDF acquisition, analysis-basis selection, basis status, B6b, B10b; `derived_settings.framework_evidence` reader (R2-01); `screener_topology(..., configured)` and `discover`'s configured topology (R2-04) |
+| `equity_os/interface/commands/sourcing/screener_page_cli.py` | modify | 5 | `watchlist_topology(config_root, symbol)` (R2-04) |
+| `equity_os/extraction/vendors/screener/screener_session_models.py`, `vendor_screener.py`, `extraction/surfaces/vendor_shareholding.py` | modify | 5 | `BasisTopology.consolidated_published` (R2-04); the two Screener extractor bumps; the Tijori and Upstox shareholding bumps (R4-02) |
 | `equity_os/extraction/packages/{member_identity,capture_intake}.py` | modify | 5 | bank form predicate, PDF framework evidence, B1b phrases; `xbrl_source_id(issuer_class, basis)`; refuse `nse-grounding` members |
 | `equity_os/extraction/packages/{first_party_extract,first_party_ingest}.py` | modify | 5 | `IngestRequest.framework_evidence`; `_read_xbrl` verifies with it on fresh extraction and reuse; its sha256 joins the extraction context (R2-01) |
 | `equity_os/companies/onboarding/bank_onboarding.py` | create | 5 | decision binding, issuer-class inputs, pin choice, `stage_inputs` (R2-02) |
@@ -221,7 +240,7 @@ new code is refused by version, never recomputed (historical replay needs the ol
 | `equity_os/normalisation/dictionary/{dictionary,applicability}.py` | modify | 6 | `issuer_applicability`, context `issuer_class` |
 | `equity_os/verification/comparison/engine_issuer_context.py` | create | 7 | `issuer_context(settings, entity_id, period_end, cutoff)` |
 | `equity_os/verification/comparison/{engine,engine_vendor_context,run_family,fact_view}.py` | modify | 7 | pass the context where keys, packages and lookups are chosen (engine net ≤ +10) |
-| `evidence_cli.py`, `vendor_reingest.py`, `verification/admission/fallback.py` | modify | 7 (+12 `vendor_reingest`) | entity framework, framework evidence and source; reingest's Screener binding via `verification.screener_topology` with the entity's basis status (R2-04); display from the set (12) |
+| `evidence_cli.py`, `vendor_reingest.py`, `verification/admission/fallback.py` | modify | 7 (+12 `vendor_reingest`) | entity framework, framework evidence and source; reingest's Screener binding via `verification.screener_topology` with the issuer's watchlist topology (R2-04); display from the set (12) |
 | `config/normalisation/mappings/xbrl/v6/*`, `statement_anchors/v3.yaml` (B8), `pdf/v4/results_layout_banking.yaml` (v11 also lists the unchanged `pdf/v3/results_layout.yaml`) and `config/runs/icicibank-<period>.yaml` (B7a), `mappings/v11.yaml` | create | 8 | bank first-party entries and set |
 | `equity_os/extraction/xbrl/xbrl_taxonomies.py` | modify | 8 (B3b) | evidenced `TaxonomySpec` |
 | `equity_os/normalisation/mapping/mapping.py` | modify | 12 | optional `display_file` set key |
@@ -312,8 +331,11 @@ the vendor-surface path). No command here writes `capture_states`: a registered 
 `RETAINED` with no state row (0028); only purge and refetch write it. Conditional rows may be
 absent; a listed table's sequence may advance without a row.
 
-**Trigger reconciliation (R2-03).** Across migrations 0001–0049 one trigger writes another table on
-these commands' paths: `classify_capture` (0027, `AFTER INSERT ON capture_refs`) inserts the
+**Trigger reconciliation (R2-03).** This is an inventory of `eqos` business tables, the scope of
+the inherited allowlist (`VENDOR-1-P1.md`). Queue and clock helpers also write
+`eqos_clock.queue_locks` and `eqos_clock.transaction_times` (0009, 0005). The read-only
+`check_operand_decision` guard (0013) locks and checks only. Neither changes the allowlists. Across
+migrations 0001–0049, one trigger writes another `eqos` business table on these commands' paths: `classify_capture` (0027, `AFTER INSERT ON capture_refs`) inserts the
 `retention_classes` row, hence that table wherever a new capture can register. It does not fire
 on reingest's `ON CONFLICT DO NOTHING` re-registration, which inserts no row. The other triggers on
 written tables check or stamp the inserted row and write nothing else: `check_operand_capture`,
@@ -439,10 +461,11 @@ Files:
   `package_manifest` call replaced by one `bank_onboarding.stage_inputs` call),
   `first_party_extract.py` and `first_party_ingest.py` (framework evidence), `vendor_first.py`
   (`issuer_class` per reading 4), `screener_session_models.py` (`consolidated_published`),
-  `vendor_screener.py` and `vendor_shareholding.py` (Screener bumps), `run_config.py` (three
-  first-party extractor bumps)
+  `screener_page_cli.py` (`watchlist_topology`), `vendor_screener.py` and `vendor_shareholding.py`
+  (Screener bumps; `tijori-shp-v3`, `upstox-shp-v3`, R4-02), `run_config.py` (three first-party
+  extractor bumps)
 - Test: `test_onboarding_verification.py` (HDFCBANK moves to the bank route; BAJFINANCE, HDFCLIFE
-  unchanged; the four Screener basis cases); `test_bank_onboarding.py` (`pg`, `retained`);
+  unchanged; the five Screener basis cases); `test_bank_onboarding.py` (`pg`, `retained`);
   `test_issuer_class.py` (unit)
 
 Interfaces:
@@ -452,7 +475,8 @@ Interfaces:
   `derived_settings.framework_evidence(conn, entity_id, period_end, cutoff) -> FrameworkEvidence |
   None` (the framework setting's retained PDF input for that filing); `bank_onboarding.versions(args)
   -> ConfigVersions`; `bank_onboarding.binding(path, isin, basis)`; `screener_topology(warehouse_id,
-  basis, basis_status) -> BasisTopology`;
+  basis, configured: BasisTopology | None) -> BasisTopology`;
+  `watchlist_topology(config_root, symbol) -> BasisTopology | None`;
   `bank_onboarding.stage_inputs(raw_root, symbol, filings, pdf, issuer_config) -> Path`.
 
 Approach (F04, F05, F19, F20):
@@ -491,16 +515,31 @@ Approach (F04, F05, F19, F20):
   accepts an unmarked page. The fix: `BasisTopology` gains `consolidated_published: bool = False`
   ("the vendor publishes a consolidated page whose warehouse id this binding does not hold").
   `standalone_only` and `single_basis` treat it as a published consolidated basis. Existing callers
-  never set it and behave as today. `screener_topology(warehouse_id, basis, basis_status)` returns
-  the standalone-only topology only when `basis_status` is `STANDALONE_ONLY`. That status is the
-  entity's exchange-listing evidence that no consolidated statements exist, the NETWEB case in
-  `docs/research/screener/surface-map.md`. Otherwise a standalone request gets
+  never set it and behave as today.
+  The markerless exception comes only from reviewed Screener topology evidence for the issuer
+  (R2-04, review 4). This is the mechanism NETWEB already uses. Its committed watchlist entry in
+  `config/coverage/watchlist.yaml` records `screener_warehouse_id_consolidated: null`, live-verified
+  against the retained subscriber page (surface-map.md §10; the file's header). The entry is read
+  as a `BasisTopology` by `screener_page_cli.basis_topology(stock)`.
+  A new `screener_page_cli.watchlist_topology(config_root, symbol) -> BasisTopology | None` returns
+  that topology for the issuer's entry under `<config-root>/coverage/watchlist.yaml` (`None` when
+  there is no entry).
+  `screener_topology(warehouse_id, basis, configured)` then returns the standalone-only topology
+  only when three things hold: `configured.standalone_only` is true, the page's company id equals
+  the entry's `screener_company_id`, and the page's warehouse id equals the entry's standalone id.
+  In every other case a standalone request gets
   `BasisTopology(standalone_warehouse_id=..., consolidated_published=True)`, so the page's
-  `Standalone Figures` marker is required. Consolidated is unchanged. Choosing standalone never
-  implies standalone-only. Both call sites pass the basis status that discovery derives from the
-  listings: `screener_page_state` (`verification.py:315–316`, from `discovery._vendors`) and
-  `onboard_cli._vendor_adapters`. Both directions fail closed: a dual-basis issuer whose page has
-  no marker refuses, and a standalone-only issuer whose page has a marker refuses, as today.
+  `Standalone Figures` marker is required. Consolidated is unchanged.
+  Exchange basis status is not consulted. `STANDALONE_ONLY` describes the issuer's exchange filings,
+  not the vendor's pages, so it can never grant the exception. Choosing standalone never implies
+  standalone-only.
+  The same entry is carried through onboarding and reingest. `onboard_cli` loads it once, then
+  passes it into `discover` → `_vendors` → `screener_page_state` (`verification.py:315–316`) and
+  into `_vendor_adapters`. Task 7's reingest reads the same entry. The interface layer loads the
+  watchlist, so the `companies` layer imports nothing from it.
+  Both directions fail closed. An unmarked page with no reviewed standalone-only entry refuses. A
+  marked page whose entry says standalone-only refuses, as today. ICICIBANK has no watchlist entry,
+  so its standalone page must carry its marker.
 - Settings: framework and `ISSUER_CLASS` (`DISCOVERY`), `ANALYSIS_BASIS` (`OWNER_DECISION`), basis
   status from the listed bases (`_BASIS_STATUS` no longer keys on the selected basis).
 
@@ -511,15 +550,25 @@ package whose instance sha256s equal the evidence pins, both filings verified. R
 write: bank form without `--analysis-basis`; binding for another ISIN; binding value `STANDALONE`
 with `--analysis-basis consolidated`; a path outside `basis_decisions/`; a quote absent from the
 spec. Apar replay unchanged (existing onboarding suite); BAJFINANCE, HDFCLIFE `UNSUPPORTED`.
-Screener basis (R2-04, must pass before Task 10). Each case is an in-memory page shell with the
-authentication, identity and code elements and no vendor body or value. Each runs through
-`screener_page_state` and through `extract_screener_page`'s gate with the binding that
-`screener_topology` builds:
-(1) a page marked standalone, for a `CONSOLIDATED_AND_STANDALONE` entity, verifies and extracts;
-(2) the same entity's unmarked page refuses (`BASIS_UNVERIFIED`; `BasisEvidenceMissingError`);
+Screener basis (R2-04, must pass before Task 10). Each case is an in-memory page shell. It carries
+the authentication, identity and code elements, plus one minimal synthetic financial table: one
+section, one row, made-up label and number, no vendor body or value. Each case runs through
+`screener_page_state` and through `extract_screener_page`'s gate, using the binding that
+`screener_topology` builds from the case's watchlist entry:
+(1) an issuer with no watchlist entry: a page marked standalone verifies and extracts;
+(2) the same issuer's unmarked page refuses (`BASIS_UNVERIFIED`; `BasisEvidenceMissingError`);
 (3) a page marked consolidated, requested as standalone, refuses (`BasisMismatchError`);
-(4) for a `STANDALONE_ONLY` entity, the unmarked page verifies and the marked page refuses.
+(4) the NETWEB-style exception, using the committed NETWEB entry (consolidated null) and a shell
+carrying its company and standalone warehouse ids: the unmarked page verifies, and the marked page
+refuses;
+(5) the discriminating case: an entity whose exchange basis status is `STANDALONE_ONLY`, with no
+watchlist entry or an entry whose ids differ from the page. Its unmarked page refuses, and its
+marked page verifies.
 The existing Screener session suites pass unchanged.
+Pins: the version-pin suite passes with `screener-v2`, `screener-shp-v3`, `tijori-shp-v3` and
+`upstox-shp-v3`. Each of these hashes its listed files at the tip. On an `eqos_test_*` store that
+holds a pre-Phase-3 pin of each, the old pin stays and the new version records its own pin. No
+alias.
 Staged inputs: the replay's `inputs/` files equal a second replay's on a fresh database (path,
 sha256); Apar's staged XBRL-only layout ingests as before. P arm (if taken), through package
 ingest: onboarding ingests the PDF-only-declared instance; the reuse check passes with the same
@@ -604,15 +653,13 @@ package selection and comparative/formula lookups (`engine.py:223–255`, `:465�
 whose framework differs from the context refuses. `SHAREHOLDING` keeps its `UNKNOWN` framework.
 `xbrl_parser.py:538` (legacy parser, off the results path) is not touched.
 
-Reingest basis binding (R2-04). `vendor_reingest._adapters` (`:149–157`) replaces the fixed
-consolidated topology with `verification.screener_topology(warehouse_id, basis, basis_status)`.
-For a standalone request the basis status is the entity's
-`repository.basis_status_as_of(entity_id, cutoff)`, with the store clock at the command as the
-cutoff; an entity with no status refuses the standalone request. The warehouse id and identity
-evidence
-still come from the retained page and its first occurrence. A dual-basis entity's standalone page
-must carry its own marker, and only a `STANDALONE_ONLY` entity's page may be unmarked (Task 5's
-rule). A page of the other basis refuses.
+Reingest basis binding (R2-04). `vendor_reingest._adapters` (`:149–157`) drops the fixed
+consolidated topology. It uses `verification.screener_topology(warehouse_id, basis,
+watchlist_topology(config_root, ids.nse_symbol))` instead, the same reviewed entry onboarding used
+(Task 5). No basis-status lookup is added. The warehouse id and identity evidence still come from
+the retained page and its first occurrence. A standalone page must carry its own marker. It may be
+unmarked only when the issuer's reviewed watchlist entry records standalone-only with matching ids
+(Task 5's rule). A page of the other basis refuses.
 
 Verification: Apar comparison suites pass; bank run: ledger `VALUE` keys valued, non-financial-only
 rows `NOT_APPLICABLE` by `ISSUER_RULE_ID`, a v5 group without class refused; results equal whether
@@ -622,12 +669,17 @@ refused by `require_pins`. Bank fallback: a triggered ICICIBANK cell acquires un
 and ingests with the bank framework; a listing without the period ends `FILING_UNAVAILABLE`; B7a: the
 PDF member joins with the issuer config; P arm: fallback and `evidence ingest` verify the instance
 with the setting's PDF evidence, and refuse when that evidence contradicts it. Reingest (before
-Task 10), through public `eqos vendor reingest --basis standalone` over registered captures of
-Task 5's four page shells, each with a `CONSOLIDATED_AND_STANDALONE` or `STANDALONE_ONLY` entity
-as its case names. Case (1) stores interpretations under `screener-v2` with standalone keys, (2)
-and (3) refuse, and (4) passes unmarked and refuses marked. Apar's consolidated reingest is
-unchanged. Task 12 reruns case (1), or (4) on B5b, over ICICIBANK's retained bank page; no bank
-page is retained before Task 11.
+Task 10), through public `eqos vendor reingest --basis standalone`. It runs over registered
+captures of Task 5's five page shells, each with the entity and watchlist entry its case names.
+Each capture is seeded with a first occurrence whose native context carries the identity evidence
+ref that reingest reads (`earlier[0].native_context`). Case (1) stores interpretations under
+`screener-v2` with standalone keys, from its synthetic financial table: extraction enumerates
+financial-table cells (`vendor_screener.py:115–135`), so the identity shell alone proves only the
+gate. Cases (2) and (3) refuse. Case (4) passes unmarked and refuses marked. Case (5) refuses
+unmarked. Apar's consolidated reingest is unchanged. Task 12 reruns case (1) over ICICIBANK's
+retained bank page; no bank page is retained before Task 11. If that page is unmarked, Screener
+stays unverified for ICICIBANK. A standalone-only exception would need a reviewed topology entry,
+added only by a Sol-reviewed amendment.
 
 Dependencies: Tasks 5, 6.
 
@@ -664,11 +716,14 @@ Verification: per ledger `VALUE` line, code compares the interpretation's canoni
 sign, period, interval and provenance with the retained fact; `statements_present`, reporting kind
 and period shape as the record states; Apar's retained packages give equal interpretations per
 canonical key, value and status under v10 and v11; B7a: a PDF ingest of the retained PDF yields
-`MAPPED` occurrences, not only a text layer. Task 13's intake (R2-02): onboarding replay over the
-Task 2 bodies (Task 5's test folder) stages `inputs/`, then Task 13 command 1, the literal string
-from `commands.txt` with every argument filled (Task 13), over that directory, on the same and on a
-fresh database after a second replay, builds the package with the
-XBRL and (B7a) PDF members and the issuer config, every member `COMPLETE`.
+`MAPPED` occurrences, not only a text layer. Task 13's intake (R2-02, R4-01, before Task 10):
+onboarding replay over the Task 2 bodies (Task 5's test folder) stages `inputs/`. Then Task 13
+command 1 runs as the string from `commands.txt` with every argument filled (Task 13). The one
+change is `--mapping-set v11`, the set this task produces, in place of `v12`, which does not exist
+until Task 12. It runs over that directory, on the same database and on a fresh one after a second
+replay. It must build the package with the XBRL and (B7a) PDF members and the issuer config, with
+every member `COMPLETE` and the staged members equal across both runs. Task 12's gate rerun later
+runs the literal v12 string.
 
 Dependencies: Task 6; Task 3; the intake test also needs Tasks 5 and 7.
 
@@ -680,7 +735,9 @@ Files: `docs/specs/2026-11-06-vendor-first.md` (any contract wording Task 3 appr
 framework name; A1–A6 are already in); the canonical data spec (§8 outcome table, Stage 4, Out of
 Scope, §10 verbatim); `CONTEXT.md` (**Issuer class**: `NON_FINANCIAL` or `BANK`, from the filing's
 IntegratedFinance form; **Analysis basis**: the basis a bound owner decision fixes for analysis,
-apart from reported bases).
+apart from reported bases). The vendor-first spec's §8 still uses the old numbers for the
+dictionary, control and baseline (`:472`, `:505–510`). Task 9 reconciles them with the binding
+renumbering: dictionary v5, sets v11/v12, the v4/v10 baseline and control.
 
 Verification: every linked path exists; `test_source_list.py` passes. Reviewed at phase end.
 
@@ -690,7 +747,7 @@ Dependencies: Task 5.
 
 Goal: the tip holding Tasks 1 and 4–9 passes `scripts/verify.sh gate vendor-1-p3` (a
 `systemd-run --user` unit; log and revision in `scratchpad/vendor-first/gate-3/`), including Task
-5's four Screener basis cases, Task 7's reingest cases and Task 6's ledger check; mypy strict and
+5's five Screener basis cases, Task 7's reingest cases and Task 6's ledger check; mypy strict and
 ruff clean. The tip's base carries the stated PDF-fix versions (dictionary v4, mapping set v10,
 `PILOT_VERSIONS` v4/v10; Phase 3's `pdf-occurrences/6`). Task 12 reruns the gate before Task 13. A
 passed gate is code evidence, not live
@@ -760,7 +817,11 @@ replacement under the Task 8 rule. Bank labels whose definition differs from the
 Verification: inventory complete for ICICIBANK and unchanged for Apar; mapped vendor facts' keys,
 units, scale, precision and periods checked by code; Tijori `INVALID`/`UNIT_MISMATCH` = 0 in
 sections with a rule; v10/v11 still load `tijori/v5/display.yaml`; Task 7's standalone reingest
-case passes over ICICIBANK's page under the binding its B5 arm gives; gate rerun.
+case passes over ICICIBANK's page under Task 5's watchlist rule; gate rerun. The gate rerun
+includes the literal, sealed Task 13 command 1 from `commands.txt`, with `--mapping-set v12` (R4-01).
+It runs over Task 8's staged test inputs, on the same database and on a fresh one after a second
+replay. It must build the package with every member `COMPLETE` and the staged members equal. This
+check passes before Task 13's rehearsal and live run.
 
 Dependencies: Task 11 (captures), Task 8.
 
@@ -784,8 +845,9 @@ staged manifest:
 3. `eqos compare run --entity ICICIBANK --period-end <PE> --basis standalone --cutoff <cutoff>
    --dictionary v5 --mapping-set v12 --config-root config` (vendor sides by default).
 Every placeholder is replaced by its literal value in `commands.txt` before Task 8's intake test
-runs command 1 and before `commands.txt` is sealed. Task 8, the rehearsal and live run those exact
-strings.
+runs command 1 and before `commands.txt` is sealed. Task 8 runs command 1 with only `--mapping-set
+v11` changed. Task 12's gate rerun, the rehearsal and live run the exact strings, and the live
+command inventory stays frozen (R4-01).
 Rehearsal-only segment, after the three deltas are recorded:
 4. `admit_run` on the run.
 5. Apar: run `compare run --mapping-set v10 --dictionary v4` per retained Apar period from a scratch
@@ -845,7 +907,8 @@ on the current tip at task start.
 - **Phase 1 Tasks 13–14** (live, pending): windows rule; Task 11 needs 0047–0049 live. They run on
   their own gated tip.
 - **Apar live re-ingest (ruling 2; bead to be filed: Apar re-ingest under Phase 3 extractors).**
-  After Phase 3's extractor bumps land (first-party, Screener financials and shareholding, Tijori),
+  After Phase 3's extractor bumps land (first-party, Screener financials and shareholding, Tijori
+  and Upstox shareholding (`tijori-shp-v3`, `upstox-shp-v3`, R4-02), Tijori),
   Apar's stored interpretations keep their pins. The bead is a
   prerequisite of Apar's next live run on Phase 3 code: that run first re-ingests the first-party
   and vendor inputs it needs on its own gated, rehearsed tip. Historical rows, the old replay
@@ -881,10 +944,10 @@ and keeps a row the unchanged period, disclosure or basis rules make inapplicabl
 - **Names:** `retain`, `results_pdfs` (T1) → T5, T7; `issuer_form`, `issuer_class`,
   `XBRL_SOURCES[(IssuerClass, Basis)]`, `BANK_ONBOARDING_VERSIONS` (T5) → T7, T11; `IssuerClass`,
   keys (T4) → T5–T7; `issuer_applicability`, `ISSUER_RULE_ID`, `IssuerContextMissingError` (T6) →
-  T7, T13; `issuer_context` (T7); `screener_topology(..., basis_status)`,
+  T7, T13; `issuer_context` (T7); `screener_topology(..., configured)`, `watchlist_topology`,
   `BasisTopology.consolidated_published` (T5) → T7, T12.
 - **Versions:** dictionary v5, mapping sets v11 (T8) and v12 (T12), `pdf/v4/` (T8 B7a),
-  `pdf-occurrences/6`, `screener-v2`, `screener-shp-v3` (T5); none collides with the PDF fixes'
+  `pdf-occurrences/6`, `screener-v2`, `screener-shp-v3`, `tijori-shp-v3`, `upstox-shp-v3` (T5); none collides with the PDF fixes'
   v4, v10, `pdf/v3`, `constructions/v3`, `pdf-occurrences/5`.
 - **Placeholders:** branch-dependent content is named by branch and arm; B9 is pending by design
   until Task 12's addendum.
