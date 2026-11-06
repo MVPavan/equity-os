@@ -555,9 +555,11 @@ Approach: §6.7, §6.9, §6.10.
      vendor pins and no eligibility, so `require_pins` (`run_config.py:361`) refuses every run with
      vendor sides, including every default-vendor run.
   2. **Admission**, `admit_roles`: `check_head`, then `admit_run(run_id)`, then each non-carried
-     required role's record by key. Keys come from `config.concepts.roles` and the quarter in
-     `CRORE` (the unit `bind_computed` keys these roles in), not from the rendered update, which
-     does not exist yet; the characterization test shows they equal today's keys. A refused or
+     required role's record by key. Keys come from `config.concepts.roles` and the quarter, each in
+     its role's own unit and value kind (`CRORE` for monetary roles, the per-share unit for
+     `BASIC_EPS`; `measurement_key` includes the value kind, `import_mapping.py:382`), not from the
+     rendered update, which does not exist yet; the characterization test shows every required
+     role's key, EPS included, equals today's `_admit` key. A refused or
      absent role refuses with its refusal, as today.
   3. **Witness/package validation**, `check_sources` (the second half of `_comparison` and
      `_admit`'s member check, one function): a filed-valued record (rows 2, 5) must come from a
@@ -569,13 +571,17 @@ Approach: §6.7, §6.9, §6.10.
      package for the quarter only when every chosen record is row 3.
   4. **Selection**, `select_roles`: `select_admitted` per role, unchanged. Admissions and
      selections now persist before the pipeline; a later pipeline failure leaves them, and a rerun
-     finds them already in place (`admit_run` and `select_admitted` are idempotent as today).
+     finds them already in place. `select_admitted` is not idempotent (`select_canonical` appends,
+     `pg_fact_store.py:252`), so `select_roles` keeps today's history/head guard from `_admit`
+     (`cli.py:613`); a failed-pipeline-then-rerun case asserts no duplicate selection.
   5. **Drafting**: `run_pipeline(..., admitted=...)`, then `before_commit` as today without
      `_admit`, then `RunDraft` from `result.update` and the selected refs.
 - **Admitted values (finding 4, plan review 2 finding 1).** The pipeline takes the admitted facts.
   At step 7, after the cross-foot and cross-check gates have run on the filed values, each
-  admitted role's observation in `role_obs` becomes `obs.model_copy(update={"normalized_value":
-  admitted[role].value})`. Rendered facts, `collect_run_comparatives(current=...)` and
+  admitted role's observation in `role_obs` takes the admitted value in report units: admitted
+  monetary facts hold base INR (`admission.py:225`) and pipeline monetary observations use crore
+  (`xbrl_parser.py:516`), so the adapter converts value and precision at this boundary (per-share
+  values unchanged); calculation operands stay in base units. Rendered facts, `collect_run_comparatives(current=...)` and
   `build_calculations` then derive from the admitted values through the existing code: nothing is
   recomputed outside the pipeline, `before_commit` still returns nothing, and `result.update` is
   the report update. `RenderedFact.admitted` carries the admitted fact; `RenderedFact.sources`
