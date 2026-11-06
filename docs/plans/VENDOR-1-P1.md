@@ -1,10 +1,11 @@
 # VENDOR-1 Phase 1 Implementation Plan
 
-**Status:** revised after Sol plan review 1 (REQUEST_CHANGES, gpt-6.1-sol, 2026-11-06), for
+**Status:** revised after Sol plan review 2 (REQUEST_CHANGES, gpt-6.1-sol, 2026-11-06), for
 re-review. **Bead:** `eqos-awnc`.
 **Origin:** `docs/specs/2026-11-06-vendor-first.md` §6 (approved, gpt-6.1-sol, round 3,
-2026-11-06), with the five implementation notes from Sol's approving review, each placed in its
-task. Code facts were read at `b07e668f`; store facts were queried read-only.
+2026-11-06; amended per plan review 2 at `f137d3d7`), with the five implementation notes from
+Sol's approving review, each placed in its task. Code facts were read at `b07e668f`, the report
+path (Task 9) again at `b8328040`; store facts were queried read-only.
 **Goal:** Non-bank issuers get vendor-first numbers: Screener and Tijori values that agree are
 admitted with a visible label, checked against the filing where one exists, and the filing is
 fetched for the requested period when the vendors fail.
@@ -44,8 +45,10 @@ log, the live logs and the report, by the loop in `.claude/rules/core/04-agent-s
 by one fresh critical review (owner rule; it stays). No task is Sol-reviewed on its own. The
 eligibility artifact and the phase report are committed only after `APPROVE`.
 
-**Estimate:** about 73 hours elapsed, the author's estimate, not measured (57 before review 1;
-the rise is findings 1–5, 7, 8 and 13). Gates and the two live tasks dominate.
+**Estimate:** a summed task budget of about 76 hours (the sum of the rows below, not elapsed
+time; the author's estimate, not measured). 57 before review 1, 73 after it; review 2 adds Task 9's
+reordered report path (+2), the live pre-command checks (+0.5) and the scope exclusion (+0.5).
+Gates and the two live tasks dominate.
 
 | Task | Implementer | Hours |
 |---|---|---|
@@ -57,12 +60,12 @@ the rise is findings 1–5, 7, 8 and 13). Gates and the two live tasks dominate.
 | 6. Policy, predicates and run pins | Opus | 4 |
 | 7. Check class, eligibility artifact, `eqos vendor measure` | Opus | 5 |
 | 8. One admission path | Opus | 6.5 |
-| 9. Citation, retention, report values and labels | Opus | 10 |
+| 9. Citation, retention, report values and labels | Opus | 12 |
 | 10. Fallback workflow | Opus | 7 |
 | 11. Document amendments | Sonnet | 1 |
 | 12. Pre-live gate | orchestrator | 2 |
-| 13. Live: migrate, re-interpret, re-ingest Apar | orchestrator | 4 |
-| 14. Apar re-measurement | Opus, orchestrator runs live | 3.5 |
+| 13. Live: migrate, re-interpret, re-ingest Apar | orchestrator | 4.5 |
+| 14. Apar re-measurement | Opus, orchestrator runs live | 4 |
 | Sol phase-end loop, closing review, close-out | — | 7 |
 
 ## Readings (Sol's rulings, review 1)
@@ -114,9 +117,10 @@ the rise is findings 1–5, 7, 8 and 13). Gates and the two live tasks dominate.
 | `equity_os/contracts/measurement/evidence.py`, `equity_os/contracts/verification/config_versions.py` | modify | `PinnedVersions` and `ConfigVersions` fields `vendor_first_policy`, `eligibility` |
 | `equity_os/verification/admission/admission.py` | modify | §6.5 rows, labels, vendor bridge, `read_selected` |
 | `equity_os/publication/checking/citations.py` | modify | witness branch, `admission_label`, withdrawal |
-| `equity_os/interface/entry/draft_admission.py` | create | `_comparison` and `_admit` moved from `cli.py`, with the vendor-authorised branch |
-| `equity_os/interface/entry/cli.py` | modify | admit before binding; `PILOT_VERSIONS.mapping_set = "v9"` |
-| `equity_os/publication/drafting/{earnings_update,run_draft,display}.py`, `equity_os/analysis/calculations/run_traces.py` | modify | admitted value and label into the update, claims and calculation operands |
+| `equity_os/interface/entry/draft_admission.py` | create | `_comparison` and `_admit` from `cli.py`, split into the report path's first four steps |
+| `equity_os/interface/entry/cli.py` | modify | the five-step report-path order; `PILOT_VERSIONS.mapping_set = "v9"` |
+| `equity_os/interface/workflows/pipeline.py` | modify | `admitted` values replace the role observations' values before the render |
+| `equity_os/publication/drafting/{earnings_update,run_draft,display}.py`, `equity_os/analysis/calculations/run_traces.py` | modify | `AdmittedFact` on the rendered fact; admitted operands; labels into claims |
 | `equity_os/analysis/thesis_models/{contracts,adapters,render}.py` | modify | `ValidatedFact.admission_label` |
 | `equity_os/publication/export/export.py` | modify | "Source notes" section of `status_note` |
 | `equity_os/sourcing/exchange/results_filing.py` | create | acquire one period's results XBRL and PDF |
@@ -372,7 +376,8 @@ Approach: §6.4. Each side's interval is the stored `lower`/`upper`. Rule 1 of T
 tier through the mapping set; constructed values are excluded. "Differs" means either vendor.
 Filing state reads the row's first-party sides: `FILING_ABSENT` only when every first-party side
 is `NO_VALUE` (no package, no member, or the line not in the filing); any `UNAVAILABLE` or
-`INVALID` first-party side is `FILING_FAILED`, like a cell that fails today's rule (spec gap 1).
+`INVALID` first-party side is `FILING_FAILED`, like a cell that fails today's rule (§6.4 as
+amended).
 Pins: the eligibility artifact exists only after Task 14's review, so `ConfigVersions.eligibility`
 defaults to `None` and a run without an eligibility pin can never reach row 3 (Task 8). The run's
 pins are the only source of the versions admission and reruns use; nothing reads "the current
@@ -475,7 +480,7 @@ before the cutoff; the knowledge-time witness stays the earliest, as in `citatio
 Withdrawal (§6.6, §6.9) applies only to a fact whose authorising label is
 `VENDORS_AGREE_NOT_CHECKED`: a counterexample of its class at or before the cutoff returns
 nothing. Retention applies to both kinds of vendor-valued fact: an expired or licence-ended
-witness returns nothing. `cli.py`'s `_admit` reads `refusals` unchanged.
+witness returns nothing. The report path's `admit_roles` (Task 9) reads `refusals` unchanged.
 
 Tests: one case per row of §6.5, including: failed filing plus agreeing vendors refuses
 `FILING_UNRESOLVED` with its `FilingFailure`; an agreeing filing keeps the vendor value and
@@ -506,12 +511,13 @@ it resolve with the label while both witnesses are retained and licensed, and st
 new reports once either is not, while the sealed bytes never change.
 
 Files:
-- Create: `equity_os/interface/entry/draft_admission.py` (`_comparison` and `_admit` moved from
-  `cli.py`)
-- Modify: `cli.py` (`before_commit` order), `publication/drafting/earnings_update.py`
-  (`RenderedFact.admission_label`), `publication/drafting/run_draft.py` (`_results`),
+- Create: `equity_os/interface/entry/draft_admission.py` (`_comparison` and `_admit` from
+  `cli.py`, split into steps 1–4 below)
+- Modify: `cli.py` (step order), `interface/workflows/pipeline.py` (`admitted`),
+  `publication/drafting/earnings_update.py` (`AdmittedFact`, `RenderedFact.admitted`),
+  `publication/drafting/run_draft.py` (`_results`),
   `publication/drafting/display.py` (label suffixes), `analysis/calculations/run_traces.py`
-  (`_Binder.operand` for admitted inputs), `citations.py` (`_admitted`, the calculation path),
+  (admitted operands), `citations.py` (`_admitted`, the calculation path),
   `publication/export/export.py` (`status_note`), `analysis/thesis_models/{contracts,adapters,
   render}.py`
 - Test: `tests/equity_os/publication/checking/test_vendor_citation.py` (`pg`); extend the Stage 2
@@ -519,27 +525,71 @@ Files:
 
 Interfaces:
 - Consumes: Task 8's records, columns and `SelectedFact.label`.
-- Produces: `admitted_facts(...) -> dict[str, AdmittedFact]` (`ref`, `value`, `decimals`,
-  `provenance`, `label`, `interpretation_id`, `witness_interpretation_id`);
-  `RenderedFact.admission_label: AdmissionLabel | None`; `ResolvedCitation.admission_label:
+- Produces: `run_versions(pool, run_id, entity_id, config) -> tuple[RunManifest,
+  ConfigVersions]`; `admit_roles(pool, store_id, run_id, config, entity_id, carried) ->
+  dict[FactRole, tuple[MeasurementKey, AdmissionRecord]]`; `check_sources(pool, manifest, chosen,
+  config, xbrl, pdfs, versions) -> None`; `select_roles(pool, store_id, run_id, chosen) ->
+  dict[str, FactRef]` (all four in `draft_admission.py`); `AdmittedFact(ref, value, decimals,
+  provenance, label, interpretation_id, witness_interpretation_id)` in `earnings_update.py`;
+  `run_pipeline(..., admitted: Mapping[FactRole, AdmittedFact] | None = None)`;
+  `bind_computed(..., admitted: Mapping[FactRole, AdmittedFact] | None = None)`;
+  `RenderedFact.admitted: AdmittedFact | None`; `ResolvedCitation.admission_label:
   AdmissionLabel | None`, set only for admitted facts and calculations; `weakest(labels) ->
   AdmissionLabel` (`VENDORS_AGREE_NOT_CHECKED` is weaker); `ValidatedFact.admission_label`
   (`ValidatedFact.label` stays the metric name).
 
 Approach: §6.7, §6.9, §6.10.
-- **Admitted values (finding 4).** `before_commit` calls `_admit` first, before
-  `bind_computed`, `bind_probe` and `bind_credibility`. Each required role's `RenderedFact` in the
-  update is replaced by the admitted fact's value, unit, provenance and label (`model_copy`), so
-  `_results` and the calculation lines are built from admitted values. `_Binder.operand` takes an
-  admitted input's own interpretation (by `interpretation_id`) instead of looking it up in the
-  filed capture, which a vendor provenance does not name. Comparator and filed-tax figures are
-  unchanged (filed, labelled as today).
-- **Guards (finding 5).** `_comparison` accepts the run's own filed package as today, or no
-  package for the quarter when every required role's admission in the run is
-  `VENDORS_AGREE_NOT_CHECKED` with the run's pinned eligibility version and both witness captures
-  are retained catalog captures of the two vendor-primary sources registered by the cutoff.
-  `_admit`'s member check keeps the package rule for filed values; a vendor-valued record
-  (row 1 or 3) passes when its two witnesses are those captures. Both guards share one check.
+- **Report path order (plan review 2, findings 1 and 2).** Today `_comparison` runs before the
+  pipeline and `_admit` (admit, member check, select) runs last inside `before_commit`, after
+  `bind_computed`, `bind_probe` and `bind_credibility` have bound the filed values; the pipeline
+  ignores `before_commit`'s return (`pipeline.py:541`) and has already built comparatives and
+  calculations from the filed observations (`pipeline.py:498`, `:513`). The PostgreSQL branch of
+  `eqos run --compare-run <id>` becomes, in order:
+  1. **Static run validation**, `run_versions` (the first half of `_comparison`): a `COMPLETE`
+     `AS_KNOWN` run of this entity and quarter; `ConfigVersions.of(manifest.pinned)` equals
+     `PILOT_VERSIONS` on every base field (all but `vendor_first_policy` and `eligibility`); then
+     `require_pins(load_run_config(root, ConfigVersions.of(manifest.pinned), vendors=<(source_id,
+     surface) of each pinned vendor extractor>), manifest.pinned)`. So the current vendor
+     extractors, policy and eligibility files are checked against the run's own pins (Task 6 loads
+     the last two). Today's `load_run_config(root, PILOT_VERSIONS)` (`cli.py:520`) computes no
+     vendor pins and no eligibility, so `require_pins` (`run_config.py:361`) refuses every run with
+     vendor sides, including every default-vendor run.
+  2. **Admission**, `admit_roles`: `check_head`, then `admit_run(run_id)`, then each non-carried
+     required role's record by key. Keys come from `config.concepts.roles` and the quarter in
+     `CRORE` (the unit `bind_computed` keys these roles in), not from the rendered update, which
+     does not exist yet; the characterization test shows they equal today's keys. A refused or
+     absent role refuses with its refusal, as today.
+  3. **Witness/package validation**, `check_sources` (the second half of `_comparison` and
+     `_admit`'s member check, one function): a filed-valued record (rows 2, 5) must come from a
+     member of the run's single selected package for the quarter, published by the cutoff and
+     holding the run's own XBRL and results PDF (today's rules, unchanged); a vendor-valued record
+     (rows 1, 3) passes when its two witnesses are retained catalog captures (`RETAINED` or
+     `RESTORED`, no `licence_ends` row) of the two vendor-primary sources registered by the cutoff,
+     and a row-3 record also carries the run's pinned eligibility version. The run may select no
+     package for the quarter only when every chosen record is row 3.
+  4. **Selection**, `select_roles`: `select_admitted` per role, unchanged. Admissions and
+     selections now persist before the pipeline; a later pipeline failure leaves them, and a rerun
+     finds them already in place (`admit_run` and `select_admitted` are idempotent as today).
+  5. **Drafting**: `run_pipeline(..., admitted=...)`, then `before_commit` as today without
+     `_admit`, then `RunDraft` from `result.update` and the selected refs.
+- **Admitted values (finding 4, plan review 2 finding 1).** The pipeline takes the admitted facts.
+  At step 7, after the cross-foot and cross-check gates have run on the filed values, each
+  admitted role's observation in `role_obs` becomes `obs.model_copy(update={"normalized_value":
+  admitted[role].value})`. Rendered facts, `collect_run_comparatives(current=...)` and
+  `build_calculations` then derive from the admitted values through the existing code: nothing is
+  recomputed outside the pipeline, `before_commit` still returns nothing, and `result.update` is
+  the report update. `RenderedFact.admitted` carries the admitted fact; `RenderedFact.sources`
+  stays the quarter's filed provenance, so the filed-only consumers resolve as today: the filed tax
+  and share-of-associates figures (`bind_computed`, `run_traces.py:470`), `admitted_xbrl` for
+  `bind_probe` and `bind_credibility` (`run_traces.py:583`), and the comparatives' prior lookups.
+  The rendered source line and the claim cite the admitted fact's provenance and label. In
+  `bind_computed`, each `reported` operand and each comparative's `current` operand of an
+  admitted role is the `OperandValue` that `filed` would build, from the admitted fact's own
+  interpretation (`interpretation_id`), with no capture lookup and no blob added; a carried role
+  keeps today's filed lookup. `_compute` (`run_traces.py:315`) then checks traces against run
+  values computed from the same admitted values, so a vendor value passes and a real mismatch
+  still refuses. Comparator and filed-tax figures stay filed, labelled as today. Without
+  `admitted` (the non-PostgreSQL path) nothing changes.
 - **Labels in sealed bytes (finding 7).** The label is bound into the claim when the draft is
   built, as the two label qualifiers; `render_claim` prints `LABEL_TEXT` from them, like `FILED`.
   So `narrative` and `content_hash` cover the label and stay deterministic. A required-role claim
@@ -557,12 +607,18 @@ Approach: §6.7, §6.9, §6.10.
 - **Thesis models.** Adapters pass `admission_label` from the evidence where they pass
   `single_sourced`; it is never inferred from `single_sourced`.
 
-Verification: Stage 2 end-to-end, through the real draft write and seal: (a) a row-1 run whose
-filing agrees with the vendors within precision but with a different value renders the vendor
-value with "checked against filing", and a calculation using it uses that value (acceptance 13,
-finding 4); (b) a run with the filing withheld from the comparison run admits row-3 facts under a
-pinned eligibility fixture, passes both guards, seals, and every number shows its label
-(acceptance 9, 13). Citation test: acceptance 9 (fact and calculation resolve with the label;
+Verification: Stage 2 end-to-end through the real entry command (`main(["run", ...,
+"--compare-run", id])`, as `test_data_stage2_e2e.py` does), the draft write and the seal, each case
+starting with no admissions for the run: (a) a row-1 run whose filing agrees with the vendors
+within precision but with a different value: `PipelineResult.update` and the stored draft hold the
+vendor value with "checked against filing"; the sealed calculation and change lines and their
+stored traces differ from the filed-value results and equal those computed from the admitted
+values; the filed tax line, the probe and the credibility binding still resolve against the
+quarter's XBRL (acceptance 13, finding 4, plan review 2 finding 1); (b) a default-vendor run with
+the quarter's filing package withheld, pinned to the eligibility fixture, passes static
+validation, is admitted by the command (row 3), passes source validation, selects, seals, and
+every number shows its label (acceptance 9 as amended, 13); (c) a run whose pinned vendor
+extractor differs from the current code refuses at static validation with no admission written. Citation test: acceptance 9 (fact and calculation resolve with the label;
 `row_captures` returns both witnesses' captures) and 10 (expiry, and separately licence end, of
 either witness withdraws the admission for a new report; a backup restore does not revive it; a
 hash-matched re-fetch does); a contradicted class withdraws the row-3 fact and keeps the row-1
@@ -571,10 +627,12 @@ unchanged and `status_note` shows the note. A quote and a policy citation resolv
 
 Dependencies: Task 8; Task 3 (`PILOT_VERSIONS`).
 
-Risks: the guard change is the one authority change in the report path; Sol reads it at phase
-end. Case (b) exercises the row-3 path through the only report path that exists, which reads the
-quarter's filing for its other sections; a report for a quarter with no filing is not built
-(spec gap 2). The restore and re-fetch behaviour comes from migrations 0028–0031; the test uses
+Risks: the source-validation change is the one authority change in the report path; Sol reads
+it at phase end. Moving admission and selection before the pipeline is the one ordering change;
+characterization first: today's Stage 2 end-to-end on a first-party run gives the same admitted
+keys, selections and values. Case (b) exercises the row-3 path through the only report path that
+exists, which reads the quarter's filing for its other sections; a report for a quarter with no
+filing is outside Phase 1 (acceptance 9 as amended). The restore and re-fetch behaviour comes from migrations 0028–0031; the test uses
 their existing commands.
 
 ## Task 10: Fallback workflow
@@ -684,7 +742,13 @@ Dependencies: Tasks 1–11 committed.
 4. **Allowed changes.** Each command's expected tables are stated in its task. A rehearsal delta
    outside them stops the task before live. Each live delta, summary and fingerprint set must
    equal the rehearsal's; the first mismatch stops the task before the next command.
-5. Drop the rehearsal database at the end.
+5. **Before live (plan review 2, finding 3).** Immediately before the first live command, live's
+   per-table counts, fingerprints, migration ledger, `eqos db check-live` result and every `eqos`
+   sequence's `last_value` must equal those recorded at the baseline backup. Before each later
+   live command, live must equal the baseline plus the rehearsed deltas of the commands already
+   run. Any drift (a competing write) stops the task; it restarts from step 2 (new backup, new
+   rehearsal), never continues on the old rehearsal.
+6. Drop the rehearsal database at the end.
 
 ## Task 13: Live: migrate, re-interpret, re-ingest Apar
 
@@ -700,14 +764,17 @@ Commands, in order, with the main checkout on the tip Task 12 gated:
    package (the list, with its retrieval manifest, issuer config and members, comes from a
    read-only query over `filing_packages` and the retained manifests, as LIVE-RUN-1 ran them).
    Allowed: interpretations and their figures, version pins, and any attempt rows the rehearsal
-   shows ingest writing; packages, occurrences and captures unchanged. Code check: per package,
-   interpretation counts per (representation, status) under `v9` equal those under `v6`.
+   shows ingest writing; packages, occurrences and captures unchanged. `commands.txt` names each
+   package's actual comparison baseline, the mapping set of its latest interpretations (from a
+   read-only query; most are `v6`, none is assumed). Code check: per package, interpretation
+   counts per (representation, status) under `v9` equal those under that package's baseline.
 3. `eqos vendor reingest --mapping-set v9 --dictionary v2` for each Apar period end with retained
    vendor financials captures. Allowed: occurrences, interpretations, attempts and version pins.
 
 Verification: the live protocol passes at every step; interpretations under the new versions show
 zero Tijori `INVALID`/`UNIT_MISMATCH` in sections with a rule. A package with no retained manifest
-is listed in the log and excluded from Task 14's expected set, never re-extracted another way.
+is listed in the log, never re-extracted another way, and its (period end, basis) is a
+measurement-scope exclusion for Task 14.
 
 Dependencies: Task 12.
 
@@ -726,7 +793,10 @@ Files:
 
 Approach, under the live protocol:
 1. Commands: one `eqos compare run --mapping-set v9 --dictionary v2` with no vendor flags and no
-   eligibility pin per Apar (period end, consolidated), as known. Allowed: runs, `run_versions`,
+   eligibility pin per Apar (period end, consolidated), as known, excluding Task 13's
+   measurement-scope exclusions. The report lists each exclusion and its reason as an explicit
+   scope exclusion; no expected key inside a run's declared scope is ever dropped to reach
+   `missing = 0`. Allowed: runs, `run_versions`,
    `run_inputs`, results, result source values, surfaced restatements, pair outcomes and
    adjustments, review-queue items and their support rows, version pins and definition-set rows
    the rehearsal shows. No `admit_run` on live.
@@ -775,16 +845,14 @@ two tasks that share a file run in parallel.
   8 → live protocol, T13, T14; 9 → T12; 10 → T1; 11 → T8; 12 → T9; 13 → T7, T14; 14 → T10;
   15 → dependency order; 16 → T9 (merged), T2/T3 (one fixture), thin handlers in
   `vendor_surface_cli.py` and `compare_cli.py`; the closing review stays.
+- **Plan review 2:** 1 → T9 (admitted values, `admitted` seam in `pipeline.py`, case a); 2 → T9
+  (report path order, static validation reload, cases b and c); 3 → live protocol step 5;
+  refinements: scope exclusion → T13, T14; per-package baseline → T13; summed task budget →
+  Estimate.
 - **Names:** `collapse`, `xbrl_source_id` (T4) → T10; `vendor_outcome`, `filing_state` (T6) → T7,
   T8; `check_class`, `eligible`, `record_counterexample`, `counterexample_at` (T7) → T8, T9;
   `AdmissionRecord.label` (T8) → T9; `AdmissionOutcome.triggers` (T8) → T10.
-- **Spec gaps** (the spec is unchanged; for the owner and Sol): (1) §6.4 defines
-  `FILING_ABSENT` as "no first-party occurrence", which would let a failed acquisition or
-  extraction (no occurrence, `UNAVAILABLE`) reach row 3; T6 treats it as `FILING_FAILED`.
-  (2) Acceptance 9 asks for a sealed report citing a row-3 fact, but the only report path needs
-  the quarter's filing; T9 reaches row 3 only with the filing withheld from the comparison run.
-  (3) §6.5's migration list omits the `run_versions` pin CHECK and the fallback table; §6.1's
-  "retained captures are re-ingested" omits the first-party re-interpretation a new mapping set
-  needs (T13). (4) §6.6 calls issuer class an identity setting; Phase 1 reads it (reading 1).
-  (5) §6.6 and §6.9 say "a later render shows" the note; sealed bytes cannot change, so the note
-  is in the status note (T9).
+- **Spec gaps:** all five were ruled by Sol in plan review 2 and applied to the spec at
+  `f137d3d7`: §6.4 filing states (T6), acceptance 9 through the filing-backed report path (T9),
+  §6.5 and §6.1 doc sync (T1, T13), §6.6 issuer class from onboarding provenance (reading 1, T7),
+  and the status note in §6.6 and §6.9 (T9).
