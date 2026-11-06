@@ -23,6 +23,7 @@ from equity_os.extraction.model.vendor_surface_labels import map_labels
 from equity_os.extraction.model.vendor_surface_model import ChatCompletionsModel, ModelSettings
 from equity_os.extraction.surfaces.vendor_surface_parse import register_tables
 from equity_os.interface.commands.sourcing.vendor_reingest import reingest
+from equity_os.interface.commands.verification.compare_cli import _aware_cutoff, _code_version
 from equity_os.interface.entry.env_credentials import (
     _screener_credentials_from_env,
     _tijori_credentials_from_env,
@@ -57,6 +58,12 @@ from equity_os.storage.database.pool import open_pool
 from equity_os.storage.database.settings import PgRole, PgSettings
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records.vendor_values_store import VendorValuesStore
+from equity_os.verification.admission.eligibility import (
+    EligibilityError,
+    counted_runs,
+    coverage,
+    measure,
+)
 
 SPECS = Path("config/sourcing/vendor_surface/surfaces.yaml")
 CATALOG = Path("docs/research/vendor-surface/catalog.yaml")
@@ -97,6 +104,11 @@ def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     again.add_argument("--dictionary", required=True)
     again.add_argument("--snapshot-root", type=Path, default=Path("data/raw/snapshots/v1"))
     again.add_argument("--config-root", type=Path, default=Path("config"))
+
+    measured = commands.add_parser("measure")
+    measured.add_argument("--available-from", required=True, type=_aware_cutoff)
+    measured.add_argument("--out", required=True, type=Path)
+    measured.add_argument("--config-root", type=Path, default=Path("config"))
 
     canary = commands.add_parser("canary")
     canary.add_argument("--yield-only", action="store_true")
@@ -183,6 +195,24 @@ def dispatch_vendor_command(
             sys.stdout.write(json.dumps(line | {"interpretations": len(done.interpretations)}))
             sys.stdout.write("\n")
         return int(any(r.attempt.outcome is not ExtractionOutcome.COMPLETE for r in reports))
+    if args.vendor_command == "measure":
+        with pool_factory() as pool:
+            try:
+                artifact = measure(
+                    pool,
+                    args.available_from,
+                    config_root=args.config_root,
+                    code_version=_code_version(),
+                )
+            except EligibilityError as error:
+                sys.stderr.write(f"measure refused: {error}\n")
+                return 2
+            args.out.write_text(yaml.safe_dump(artifact.model_dump(mode="json"), sort_keys=False))
+            for run_id, _ in counted_runs(pool):
+                found = coverage(pool, run_id, config_root=args.config_root)
+                counts = (found.expected, found.three_way, len(found.refused), found.missing)
+                sys.stdout.write(" ".join(map(str, ("COVERAGE", run_id, *counts))) + "\n")
+        return 0
     if args.vendor_command == "canary":
         now = datetime.now(UTC)
         store = store_factory(args.snapshot_root)

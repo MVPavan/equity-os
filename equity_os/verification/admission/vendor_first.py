@@ -1,18 +1,30 @@
-"""The vendor-first policy and §6.4's predicates: T1 (how the two vendors relate) and the filing
-state of a cell (VENDOR-1 spec §6.4). Each side is its stored ``[lower, upper]`` interval."""
+"""The vendor-first policy, §6.4's predicates and §6.6's check class (VENDOR-1 spec).
+
+T1 says how the two vendors relate, the filing state how the filing relates to them; each side
+is its stored ``[lower, upper]`` interval. The check class digests every component that must
+match before evidence is reused; the issuer class comes from onboarding provenance (reading 1).
+"""
 
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
+import json
+from collections.abc import Mapping, Sequence
+from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, LiteralString
 
 import yaml
+from psycopg import Connection
 from pydantic import BaseModel, ConfigDict
 
-from equity_os.contracts.measurement.canonical import Representation
-from equity_os.contracts.measurement.evidence import Interpretation, InterpretationOrigin
+from equity_os.contracts.measurement.canonical import PeriodKind, Representation
+from equity_os.contracts.measurement.evidence import (
+    Interpretation,
+    InterpretationOrigin,
+    VendorExtractorPin,
+)
 from equity_os.contracts.measurement.evidence_tier import EvidenceTier
 from equity_os.contracts.sourcing.source_catalog import SCREENER_PAGE, TIJORI_PAGE
 from equity_os.contracts.verification.comparison import SourceRole, SourceState
@@ -21,6 +33,19 @@ from equity_os.normalisation.mapping.mapping import MappingSet
 from equity_os.verification.comparison.run_models import ResultRow, SourceValue
 
 _Interval = tuple[Decimal, Decimal]
+_Interpretations = Mapping[int | None, Interpretation]
+NON_FINANCIAL = "NON_FINANCIAL"
+# Reading 1: an onboarded (or partially onboarded) entity whose Ind AS framework setting cites
+# onboarding's DISCOVERY input, both recorded by the cutoff. Nothing else implies a class.
+_ISSUER_CLASS: LiteralString = """
+SELECT EXISTS (SELECT 1 FROM eqos.onboarding_records
+        WHERE entity_id = %(entity)s AND outcome IN ('ONBOARDED', 'PARTIAL')
+            AND recorded_at <= %(cutoff)s)
+    AND EXISTS (SELECT 1 FROM eqos.settings_records s
+        JOIN eqos.evidence_inputs e ON e.id = s.evidence_input_id
+        WHERE s.entity_id = %(entity)s AND s.setting_key = 'REPORTING_FRAMEWORK'
+            AND s.value_text = 'IND_AS' AND e.kind = 'DISCOVERY' AND s.recorded_at <= %(cutoff)s)
+"""
 
 
 class VendorFirstPolicy(BaseModel):
@@ -44,7 +69,7 @@ def load_vendor_first_policy(path: Path) -> VendorFirstPolicy:
 
 def vendor_outcome(
     row: ResultRow,
-    interpretations: Mapping[int, Interpretation],
+    interpretations: _Interpretations,
     mapping: MappingSet,
     policy: VendorFirstPolicy,
 ) -> tuple[VendorOutcome, SourceValue | None]:
@@ -94,9 +119,46 @@ def filing_state(row: ResultRow, admissible: bool) -> FilingState:
     return FilingState.FILING_AGREES
 
 
-def _unmapped(
-    side: SourceValue, interpretations: Mapping[int, Interpretation], mapping: MappingSet
-) -> bool:
+def check_class(
+    row: ResultRow,
+    interpretations: _Interpretations,
+    *,
+    mapping: MappingSet,
+    extractor_pins: Sequence[VendorExtractorPin],
+    dictionary_version: str,
+    policy_version: str,
+    issuer_class: str,
+    period_kind: PeriodKind,
+) -> str:
+    """The check class of a cell both vendors map: a digest of every §6.6 component, so any
+    version change makes a new class with no evidence."""
+    extractors = {(pin.source_id, pin.surface): pin.version for pin in extractor_pins}
+    payload = {
+        "canonical_id": row.key.canonical_id,
+        "period_kind": period_kind.value,
+        "basis": row.key.basis.value,
+        "framework": row.key.framework.value,
+        "issuer_class": issuer_class,
+        "mapping_set": mapping.version,
+        "dictionary": dictionary_version,
+        "policy": policy_version,
+    }
+    for name, page in (("screener", SCREENER_PAGE), ("tijori", TIJORI_PAGE)):
+        side = _vendor(row, page)
+        assert side is not None
+        payload[f"{name}_entry"] = str(interpretations[side.interpretation_id].mapping_entry_id)
+        payload[f"{name}_extractor"] = extractors[page]
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def issuer_class(conn: Connection[Any], entity_id: int, cutoff: datetime) -> str | None:
+    """``NON_FINANCIAL`` on positive onboarding provenance known at the cutoff, else ``None``."""
+    found = conn.execute(_ISSUER_CLASS, {"entity": entity_id, "cutoff": cutoff}).fetchone()
+    return NON_FINANCIAL if found is not None and found[0] else None
+
+
+def _unmapped(side: SourceValue, interpretations: _Interpretations, mapping: MappingSet) -> bool:
     """T1 rule 1 for one ``VALUE`` side: not a DIRECT interpretation, or a related entry."""
     if side.interpretation_id is None:
         return True
