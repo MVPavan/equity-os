@@ -42,9 +42,16 @@ _DECISIONS: LiteralString = (
 )
 _CREATOR: LiteralString = "SELECT creator FROM eqos.validations WHERE id = %s"
 # Each claim's later source notes (VENDOR-1 §6.6, §6.9): a vendor capture behind it that is no
-# longer held (expired, or its vendor's licence ended), and an unchecked admitted fact's class
-# contradicted by a filing; each at its earliest date.
-_SOURCE_NOTES: LiteralString = """SELECT claim_key, 'vendor source expired' AS note, min(at) AS at
+# longer held (expired, or its vendor's licence ended), and the class of an unchecked admission
+# under the version's pinned runs, of its fact or of an operand its trace reaches, contradicted by
+# a filing; each at its earliest date.
+_SOURCE_NOTES: LiteralString = """WITH RECURSIVE reach(claim_key, trace) AS (
+    SELECT claim_key, calculation_trace_id FROM eqos.numeric_claims
+        WHERE version_id = %(version)s AND calculation_trace_id IS NOT NULL
+    UNION SELECT r.claim_key, o.operand_trace_id FROM reach r
+        JOIN eqos.calculation_trace_operands o ON o.calculation_trace_id = r.trace
+        WHERE o.operand_trace_id IS NOT NULL)
+SELECT claim_key, 'vendor source expired' AS note, min(at) AS at
 FROM (SELECT k.claim_key, least(l.ended_at, s.recorded_at) AS at FROM eqos.numeric_claims k
     CROSS JOIN LATERAL unnest(eqos.row_captures('numeric_claims', to_jsonb(k))) x(capture)
     JOIN eqos.capture_refs c ON c.id = x.capture
@@ -55,8 +62,12 @@ FROM (SELECT k.claim_key, least(l.ended_at, s.recorded_at) AS at FROM eqos.numer
     WHERE k.version_id = %(version)s AND eqos.is_vendor_source(c.source_id)) expired
 WHERE at IS NOT NULL GROUP BY claim_key
 UNION ALL SELECT k.claim_key, 'class later contradicted by a filing on', min(x.recorded_at)
-FROM eqos.numeric_claims k
-JOIN eqos.fact_admissions a USING (fact_origin, fact_origin_id)
+FROM eqos.numeric_claims k JOIN eqos.report_versions v ON v.id = k.version_id
+JOIN eqos.fact_admissions a ON a.run_id = ANY(v.pinned_run_ids)
+    AND ((a.fact_origin, a.fact_origin_id) = (k.fact_origin, k.fact_origin_id)
+        OR a.interpretation_id IN (SELECT o.interpretation_id FROM reach r
+            JOIN eqos.calculation_trace_operands o ON o.calculation_trace_id = r.trace
+            WHERE r.claim_key = k.claim_key))
 JOIN eqos.vendor_counterexamples x ON x.class_digest = a.class_digest
 WHERE k.version_id = %(version)s GROUP BY k.claim_key
 ORDER BY claim_key, note"""
