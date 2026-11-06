@@ -74,7 +74,7 @@ applied live** (Phase 1 Task 13 pending). The one entity is APARINDS (entity 1, 
    incomplete gate), Tasks 13–14 (live migrate and Apar re-measure; eligibility `v1` not yet
    drafted). `origin/main` is at `87c2ba98`, behind `main`.
 7. **Phases 2 and 3 have no plan.** The bank route (framework value, `BANK` issuer class,
-   dictionary v4, bank mappings) does not exist; nothing for ICICIBANK is retained.
+   dictionary v5, bank mappings) does not exist; nothing for ICICIBANK is retained.
 8. **D3 cannot promote anything from this test** (§7).
 
 ## 3. Prerequisites by step
@@ -92,7 +92,7 @@ applied live** (Phase 1 Task 13 pending). The one entity is APARINDS (entity 1, 
 | `compare fallback` | Task 10 | pending |
 | Eligibility artifact `v1` (Apar) | Task 14 + Sol `APPROVE` | pending |
 | Vendor text readers, numeral rule | Phase 2 | not planned |
-| Bank framework, issuer class `BANK`, dictionary v4, bank mappings | Phase 3 | not planned |
+| Bank framework, issuer class `BANK`, dictionary v5, bank mappings | Phase 3 | not planned |
 | A sanctioned live acquisition route outside the Stage 4 freeze | owner/orchestrator decision (§8 Q1) | open |
 | MTARTECH series | `EQ` on the 2026-11-06 master (§8 Q2) | resolved |
 | Vendor ingest for periods other than the onboarded one | decision (§8 Q3) | open |
@@ -272,7 +272,7 @@ it contributed.
    for a named period, or accept one three-way period per new company (weak evidence for
    `measure`)?
 4. **Fallback replay.** Will Task 10's CLI accept a replay root, so live fallback equals rehearsal?
-5. **Dictionary.** Phase 3 brings v4. Run all five under v4 (one class set) or non-banks under v2?
+5. **Dictionary.** Phase 3 brings v5. Run all five under v5 (one class set) or non-banks under v2?
    The check class includes the dictionary version.
 6. **Live admission scope.** Owner decision 4 covers the pilot. Admitting live also changes
    APARINDS's future report selection; confirm, or admit into a separate fact store.

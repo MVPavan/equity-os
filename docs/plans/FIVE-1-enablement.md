@@ -106,13 +106,15 @@ protocols, with the additions in "Live protocol" below.
 3. **No admit command.** `run_fallback` calls `admit_run` on the run before collecting triggers,
    triggered or not (`fallback.py`, read), so `compare fallback --run <id>` admits every run it is
    given and is a write even when it fetches nothing. FIVE-COMPANY-TEST §5.4 stands.
-4. **One version set for all five: dictionary v4, mapping set v11**, the last Phase 3 sets
+4. **One version set for all five: dictionary v5, mapping set v12**, the last Phase 3 sets
    (`VENDOR-1-P3.md` Tasks 6, 12). The check class digests dictionary, mapping set, policy,
-   extractors and issuer class (`vendor_first.check_class`, read), so v4/v11 does not pool bank and
+   (Renumbered 2026-11-06: the results-PDF fixes `eqos-djv/ghv/dol/n21` take dictionary v4 and
+   mapping set v10 first, so Phase 3 creates dictionary v5 and mapping sets v11 and v12.)
+   extractors and issuer class (`vendor_first.check_class`, read), so v5/v12 does not pool bank and
    non-bank evidence; classes stay distinct by canonical id, basis, framework and issuer class.
    **Consequence:** Apar's eligibility `v1` (classes under v2/v9 and the pre-Phase-3 extractors)
    matches no class of the test's runs, so the test's first runs cannot admit under §6.5 row 3;
-   Apar's Task 14 counts are the numeric baseline only; Apar is re-ingested live under v4/v11 like
+   Apar's Task 14 counts are the numeric baseline only; Apar is re-ingested live under v5/v12 like
    the others. `measure` reads every policy-pinned stored run, older classes included
    (`eligibility.py`), so the test reports final-pin classes separately. Apar's pilot pins and `v1`
    stay byte-unchanged. Row 3 under the final pins is exercised by the test's final-pin segment
@@ -335,7 +337,7 @@ Files: `FIVE-COMPANY-TEST.md`, `CONTEXT.md` (one entry: *acquisition sanction*).
 
 `FIVE-COMPANY-TEST.md` edits:
 - §3 rows for Q1, Q3 closed; §5.1 `--acquire --sanction` acquisition and `--generation` replay;
-  every command `--dictionary v4 --mapping-set v11`; §8 Q1, Q3–Q5, Q7 answered by this plan.
+  every command `--dictionary v5 --mapping-set v12`; §8 Q1, Q3–Q5, Q7 answered by this plan.
 - **Periods and roles (Q5, F09).** Per entity and basis, `commands.txt` enumerates the period ends
   that both vendors' captures cover and onboarding's settings window admits (read-only queries
   saved beside it; settings never extended), and freezes each one's role: (a) *filing-check*:
@@ -428,8 +430,8 @@ With VENDOR-1 (orchestrator rulings 1–2):
   `discovery.py` and `fallback.py` land before any Phase 3 task edits those files; Phase 3 tasks
   touching none of them proceed. Phase 3 Task 11 is gated on FIVE-1 Tasks 1–2 and FIVE-1's reviewed
   gate. Phase 3 updates its own imports and test seams for the moved authority module.
-- **Five-company test:** starts after Phase 3 Task 13 (v4/v11 and the extractor bumps final) and
-  FIVE-1 Task 4, with every command under v4/v11 (reading 4).
+- **Five-company test:** starts after Phase 3 Task 13 (v5/v12 and the extractor bumps final) and
+  FIVE-1 Task 4, with every command under v5/v12 (reading 4).
 
 ## Self-review
 
