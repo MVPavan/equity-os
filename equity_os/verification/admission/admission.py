@@ -33,6 +33,7 @@ from equity_os.contracts.measurement.observation import Observation, PeriodType,
 from equity_os.contracts.measurement.provenance import Provenance, SourceAnchorType
 from equity_os.contracts.verification.comparison import ExtractionStatus, SourceRole, SourceState
 from equity_os.contracts.verification.review_queue import QueueOverlay
+from equity_os.contracts.verification.vendor_first import AdmissionLabel
 from equity_os.extraction.xbrl.xbrl_parser import INF_DECIMALS
 from equity_os.storage.facts.fact_store import FactRef, FactStore, FactStoreLike, StoredRevision
 from equity_os.storage.facts.pg_fact_store import PgFactStore, insert_revision, run_serializable
@@ -55,9 +56,9 @@ _RESULT_ID: LiteralString = (
 )
 _INSERT: LiteralString = """
 INSERT INTO eqos.fact_admissions (store_id, row_handle, fact_origin, fact_origin_id, run_id,
-    result_id, interpretation_id, occurrence_id, overlay_position, bridge_version)
+    result_id, interpretation_id, occurrence_id, overlay_position, bridge_version, label)
 SELECT target_store, handle, origin, origin_id, %(run_id)s, %(result_id)s,
-    %(interpretation_id)s, %(occurrence_id)s, %(position)s, %(bridge)s
+    %(interpretation_id)s, %(occurrence_id)s, %(position)s, %(bridge)s, %(label)s
 FROM eqos.fact_rows WHERE target_store = %(store)s AND handle = %(handle)s
 ON CONFLICT (store_id, result_id, interpretation_id) DO NOTHING RETURNING id
 """
@@ -179,6 +180,7 @@ def admit_run(run_id: int, *, pool: ConnectionPool, store_id: str) -> AdmissionO
                 "occurrence_id": occurrence.occurrence_id,
                 "position": position,
                 "bridge": BRIDGE_VERSION,
+                "label": AdmissionLabel.CHECKED_AGAINST_FILING,
             }
             created += cursor.execute(_INSERT, params).rowcount
             stored = _one(cursor, _RECORD, (store_id, result_id, interpretation.interpretation_id))

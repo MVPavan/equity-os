@@ -594,8 +594,11 @@ def seeded(pg_db: PgTestDatabase, runtime: psycopg.Connection) -> dict[str, int]
     return ids
 
 
-def _seed_legacy_store(conn: psycopg.Connection, ids: dict[str, int]) -> None:
-    """One row in each D2 fact-store table (composite keys return no id; 0 stands in)."""
+def _seed_legacy_store(
+    conn: psycopg.Connection, ids: dict[str, int], *, labelled: bool = True
+) -> None:
+    """One row in each D2 fact-store table (composite keys return no id; 0 stands in);
+    ``labelled=False`` writes the admission as before migration 0047."""
     store, row = {"target_store": "sqlite-seed"}, {"target_store": "sqlite-seed", "row_handle": 1}
     origin = store | {"handle": 1, "origin": "sqlite-seed", "origin_id": 1, "content_identity": "c"}
     rows: dict[str, dict[str, Any]] = {
@@ -634,7 +637,8 @@ def _seed_legacy_store(conn: psycopg.Connection, ids: dict[str, int]) -> None:
             {"store_id": "sqlite-seed", "row_handle": 1, "fact_origin": "sqlite-seed"}
             | {"fact_origin_id": 1, "run_id": ids["runs"], "result_id": ids["results"]}
             | {"interpretation_id": ids["interpretations"], "occurrence_id": ids["occurrences"]}
-            | {"overlay_position": NOW, "bridge_version": "admission-bridge/1"},
+            | {"overlay_position": NOW, "bridge_version": "admission-bridge/1"}
+            | ({"label": "CHECKED_AGAINST_FILING"} if labelled else {}),
         )
 
 

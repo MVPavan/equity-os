@@ -244,6 +244,7 @@ def native_fact_admission(w: World) -> Edge:
         "occurrence_id": w.one("SELECT occurrence_id FROM eqos.interpretations WHERE id = %s", i),
     }
     row |= {"overlay_position": later(), "bridge_version": "admission-bridge/1"}
+    row |= {"label": "CHECKED_AGAINST_FILING"}
     return c, lambda: _insert(w.rt, "fact_admissions", row), VERSION, NONE
 
 
