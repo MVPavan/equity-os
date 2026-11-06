@@ -1,16 +1,18 @@
 {
   "now": {
     "title": "VENDOR-1 Phase 1: Screener and Tijori as main sources, filings as fallback",
-    "detail": "Tasks 1-8 and 11 are on main: migration 0047/0048, Tijori display rules, mapping set v9, standalone-only onboarding, vendor-only runs with default vendors, the policy and run pins, eligibility measurement, and one admission path with the two labels. Task 9 (report values, labels, citation) and Task 10 (fallback to the filing) are running. Next: the pre-live gate, Sol's phase-end and closing reviews, then the live migration and the Apar re-measurement."
+    "detail": "Tasks 1-11 are on main and Sol approved the Phase 1 code after three phase-review rounds and a closing review (all findings fixed, 87be969e). The integrated gate is running at that revision; its rails check stops on one quoted hash line until the owner rules on a narrow exception, and an unpushed commit holding a vendor reading awaits the owner's history decision. Phase 2 Task 5 (the vendor summary block) is being built."
   },
   "next": [
-    "VENDOR-1 P1: Tasks 9 and 10, pre-live gate (Task 12), Sol phase-end review and fresh closing review",
-    "VENDOR-1 P1 live: migrate 0047/0048, re-interpret and re-ingest Apar (Task 13), re-measure (Task 14)",
-    "VENDOR-1 Phase 2 (vendor text: concall summaries) and Phase 3 (banks, ICICIBANK), each with a plan and Sol review",
-    "Five-company test: APARINDS, ICICIBANK, LAURUSLABS, MTARTECH, NETWEB",
-    "Parked: RESEARCH-4 S1 replay onto the moved tree (eqos-o1yl); daily document intake paused by the owner"
+    "Owner: rail exception for quoted 64-hex digests; history of unpushed commit 39ffae57",
+    "VENDOR-1 P1 live: migrate, re-interpret and re-ingest Apar (Task 13), re-measure (Task 14)",
+    "VENDOR-1 P2: Task 5 lands, gate (Task 6), Sol phase review"
   ],
   "log": [
+    {
+      "date": "2026-11-06",
+      "text": "VENDOR-1 Phase 1 code approved by Sol: phase-review rounds 1-3 and a fresh closing review found 23 issues in all (labels, witnesses in retention, coverage, display-rule pinning, predecessor priors, filing selection, vendor-only applicability); all fixed on main. Stage 4 protected tests 65 passed, leak check PASS."
+    },
     {
       "date": "2026-11-06",
       "text": "Restructure landed. VENDOR-1 spec and Phase 1 plan approved by Sol; Tasks 1-8 and 11 landed. Test suite trimmed (25 static tests cut, 55 clones merged, -886 lines) after Sol review. Dashboard redrawn as the bucket architecture with a vendor-first data-flow diagram."
