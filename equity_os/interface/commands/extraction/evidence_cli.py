@@ -24,8 +24,8 @@ the stored package id, ``FILING_UNAVAILABLE`` or ``FILING_UNRESOLVED`` and exits
 ``EXIT_INCOMPLETE`` unless the filing was ingested.
 
 ``stage`` copies an onboarding generation's retrieval-manifest members (XBRL only) from their
-numbered bodies into intake's layout under a new directory, each body confined to the generation
-and matching both manifests' SHA-256, so ``ingest`` can re-interpret them.
+numbered bodies into intake's layout under a directory it creates, each body confined to the
+generation and matching both manifests' SHA-256, so ``ingest`` can re-interpret them.
 """
 
 from __future__ import annotations
@@ -232,6 +232,7 @@ def _ingest(args: argparse.Namespace) -> int:
         input_root=args.raw_root.absolute(),
         issuer_config=args.issuer_config,
         rights=INTAKE_RIGHTS,
+        basis=_BASES[args.basis],
     )
     catalog = BUILTIN_SOURCES
     pdf_specs = None
@@ -334,22 +335,34 @@ def _acquire(args: argparse.Namespace) -> int:
 
 def _stage(generation: Path, stage: Path) -> int:
     """Stage the generation's retrieval-manifest members as ``<stage>/nse/<filename>`` beside a
-    copy of that manifest; print how many."""
+    copy of that manifest under a new ``stage``, every path checked ordinary before it is touched
+    and every hash checked before anything is written; print how many."""
     ordinary_roots(generation, stage)
-    package = inside(generation, RETRIEVAL_NAME).read_bytes()
-    found = DiscoveryManifest.model_validate_json(inside(generation, MANIFEST_NAME).read_bytes())
+    package = _ordinary(generation, RETRIEVAL_NAME).read_bytes()
+    found = DiscoveryManifest.model_validate_json(_ordinary(generation, MANIFEST_NAME).read_bytes())
     bodies = {entry.url: (str(entry.filename), entry.sha256) for entry in found.entries}
     entries = json.loads(package)["entries"]
-    (stage / XBRL_INPUT_DIR).mkdir(parents=True)
+    staged = []
     for entry in entries:
         name, digest = bodies[entry["url"]]
-        body = inside(generation, name).read_bytes()
+        body = _ordinary(generation, name).read_bytes()
         if not hashlib.sha256(body).hexdigest() == digest == entry["sha256"]:
             raise EvidenceCommandError(_ALTERED.format(path=generation / name))
-        inside(stage / XBRL_INPUT_DIR, entry["filename"]).write_bytes(body)
-    (stage / RETRIEVAL_NAME).write_bytes(package)
+        staged.append((entry["filename"], body))
+    stage.mkdir(parents=True)
+    (stage / XBRL_INPUT_DIR).mkdir()
+    for filename, body in staged:
+        _ordinary(stage / XBRL_INPUT_DIR, filename).write_bytes(body)
+    _ordinary(stage, RETRIEVAL_NAME).write_bytes(package)
     sys.stdout.write(_STAGED.format(count=len(entries)))
     return EXIT_OK
+
+
+def _ordinary(folder: Path, name: str) -> Path:
+    """``folder / name``, confined to ``folder`` and outside every protected root."""
+    path = inside(folder, name)
+    ordinary_roots(path)
+    return path
 
 
 def _transcript(args: argparse.Namespace) -> int:

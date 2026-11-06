@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -20,11 +21,13 @@ from onboarding_support import (
     FAILURE,
     INCOMPLETE,
     REVIEW,
+    U,
     cli,
     count,
     fresh_db,
     git,
     recorded,
+    rows,
     serving_transport,
     world,
     yaml_sha,
@@ -32,9 +35,11 @@ from onboarding_support import (
 from pg_support import PgTestDatabase
 from retained_support import REPO_ROOT
 from test_onboarding_acquisition import CLOCK, _raising
+from test_standalone_onboarding import _standalone_world
 
-from equity_os.companies.onboarding.discovery import MANIFEST_NAME
+from equity_os.companies.onboarding.discovery import MANIFEST_NAME, DiscoveryManifest, ManifestEntry
 from equity_os.interface.commands.companies import acquisition_authority, onboard_cli
+from equity_os.interface.commands.sourcing.screener_cli_dispatch import EXIT_REFUSED
 from equity_os.interface.entry.cli import main
 
 __all__ = ["cli"]
@@ -224,7 +229,14 @@ def test_sanctioned_acquire_then_replay_is_identical(
 
 @pytest.mark.pg
 @pytest.mark.retained
+@pytest.mark.parametrize(
+    ("served", "basis"),
+    [(partial(world, APAR), "consolidated"), (_standalone_world, "standalone")],
+    ids=["consolidated", "standalone"],
+)
 def test_a_sanctioned_acquisition_onboards_and_replays_its_ingest(
+    served: Callable[[], list[dict[str, Any]]],
+    basis: str,
     cli: Callable[..., int],
     pg_db: PgTestDatabase,
     pg_template: PgTestDatabase,
@@ -232,17 +244,18 @@ def test_a_sanctioned_acquisition_onboards_and_replays_its_ingest(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A sanctioned acquisition of a listed symbol whose fixture world answers (only transports
-    faked) onboards and ingests its evidence; replaying that generation in a fresh database with
-    transports raising records the same outcome, unit states and stored evidence."""
+    faked) onboards and ingests its evidence on the listings' basis; replaying that generation in
+    a fresh database with transports raising records the same outcome, unit states and stored
+    evidence."""
     repo, path = _sanction_repo(tmp_path, monkeypatch, symbols=(APAR,))
     raw, config = tmp_path / "raw", ("--config-root", str(repo / "config"))
-    monkeypatch.setattr(onboard_cli, "live_transport", lambda: serving_transport(world(APAR)))
+    monkeypatch.setattr(onboard_cli, "live_transport", lambda: serving_transport(served()))
     monkeypatch.setattr(onboard_cli, "now", lambda: CLOCK)
     assert cli(APAR, raw, *config, "--acquire", "--sanction", str(path)) == INCOMPLETE
     tables = ("onboarding_records", "filing_packages", "occurrences", "interpretations")
     acquired, stored = recorded(pg_db), [count(pg_db, table) for table in tables]
     assert all(stored)
-    _reinterpret(raw / "gen-1", tmp_path)
+    _reinterpret(pg_db, raw / "gen-1", tmp_path, basis)
     monkeypatch.setattr(onboard_cli, "live_transport", lambda: _raising)
     with fresh_db(pg_template) as db:
         for name, value in db.cli_env().items():
@@ -253,10 +266,20 @@ def test_a_sanctioned_acquisition_onboards_and_replays_its_ingest(
         assert [count(db, table) for table in tables] == stored
 
 
-def _reinterpret(generation: Path, tmp_path: Path) -> None:
-    """Closing review 1: FIVE-COMPANY-TEST §5.2's first-party recipe over onboarding's retained
-    generation (stage it, then ingest the latest filing under another mapping set) stores new
-    interpretations of the onboarded package."""
+_MEMBERS = (
+    "SELECT m.package_id, c.id, c.source_id FROM eqos.package_members m "
+    "JOIN eqos.capture_refs c ON c.id = m.capture_ref_id"
+)
+
+
+def _reinterpret(db: PgTestDatabase, generation: Path, tmp_path: Path, basis: str) -> None:
+    """Closing reviews 1 and 2: FIVE-COMPANY-TEST §5.2's first-party recipe over onboarding's
+    retained generation (stage it, then ingest the latest filing on its basis under another
+    mapping set) reuses the onboarded package and its capture, whose source is the basis's, and
+    stores the new mapping's interpretations on that capture."""
+    ((package, capture, source),) = rows(db, _MEMBERS)
+    assert source == f"nse-indas-xbrl-{basis}"
+    captures = count(db, "capture_refs")
     stage = tmp_path / "stage"
     assert main(["evidence", "stage", "--generation", str(generation), "--stage", str(stage)]) == 0
     manifest = stage / onboard_cli.RETRIEVAL_NAME
@@ -264,9 +287,77 @@ def _reinterpret(generation: Path, tmp_path: Path) -> None:
     issuer = json.loads((generation / MANIFEST_NAME).read_text())["issuer"]
     argv = [
         *("evidence", "ingest", "--retrieval-manifest", str(manifest), "--issuer", issuer),
-        *("--quarter", quarter, "--period-end", quarter, "--basis", "consolidated"),
-        *("--member", "xbrl=xbrl-consolidated", "--raw-root", str(stage)),
+        *("--quarter", quarter, "--period-end", quarter, "--basis", basis),
+        *("--member", f"xbrl=xbrl-{basis}", "--raw-root", str(stage)),
         *("--snapshot-root", str(tmp_path / "snapshots"), "--mapping-set", "v9"),
         *("--dictionary", "v2"),
     ]
     assert main(argv) == 0
+    assert rows(db, _MEMBERS) == [(package, capture, source)]
+    assert count(db, "capture_refs") == captures
+    reinterpreted = (
+        "SELECT DISTINCT capture_ref_id FROM eqos.interpretations WHERE mapping_set_version = 'v9'"
+    )
+    assert rows(db, reinterpreted) == [(capture,)]
+
+
+def _generation(folder: Path, name: str) -> Path:
+    """SYNTHETIC: a generation at ``folder`` whose one retrieval member is the body ``name``."""
+    body = b"SYNTHETIC body"
+    (folder / name).parent.mkdir(parents=True, exist_ok=True)
+    (folder / name).write_bytes(body)
+    sha = hashlib.sha256(body).hexdigest()
+    entry = ManifestEntry(
+        request_key="zz",
+        source_id="zz",
+        surface="zz",
+        unit=U.EXCHANGE,
+        url="https://zz.invalid/x",
+        filename=name,
+        sha256=sha,
+        bytes=len(body),
+        retrieved_at=CLOCK,
+        outcome="OK",
+    )
+    found = DiscoveryManifest(
+        issuer=SANCTIONED, authorization="zz", generation=1, as_of=CLOCK.date(), entries=(entry,)
+    )
+    (folder / MANIFEST_NAME).write_text(found.model_dump_json())
+    retrieval = {"entries": [{"url": entry.url, "sha256": sha, "filename": "x.xml"}]}
+    (folder / onboard_cli.RETRIEVAL_NAME).write_text(json.dumps(retrieval))
+    return folder
+
+
+@pytest.mark.parametrize("breach", ["output_linked", "protected_descendant"])
+def test_stage_refuses_before_touching_a_protected_root(
+    breach: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Closing review 2 (SYNTHETIC checkout): ``evidence stage`` refuses an existing stage, so an
+    output manifest linked into a protected root is never written, and refuses a member below a
+    protected root even inside a generation that is its ancestor, before reading it."""
+    repo = tmp_path / "repo"
+    protected = repo / "data" / "holdout"
+    protected.mkdir(parents=True)
+    monkeypatch.setattr(acquisition_authority, "SOURCE_CHECKOUT", repo)
+    target = protected / "target.bin"
+    target.write_bytes(b"SYNTHETIC sentinel")
+    stage = tmp_path / "stage"
+    if breach == "output_linked":
+        generation = _generation(tmp_path / "gen-1", "00.bin")
+        stage.mkdir()
+        (stage / onboard_cli.RETRIEVAL_NAME).symlink_to(target)
+    else:
+        generation = _generation(repo / "data", "holdout/synthetic.bin")
+    read: list[Path] = []
+    real = Path.read_bytes
+
+    def read_bytes(self: Path) -> bytes:
+        read.append(self.resolve())
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    argv = ["evidence", "stage", "--generation", str(generation), "--stage", str(stage)]
+    assert main(argv) == EXIT_REFUSED
+    assert not any(path.is_relative_to(protected.resolve()) for path in read)
+    assert target.read_bytes() == b"SYNTHETIC sentinel"
+    assert breach == "output_linked" or not stage.exists()
