@@ -144,9 +144,13 @@ def load_approved_config(
     """Validate approved bytes with protected descriptors retained through parsing.
 
     The guarded interval starts after opening the directory descriptors, before
-    reading, and ends at the final verification after model validation. Ancestor
-    ctime is sampled only for this operation: concurrent directory changes,
-    including unrelated entry changes, conservatively refuse without retry.
+    reading, and ends at the final verification after model validation. The
+    ctime of the operator-protected pair (the config directory and its parent)
+    is sampled only for this operation: concurrent changes there, including
+    unrelated entries, conservatively refuse without retry. Higher ancestors lie
+    outside the protected scope: the read goes through pinned descriptors whose
+    edges are re-verified, so a swap there cannot redirect it, and activity in
+    shared roots such as ``/tmp`` or ``$HOME`` does not refuse (eqos-bs1b).
     These samples confer no persistent authority or temporal eligibility.
     """
     import yaml
@@ -154,7 +158,11 @@ def load_approved_config(
     try:
         # Do not resolve: symlinks and non-plain ancestors must reach no-follow checks.
         with DescriptorTree(DirectoryAnchor(config_path.absolute().parent)) as tree:
-            ancestor_changes = tuple((fd, os.fstat(fd).st_ctime_ns) for fd in tree.fds)
+            parts = tree.anchor.path.parts
+            ancestor_changes = [
+                (fd, Path(*parts[: index + 1]), os.fstat(fd).st_ctime_ns)
+                for index, fd in enumerate(tree.fds)
+            ][-2:]
             payload = tree.read(tree.root, config_path.name, MAX_METADATA_BYTES)
             if hashlib.sha256(payload).hexdigest() != approved_intake.approved_config_sha256:
                 raise SourceRegistrationError("configuration bytes differ from approved digest")
@@ -162,11 +170,10 @@ def load_approved_config(
             def verify() -> None:
                 tree.verify()
                 # Restoring a directory inode cannot erase its operation-local change.
-                for index, (fd, before_ctime) in enumerate(ancestor_changes):
+                for fd, ancestor, before_ctime in ancestor_changes:
                     if os.fstat(fd).st_ctime_ns != before_ctime:
                         raise SourceRegistrationError(
-                            f"configuration ancestor changed during operation: "
-                            f"{Path(*tree.anchor.path.parts[: index + 1])}"
+                            f"configuration ancestor changed during operation: {ancestor}"
                         )
                 # A rename away and back changes ctime even if the original inode returns.
                 for _, name, fd, before in tree.read_files:

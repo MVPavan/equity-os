@@ -31,6 +31,7 @@ from equity_os.interface.commands.sourcing.source_admission import (
 from equity_os.interface.commands.sourcing.source_intake import (
     ApprovedIntakeBinding,
     ApprovedIntakeContext,
+    load_approved_config,
 )
 from equity_os.interface.entry.cli import main
 from equity_os.storage.raw_files.snapshot_store import DirectoryAnchor, SnapshotStore
@@ -719,6 +720,30 @@ def test_retained_configuration_symlinks_cannot_bypass_nofollow(
         main(argv, intake_context=fixture["context"])
     assert not fixture["db"].parent.exists()
     assert not (tmp_path / "output").exists()
+
+
+def test_approved_configuration_ignores_changes_above_its_protected_pair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Shared roots (``/tmp``, ``$HOME``) churn under parallel runs; only the config
+    directory and its parent are ctime-guarded, so their churn must not refuse (eqos-bs1b).
+    Substitution inside the pair still refuses: see the test below."""
+    fixture = intake_fixture(tmp_path, monkeypatch)
+    nested = tmp_path / "A" / "nested"
+    nested.mkdir(parents=True)
+    path = nested / fixture["config"].name
+    fixture["config"].rename(path)
+    real_load = yaml.safe_load
+
+    def parse(payload: Any) -> Any:
+        before = tmp_path.stat().st_ctime_ns
+        while tmp_path.stat().st_ctime_ns == before:
+            (tmp_path / "sibling").mkdir()
+            (tmp_path / "sibling").rmdir()
+        return real_load(payload)
+
+    monkeypatch.setattr(yaml, "safe_load", parse)
+    assert load_approved_config(path, approved_intake=fixture["context"])
 
 
 @pytest.mark.parametrize("existing", [False, True], ids=["absent", "existing"])
