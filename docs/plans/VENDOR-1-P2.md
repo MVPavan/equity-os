@@ -1,7 +1,13 @@
 # VENDOR-1 Phase 2 Implementation Plan
 
-**Status:** revised after Sol plan review 2 (REQUEST_CHANGES, R2-01–R2-04, 2026-11-06); for
-re-review. **Bead:** `eqos-awnc`.
+**Status:** approved, gpt-6.1-sol plan review 3 (APPROVE, 2026-11-06). Implementation notes from
+that review:
+- An imported successor that inherits S still refuses atomically when S > its own K.
+- Exercise `--frozen` and `--budget` through the public CLI.
+- Grant the runtime role SELECT and INSERT on `version_source_cutoffs`, and verify it through that
+  role.
+
+**Bead:** `eqos-awnc`.
 **Origin:** `docs/specs/2026-11-06-vendor-first.md` §7, approved by gpt-6.1-sol in round 3 on
 2026-11-06, as amended by the Phase 2 scope amendment (§7, from this review). §1–§4 give the
 owner's order and defaults. Code facts were read at `19545c8e` and rechecked at `b9e96e4a`.
