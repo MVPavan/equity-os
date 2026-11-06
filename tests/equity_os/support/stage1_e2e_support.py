@@ -50,6 +50,7 @@ from equity_os.extraction.packages.first_party_ingest import ingest_first_party
 from equity_os.extraction.results_pdf.pdf_statement_pages import specs_from_config
 from equity_os.extraction.surfaces.vendor_ingest import VendorIngestRequest, ingest_vendor
 from equity_os.extraction.vendors.screener.screener_financials_models import Section
+from equity_os.extraction.vendors.tijori import vendor_tijori
 from equity_os.interface.entry.cli import main
 from equity_os.interface.entry.config import load_config
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
@@ -78,7 +79,11 @@ SNAPSHOTS = REPO / "data/raw/snapshots/v1"
 VERSIONS = ConfigVersions(dictionary="v2", mapping_set="v4")
 SCREENER = ("screener-subscriber", "SCREENER_FINANCIALS")
 SECTIONS = (Section.QUARTERS, Section.PROFIT_LOSS, Section.BALANCE_SHEET, Section.CASH_FLOW)
-VERSION = {"screener-subscriber": "screener-v1", "tijori": "tijori-v4", "upstox": "upstox-v2"}
+VERSION = {
+    "screener-subscriber": "screener-v1",
+    "tijori": vendor_tijori.EXTRACTOR_VERSION,
+    "upstox": "upstox-v2",
+}
 RUNS = {run["run"]: run for run in MANIFEST["runs"]}
 
 

@@ -2,8 +2,8 @@
 
 One case per Verify claim. Expected lexemes and periods were read by hand from the raw
 captures (Tijori island JSON, Upstox bodies, Screener HTML), never from adapter output.
-Tijori: ``data/raw/snapshots/v1/tijori`` (2026-09-05); qt_c money intervals follow the display
-rule of the retained ``fin-tables.js`` (``config/normalisation/mappings/tijori/v1/display.yaml``).
+Tijori: ``data/raw/snapshots/v1/tijori`` (2026-09-05); money intervals follow the display rules
+of the retained ``fin-tables.js`` (``config/normalisation/mappings/tijori/v5/display.yaml``).
 Upstox:
 ``data/raw/snapshots/v1/upstox`` (owner-authorised live fetch, 2026-10-14). Screener:
 ``data/raw/watchlist``, staged into a private snapshot store. The NETWEB "degenerate
@@ -116,6 +116,11 @@ class Case(NamedTuple):
     issuer: str = "THERMAX"  # The seeded entity the request names.
 
 
+TIJORI_DISPLAY = vendor_tijori.load_tijori_display(
+    REPO / "config/normalisation/mappings/tijori/v5/display.yaml"
+)
+
+
 def tijori(slug: str, symbol: str) -> Any:
     ids = identifiers(symbol)
     assert ids["tijori_slug"] == slug
@@ -124,9 +129,7 @@ def tijori(slug: str, symbol: str) -> Any:
         binding=vendor_tijori.TijoriBinding(
             slug=slug, symbol=symbol, company_id=ids["tijori_company_id"]
         ),
-        display=vendor_tijori.load_tijori_display(
-            REPO / "config/normalisation/mappings/tijori/v1/display.yaml"
-        ),
+        display=TIJORI_DISPLAY,
         basis=Basis.CONSOLIDATED,
     )
 
@@ -150,7 +153,6 @@ def screener(symbol: str, basis: Basis, section: Section) -> Any:
     return extract
 
 
-UNIT = InterpretationReason.UNIT_MISMATCH  # No evidenced unit outside Tijori qt_c money rows.
 PRECISION = InterpretationReason.PRECISION_UNSUPPORTED  # API numerals declare no precision.
 INVALID = InterpretationStatus.INVALID
 CASES = (
@@ -172,9 +174,11 @@ CASES = (
                 PeriodInterval.duration(date(2025, 7, 1), date(2026, 6, 30)),
                 PeriodKind.TTM,
                 "revenue_from_operations",
-                INVALID,
-                UNIT,
-                raw_unit="unknown",  # pl_* is outside the qt_c display fact.
+                InterpretationStatus.MAPPED,
+                None,
+                raw_unit="INR",  # pl_c_s has its own display rule (tijori-v5).
+                interval_crore=("10838.5", "10839.5"),  # |v| > 100: Math.round, ± 0.5 crore.
+                rendered="10839",
             ),
             Row(
                 "pl_c_s",
@@ -184,8 +188,11 @@ CASES = (
                 FY26,
                 PeriodKind.YEAR,
                 "revenue_from_operations",
-                INVALID,
-                UNIT,
+                InterpretationStatus.MAPPED,
+                None,
+                raw_unit="INR",
+                interval_crore=("10693.5", "10694.5"),
+                rendered="10694",
             ),
         ),
     ),
@@ -580,9 +587,8 @@ TIJORI_MTARTECH = (
 TIJORI_POLYCAB = (
     RETAINED / "tijori/financials/polycab-india-ltd/20260905T113246.459386Z-9bc61e44e378"
 )
-_TIJORI_DISPLAY = vendor_tijori.load_tijori_display(
-    REPO / "config/normalisation/mappings/tijori/v1/display.yaml"
-)
+_TIJORI_DISPLAY = TIJORI_DISPLAY.rule_for("qt_c", Basis.CONSOLIDATED, ())
+assert _TIJORI_DISPLAY is not None
 
 
 @pytest.mark.parametrize(

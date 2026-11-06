@@ -7,7 +7,7 @@ import json
 import os
 import sys
 from collections.abc import Callable, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from urllib.request import OpenerDirector, build_opener
 
@@ -15,10 +15,14 @@ import yaml
 from psycopg_pool import ConnectionPool
 from pydantic import SecretStr
 
+from equity_os.contracts.measurement.canonical import Basis
+from equity_os.contracts.sourcing.acquisition_outcome import ExtractionOutcome
+from equity_os.contracts.verification.config_versions import ConfigVersions
 from equity_os.extraction.model.vendor_surface_claims import extract_text
 from equity_os.extraction.model.vendor_surface_labels import map_labels
 from equity_os.extraction.model.vendor_surface_model import ChatCompletionsModel, ModelSettings
 from equity_os.extraction.surfaces.vendor_surface_parse import register_tables
+from equity_os.interface.commands.sourcing.vendor_reingest import reingest
 from equity_os.interface.entry.env_credentials import (
     _screener_credentials_from_env,
     _tijori_credentials_from_env,
@@ -59,6 +63,7 @@ CATALOG = Path("docs/research/vendor-surface/catalog.yaml")
 STOP_DIR = Path("data")
 MODEL_CONFIG = Path("config/sourcing/vendor_surface/model.yaml")
 CELL_SECTIONS = frozenset({"section-insights"})
+BASES = {basis.value.lower(): basis for basis in Basis}
 
 
 def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -83,6 +88,15 @@ def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
 
     due = commands.add_parser("capture-due")
     due.add_argument("--snapshot-root", type=Path, default=Path("data/raw/snapshots/v1"))
+
+    again = commands.add_parser("reingest")
+    again.add_argument("--entity", required=True)
+    again.add_argument("--period-end", required=True, type=date.fromisoformat)
+    again.add_argument("--basis", required=True, choices=tuple(BASES))
+    again.add_argument("--mapping-set", required=True)
+    again.add_argument("--dictionary", required=True)
+    again.add_argument("--snapshot-root", type=Path, default=Path("data/raw/snapshots/v1"))
+    again.add_argument("--config-root", type=Path, default=Path("config"))
 
     canary = commands.add_parser("canary")
     canary.add_argument("--yield-only", action="store_true")
@@ -153,6 +167,22 @@ def dispatch_vendor_command(
             count = map_labels(pool, model, settings, site, args.surface, fields)
         sys.stdout.write(json.dumps({"proposed": count}) + "\n")
         return 0
+    if args.vendor_command == "reingest":
+        with pool_factory() as pool:
+            reports = reingest(
+                pool,
+                store_factory(args.snapshot_root),
+                args.config_root,
+                ConfigVersions(dictionary=args.dictionary, mapping_set=args.mapping_set),
+                entity=args.entity,
+                period_end=args.period_end,
+                basis=BASES[args.basis],
+            )
+        for done in reports:
+            line = {"surface": done.attempt.surface, "outcome": done.attempt.outcome.value}
+            sys.stdout.write(json.dumps(line | {"interpretations": len(done.interpretations)}))
+            sys.stdout.write("\n")
+        return int(any(r.attempt.outcome is not ExtractionOutcome.COMPLETE for r in reports))
     if args.vendor_command == "canary":
         now = datetime.now(UTC)
         store = store_factory(args.snapshot_root)

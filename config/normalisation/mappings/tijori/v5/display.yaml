@@ -1,0 +1,231 @@
+# Tijori financials island display rules (VENDOR-1 spec §6.1), one per (section, basis). A section
+# without a rule (fr_c, fr_s ratios; growth) stays UNKNOWN_UNIT and interpretation refuses it.
+# Rows named in excluded_labels, and the rows under them, are not in the table's unit and stay
+# UNKNOWN_UNIT: across all 12 retained Tijori financials captures (2026-09-05, 2026-10-14) these
+# are the only labels that declare another unit ("(%)", a share count "(Crs)") or sit under the
+# qt_* "Quarterly Ratios" subtree (EPS and margins).
+# Script: Tijori's own render script, retained capture
+# tijori/static_script/fin-tables.js/20261014T080646.411252Z-3984b8e174d5
+# (sha256 3984b8e174d5d4b66fb348052dba05a2e62ff35d68650588f0c4429084ce5925, 2026-10-14).
+# Measured: the retained Apar capture tijori/financials/apar-industries-limited/
+# 20261014T092203.484096Z-ea59098cc0df (2026-10-14), every money cell compared with the filed
+# figures of the same period: consolidated tables with the undimensioned facts of Apar's eight
+# retained consolidated XBRL filings (data/raw/watchlist/aparinds/retrieval-manifest-v2.json),
+# standalone tables with the numbers printed in its four retained results PDFs (same manifest;
+# their standalone pages state "Rs. in crores") that are not also filed in the consolidated XBRL.
+# A cell counts when it equals a filed figure at that scale. Counts only; no reading is recorded
+# here. Precision is never read from the island's digits: it is the script's render rule.
+rules:
+- section: bs_c_s
+  basis: CONSOLIDATED
+  raw_unit: INR
+  raw_scale: 7
+  unit_evidence_ref: >-
+    fin-tables.js lines 34-44, balance_sheet_table (variations bs_s_s/bs_c_s/bs_s_d/bs_c_d):
+    unit: "In Rs. Cr.".
+    Measured: 26 of 60 money cells with a filed period equal a filed consolidated XBRL figure in
+    crore (14 of 20 rows); none at lakh, million or rupee scale.
+  rounding_threshold: 100
+  decimals_above: 0
+  decimals_within: 2
+  precision_evidence_ref: >-
+    fin-tables.js lines 280-286, every numeric column renders the "value" key as
+    if (Math.abs(data) > 100) { return Math.round(data).toLocaleString("en-IN"); } else
+    { ... return data?.toFixed(2); }
+- section: bs_c_d
+  basis: CONSOLIDATED
+  raw_unit: INR
+  raw_scale: 7
+  unit_evidence_ref: >-
+    fin-tables.js lines 34-44, balance_sheet_table (variations bs_s_s/bs_c_s/bs_s_d/bs_c_d):
+    unit: "In Rs. Cr.".
+    Measured: 30 of 90 money cells with a filed period equal a filed consolidated XBRL figure in
+    crore (16 of 30 rows); none at lakh, million or rupee scale.
+  rounding_threshold: 100
+  decimals_above: 0
+  decimals_within: 2
+  precision_evidence_ref: >-
+    fin-tables.js lines 280-286, every numeric column renders the "value" key as
+    if (Math.abs(data) > 100) { return Math.round(data).toLocaleString("en-IN"); } else
+    { ... return data?.toFixed(2); }
+- section: pl_c_s
+  basis: CONSOLIDATED
+  excluded_labels:
+  - "Material Cost (%)"
+  - "OPM (%)"
+  - "Number of shares(Crs)"
+  - "Dividend Payout Ratio(%)"
+  raw_unit: INR
+  raw_scale: 7
+  unit_evidence_ref: >-
+    fin-tables.js lines 50-59, profit_and_loss_table (variations pl_s_s/pl_c_s/pl_s_d/pl_c_d):
+    unit: "In Rs. Cr.".
+    Measured: 11 of 24 money cells with a filed period equal a filed consolidated XBRL figure in
+    crore (6 of 12 rows); none at lakh, million or rupee scale.
+  rounding_threshold: 100
+  decimals_above: 0
+  decimals_within: 2
+  precision_evidence_ref: >-
+    fin-tables.js lines 280-286, every numeric column renders the "value" key as
+    if (Math.abs(data) > 100) { return Math.round(data).toLocaleString("en-IN"); } else
+    { ... return data?.toFixed(2); }
+- section: pl_c_d
+  basis: CONSOLIDATED
+  excluded_labels:
+  - "Material Cost (%)"
+  - "OPM (%)"
+  - "Number of shares(Crs)"
+  - "Dividend Payout Ratio(%)"
+  raw_unit: INR
+  raw_scale: 7
+  unit_evidence_ref: >-
+    fin-tables.js lines 50-59, profit_and_loss_table (variations pl_s_s/pl_c_s/pl_s_d/pl_c_d):
+    unit: "In Rs. Cr.".
+    Measured: 22 of 47 money cells with a filed period equal a filed consolidated XBRL figure in
+    crore (12 of 24 rows); none at lakh, million or rupee scale.
+  rounding_threshold: 100
+  decimals_above: 0
+  decimals_within: 2
+  precision_evidence_ref: >-
+    fin-tables.js lines 280-286, every numeric column renders the "value" key as
+    if (Math.abs(data) > 100) { return Math.round(data).toLocaleString("en-IN"); } else
+    { ... return data?.toFixed(2); }
+- section: cf_c
+  basis: CONSOLIDATED
+  raw_unit: INR
+  raw_scale: 7
+  unit_evidence_ref: >-
+    fin-tables.js lines 64-73, cash_flow_table (variations cf_s/cf_c): unit: "In Rs. Cr.".
+    Measured: 12 of 48 money cells with a filed period equal a filed consolidated XBRL figure in
+    crore (8 of 25 rows); none at lakh, million or rupee scale.
+  rounding_threshold: 100
+  decimals_above: 0
+  decimals_within: 2
+  precision_evidence_ref: >-
+    fin-tables.js lines 280-286, every numeric column renders the "value" key as
+    if (Math.abs(data) > 100) { return Math.round(data).toLocaleString("en-IN"); } else
+    { ... return data?.toFixed(2); }
+- section: qt_c
+  basis: CONSOLIDATED
+  excluded_labels:
+  - "Quarterly Ratios"
+  raw_unit: INR
+  raw_scale: 7
+  unit_evidence_ref: >-
+    fin-tables.js lines 94-103, quarterly_results_table (variations qt_s/qt_c): unit: "In Rs. Cr.".
+    Measured: 86 of 114 money cells with a filed period equal a filed consolidated XBRL figure
+    in crore (12 of 15 rows); none at lakh, million or rupee scale. The 6 EPS cells match the
+    filed EPS in rupees, not crore.
+  rounding_threshold: 100
+  decimals_above: 0
+  decimals_within: 2
+  precision_evidence_ref: >-
+    fin-tables.js lines 280-286, every numeric column renders the "value" key as
+    if (Math.abs(data) > 100) { return Math.round(data).toLocaleString("en-IN"); } else
+    { ... return data?.toFixed(2); }
+- section: bs_s_s
+  basis: STANDALONE
+  raw_unit: INR
+  raw_scale: 7
+  unit_evidence_ref: >-
+    fin-tables.js lines 34-44, balance_sheet_table (variations bs_s_s/bs_c_s/bs_s_d/bs_c_d):
+    unit: "In Rs. Cr.".
+    Measured: 21 money cells (11 rows) equal a figure printed in crore only in Apar's results
+    PDFs (standalone columns); none at lakh scale.
+  rounding_threshold: 100
+  decimals_above: 0
+  decimals_within: 2
+  precision_evidence_ref: >-
+    fin-tables.js lines 280-286, every numeric column renders the "value" key as
+    if (Math.abs(data) > 100) { return Math.round(data).toLocaleString("en-IN"); } else
+    { ... return data?.toFixed(2); }
+- section: bs_s_d
+  basis: STANDALONE
+  raw_unit: INR
+  raw_scale: 7
+  unit_evidence_ref: >-
+    fin-tables.js lines 34-44, balance_sheet_table (variations bs_s_s/bs_c_s/bs_s_d/bs_c_d):
+    unit: "In Rs. Cr.".
+    Measured: 25 money cells (12 rows) equal a figure printed in crore only in Apar's results
+    PDFs (standalone columns); none at lakh scale.
+  rounding_threshold: 100
+  decimals_above: 0
+  decimals_within: 2
+  precision_evidence_ref: >-
+    fin-tables.js lines 280-286, every numeric column renders the "value" key as
+    if (Math.abs(data) > 100) { return Math.round(data).toLocaleString("en-IN"); } else
+    { ... return data?.toFixed(2); }
+- section: pl_s_s
+  basis: STANDALONE
+  excluded_labels:
+  - "Material Cost (%)"
+  - "OPM (%)"
+  - "Number of shares(Crs)"
+  - "Dividend Payout Ratio(%)"
+  raw_unit: INR
+  raw_scale: 7
+  unit_evidence_ref: >-
+    fin-tables.js lines 50-59, profit_and_loss_table (variations pl_s_s/pl_c_s/pl_s_d/pl_c_d):
+    unit: "In Rs. Cr.".
+    Measured: 14 money cells (7 rows) equal a figure printed in crore only in Apar's results
+    PDFs (standalone columns); none at lakh scale.
+  rounding_threshold: 100
+  decimals_above: 0
+  decimals_within: 2
+  precision_evidence_ref: >-
+    fin-tables.js lines 280-286, every numeric column renders the "value" key as
+    if (Math.abs(data) > 100) { return Math.round(data).toLocaleString("en-IN"); } else
+    { ... return data?.toFixed(2); }
+- section: pl_s_d
+  basis: STANDALONE
+  excluded_labels:
+  - "Material Cost (%)"
+  - "OPM (%)"
+  - "Number of shares(Crs)"
+  - "Dividend Payout Ratio(%)"
+  raw_unit: INR
+  raw_scale: 7
+  unit_evidence_ref: >-
+    fin-tables.js lines 50-59, profit_and_loss_table (variations pl_s_s/pl_c_s/pl_s_d/pl_c_d):
+    unit: "In Rs. Cr.".
+    Measured: 26 money cells (13 rows) equal a figure printed in crore only in Apar's results
+    PDFs (standalone columns); none at lakh scale.
+  rounding_threshold: 100
+  decimals_above: 0
+  decimals_within: 2
+  precision_evidence_ref: >-
+    fin-tables.js lines 280-286, every numeric column renders the "value" key as
+    if (Math.abs(data) > 100) { return Math.round(data).toLocaleString("en-IN"); } else
+    { ... return data?.toFixed(2); }
+- section: cf_s
+  basis: STANDALONE
+  raw_unit: INR
+  raw_scale: 7
+  unit_evidence_ref: >-
+    fin-tables.js lines 64-73, cash_flow_table (variations cf_s/cf_c): unit: "In Rs. Cr.".
+    Measured: 34 money cells (18 rows) equal a figure printed in crore only in Apar's results
+    PDFs (standalone columns); none at lakh scale.
+  rounding_threshold: 100
+  decimals_above: 0
+  decimals_within: 2
+  precision_evidence_ref: >-
+    fin-tables.js lines 280-286, every numeric column renders the "value" key as
+    if (Math.abs(data) > 100) { return Math.round(data).toLocaleString("en-IN"); } else
+    { ... return data?.toFixed(2); }
+- section: qt_s
+  basis: STANDALONE
+  excluded_labels:
+  - "Quarterly Ratios"
+  raw_unit: INR
+  raw_scale: 7
+  unit_evidence_ref: >-
+    fin-tables.js lines 94-103, quarterly_results_table (variations qt_s/qt_c): unit: "In Rs. Cr.".
+    Measured: 84 money cells (12 rows) equal a figure printed in crore only in Apar's results
+    PDFs (standalone columns); none at lakh scale.
+  rounding_threshold: 100
+  decimals_above: 0
+  decimals_within: 2
+  precision_evidence_ref: >-
+    fin-tables.js lines 280-286, every numeric column renders the "value" key as
+    if (Math.abs(data) > 100) { return Math.round(data).toLocaleString("en-IN"); } else
+    { ... return data?.toFixed(2); }

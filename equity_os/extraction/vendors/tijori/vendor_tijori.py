@@ -2,9 +2,10 @@
 
 Only tables whose own key scope is the requested basis are read; a page with none for that
 basis is rejected and yields no values (standalone is never stored as consolidated). The
-island's numerals declare neither unit nor precision; only the rows an evidenced display fact
-(``config/mappings/tijori/v1/display.yaml``) scopes take its unit, and their value is the
-number the page renders at its displayed precision (the island number stays as raw evidence).
+island's numerals declare neither unit nor precision; only the rows an evidenced display rule
+of their own (section, basis) scopes (``config/normalisation/mappings/tijori/v5/display.yaml``)
+take its unit, and their value is the number the page renders at its displayed precision (the
+island number stays as raw evidence). A section without a rule stays ``UNKNOWN_UNIT``.
 Periods come from column labels: ``qt_*`` quarters, ``pl_*``/``cf_*`` years, ``bs_*``
 instants. The final ``pl_*`` column is TTM, evidenced by the table footer, never a fiscal
 period.
@@ -17,7 +18,7 @@ from decimal import ROUND_HALF_DOWN, ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from equity_os.contracts.measurement.canonical import Basis, PeriodKind, StatementFamily
 from equity_os.contracts.measurement.evidence import CaptureReference, Occurrence
@@ -41,7 +42,7 @@ from equity_os.sourcing.vendors.tijori.tijori_source import TijoriSource
 SOURCE_ID = "tijori"
 SURFACE = "financials"
 SCHEMA_IDENTITY = "tijori-financials-island-v1"
-EXTRACTOR_VERSION = "tijori-v4"
+EXTRACTOR_VERSION = "tijori-v5"  # v5: a display rule per (section, basis)
 UNKNOWN_UNIT = "unknown"
 _TTM_FOOTER = "TTM Values as of {label}"
 _FAMILY = {
@@ -67,12 +68,13 @@ class TijoriBinding(BaseModel):
     company_id: int = Field(gt=0)
 
 
-class TijoriDisplay(BaseModel):
-    """One island table's evidenced unit and displayed precision (spec §5)."""
+class TijoriDisplayRule(BaseModel):
+    """One island table's evidenced unit and displayed precision (spec §5, VENDOR-1 §6.1)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     section: str
-    excluded_parent: str
+    basis: Basis
+    excluded_labels: tuple[str, ...] = ()  # rows, and subtrees under them, not in the unit
     raw_unit: str
     raw_scale: int
     unit_evidence_ref: str = Field(min_length=1)
@@ -99,14 +101,35 @@ class TijoriDisplay(BaseModel):
         return str(double.quantize(Decimal(1).scaleb(-self.decimals(value)), rounding))
 
 
+class TijoriDisplayRules(BaseModel):
+    """The display rules, at most one per (section, basis)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    rules: tuple[TijoriDisplayRule, ...]
+
+    @model_validator(mode="after")
+    def _one_per_section(self) -> TijoriDisplayRules:
+        keys = [(rule.section, rule.basis) for rule in self.rules]
+        if len(set(keys)) != len(keys):
+            raise ValueError("more than one display rule for a (section, basis)")
+        return self
+
+    def rule_for(
+        self, section: str, basis: Basis, labels: tuple[str, ...]
+    ) -> TijoriDisplayRule | None:
+        """The rule scoping a row with these own and parent ``labels``, if any."""
+        rule = next((r for r in self.rules if (r.section, r.basis) == (section, basis)), None)
+        return None if rule is None or set(rule.excluded_labels) & set(labels) else rule
+
+
 def _double(value: Decimal) -> Decimal:
     """The exact value of the IEEE double JavaScript parses ``value`` to (-0 as 0)."""
     return Decimal(float(value)) or Decimal(0)
 
 
-def load_tijori_display(path: Path) -> TijoriDisplay:
-    """Load the display fact file."""
-    return TijoriDisplay.model_validate(yaml.safe_load(path.read_bytes()))
+def load_tijori_display(path: Path) -> TijoriDisplayRules:
+    """Load the display rule file."""
+    return TijoriDisplayRules.model_validate(yaml.safe_load(path.read_bytes()))
 
 
 def extract_tijori(
@@ -116,7 +139,7 @@ def extract_tijori(
     record: CaptureRecord,
     extractor_version: str,
     binding: TijoriBinding,
-    display: TijoriDisplay,
+    display: TijoriDisplayRules,
     basis: Basis,
 ) -> VendorExtraction:
     """Read every cell of the requested basis's tables from one registered page."""
@@ -141,27 +164,25 @@ def extract_tijori(
     for table in scoped:
         labels = table.column_period_labels
         for row in table.rows:
-            scoped_row = table.key.value == display.section and display.excluded_parent not in (
-                row.label,
-                *row.parent_labels,
-            )
+            rule = display.rule_for(table.key.value, basis, (row.label, *row.parent_labels))
             lexemes = [(cell.raw_text, cell.value) for cell in row.cells] or [
                 (raw, None) for raw in row.unaligned_raw_values
             ]
             for index, (lexeme, value) in enumerate(lexemes):
                 column = labels[index] if row.cells else None
-                shown = value if scoped_row else None
                 ttm = bool(row.cells) and _is_ttm(table, index)
                 occurrences.append(
                     json_occurrence(
                         capture,
                         extractor_version=extractor_version,
                         label=row.label,
-                        lexeme=lexeme if shown is None else display.render(shown),
+                        lexeme=lexeme if rule is None or value is None else rule.render(value),
                         value=value,
-                        raw_unit=display.raw_unit if scoped_row else UNKNOWN_UNIT,
-                        raw_scale=display.raw_scale if scoped_row else 0,
-                        declared_precision=None if shown is None else display.decimals(shown),
+                        raw_unit=rule.raw_unit if rule else UNKNOWN_UNIT,
+                        raw_scale=rule.raw_scale if rule else 0,
+                        declared_precision=None
+                        if rule is None or value is None
+                        else rule.decimals(value),
                         period=_period(table, index) if row.cells else None,
                         native_context={
                             "schema_identity": SCHEMA_IDENTITY,

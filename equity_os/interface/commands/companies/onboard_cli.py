@@ -157,7 +157,7 @@ HOLDOUT_RECORD = "tests/fundamentals/fixtures/data_foundation/stage4_holdout.yam
 TIMEOUT_SECONDS = 30
 RETRIEVAL_NAME = "retrieval-manifest.json"
 XBRL_KIND = "xbrl-consolidated"
-TIJORI_DISPLAY = Path("normalisation/mappings/tijori/v1/display.yaml")
+TIJORI_DISPLAY = Path("normalisation/mappings/tijori/v5/display.yaml")
 SCREENER_SECTIONS = (
     Section.QUARTERS,
     Section.PROFIT_LOSS,
