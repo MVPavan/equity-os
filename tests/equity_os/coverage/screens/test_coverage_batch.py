@@ -406,6 +406,27 @@ def test_pairs_are_owner_written_and_link_one_run_of_each_vendor(world: Any) -> 
             conn.execute(pair, (screener, other))
 
 
+def test_a_paired_run_is_sealed_against_new_members(world: Any) -> None:
+    """Review items and holds are computed over a pair's members, so the owner cannot append a
+    member to a paired run; an unpaired run still takes one."""
+    db, run = world["db"], int(world["screened"]["screener_run"])
+    member = "INSERT INTO eqos.screen_members (screen_run_id, row_number, name, reason) "
+    member += "VALUES (%s, 9999, 'Appended', 'NO_CODE')"
+    unpaired = (
+        "INSERT INTO eqos.screen_runs (screen_id, capture_ref_id, vendor, provenance) "
+        "SELECT screen_id, capture_ref_id, 'SCREENER', 'OWNER_EXPORT' FROM eqos.screen_runs "
+        "WHERE id = %s RETURNING id"
+    )
+    with db.owner_pool() as pool, pool.connection() as conn:
+        with pytest.raises(psycopg.errors.CheckViolation, match="paired and sealed"):
+            conn.execute(member, (run,))
+        conn.rollback()
+        with conn.transaction(force_rollback=True):
+            other = conn.execute(unpaired, (run,)).fetchone()
+            assert other is not None
+            conn.execute(member, (other[0],))
+
+
 def test_batch_completes_with_three_partial_same_entity_runs(world: Any) -> None:
     """Each chosen member: PARTIAL, its own onboarding record and a same-entity INCOMPLETE run
     holding comparison rows; the batch declares exactly those three and is complete."""
