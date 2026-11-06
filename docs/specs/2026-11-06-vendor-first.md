@@ -1,7 +1,8 @@
 # VENDOR-1: vendor-first sourcing with filing checks
 
 **Status:** approved (gpt-6.1-sol APPROVE, review round 3, 2026-11-06). **Bead:** eqos-awnc. **Date:** 2026-11-06.
-Amended 2026-11-06 per Phase 1 plan review 2 (gpt-6.1-sol).
+Amended 2026-11-06 per Phase 1 plan review 2 (gpt-6.1-sol), and per Phase 3 plan review 1
+(gpt-6.1-sol, amendments A1–A6: §6.1, §6.6, §8).
 
 Code facts were read at `77637a17`; store facts were queried read-only. **Inferred** and **not
 established** mark everything else. Measurement figures come from
@@ -84,9 +85,12 @@ mechanism. `map_labels` may draft entries; comparison never reads `vendor_label_
 - Entries default to `EQUIVALENCE_UNPROVEN`. A label whose definition is known to differ is
   `RELATED_NOT_EQUIVALENT` and never votes; Screener annual interest vs `finance_costs` is in this
   class unless the phase explains the 7.7%.
-- Standalone tables (Tijori `*_s` sections, the Screener standalone page) get entries; capture
-  fetches them when the entity's basis status is `STANDALONE_ONLY` (§6.2). Standalone never pairs
-  with consolidated.
+- Standalone tables (Tijori `*_s` sections, the Screener standalone page) get entries. Capture
+  standalone vendor tables for STANDALONE_ONLY issuers and whenever a separately recorded owner
+  analysis-basis decision selects standalone, including ICICIBANK when the issuer reports both
+  bases. Acquisition, interpretations, keys and comparisons retain the selected basis; this choice
+  never changes the issuer's reported-basis status or pairs standalone with consolidated.
+  Standalone never pairs with consolidated.
 - Dimensioned keys: an entry keeps its dimensions where the vendor table carries them. Dimension
   members are enumerated from the filing package today; where a key's members cannot be
   enumerated without a package, the cell refuses with an explicit reason instead of dropping the
@@ -245,7 +249,9 @@ evidence, so incompatible evidence is invalidated by identity, not by a rule. Is
 identity setting (`NON_FINANCIAL` for every onboarded issuer today, since onboarding refuses
 financial issuers; `BANK` in Phase 3). In Phase 1, issuer class is resolved from positively
 evidenced onboarding provenance known at the cutoff; absent or unsupported provenance yields no
-class.
+class. From Phase 3, issuer class is the ISSUER_CLASS setting backed by verified filing-form
+evidence (§8 step 2); the Phase 1 rule remains only for previously onboarded non-financial issuers
+without a new explicit class.
 
 **Artifact.** `eqos vendor measure --available-from <timestamp>` (product code replacing the
 scratch `measure*.py`) reads stored run results and writes
@@ -429,10 +435,28 @@ or capture. So the bank route starts from evidence:
    fetch helpers of §6.8 step 1, before onboarding eligibility, framework or schema validation.
    Record from them: framework, XBRL schema and taxonomy, statement layout, bases reported. Every
    later step cites this record. Retained but unsupported evidence grants no onboarding authority.
+   Grounding uses entity-free listing, acquisition and retention primitives. It does not call an
+   onboarding eligibility, framework or supported-schema filter to decide which candidate evidence
+   can be retained. It creates no entity, onboarding decision, setting, package or interpretation.
+   Grounding captures use a retention-only authority surface and are not eligible as first-party
+   comparison members merely by being retained. Ambiguous candidates and missing evidence are
+   recorded and stop dependent decisions rather than being defaulted. Each decided claim identifies
+   its capture hash, basis, period and element/context or page/quote; the reviewed record
+   distinguishes prior bank fixtures from ICICIBANK evidence.
 2. **Framework and onboarding.** Add the framework value the filing evidences (only if no existing
    value fits). Onboarding verification and derived settings accept it for issuer class `BANK`,
    set from evidence. NBFCs and insurers stay `UNSUPPORTED`. ICICIBANK's analysis basis is
    standalone (owner decision 2), stored apart from its reported bases.
+   Store ISSUER_CLASS as a setting backed by verified filing-form evidence: an uncontested
+   IntegratedFinance_IndAS form yields NON_FINANCIAL and an uncontested IntegratedFinance_Banking
+   form yields BANK; NBFC, insurer, unknown and conflicting forms remain unsupported. An
+   accounting-framework value alone does not classify a newly onboarded issuer. Settings resolve by
+   effective period and recorded cutoff. The Phase 1 provenance rule remains only for previously
+   onboarded non-financial issuers without a new explicit class; unusable explicit evidence never
+   falls back to that rule. Store ANALYSIS_BASIS separately, backed by a reviewed owner-decision
+   binding to issuer, value and immutable decision content. ICICIBANK's binding is STANDALONE.
+   Reported-basis status comes from the evidenced listing window, independently of the selected
+   analysis basis.
 3. **Dictionary v4.** Shared concepts stay shared for banks: PBT, tax, PAT, EPS, share capital,
    reserves, total assets and any other row whose definition holds for both. Applicability on
    issuer class restricts only sector-specific rows, layouts and formulas: bank-only rows (interest
@@ -443,14 +467,36 @@ or capture. So the bank route starts from evidence:
    family; the engine context carries issuer class; XBRL and PDF mapping entries for the bank rows
    are written from the retained filing; vendor entries from ICICIBANK's Tijori and Screener
    captures, with §6.1 display rules where Tijori bank tables differ.
+
+   *Steps 2 and 4:* Issuer class and accounting framework are separate decisions. The filing form establishes issuer class; the framework requires a declaration whose
+   meaning is evidenced for the relevant filing. When the declaration is available only in a
+   retained results PDF, its verified issuer, period and basis association and exact declaration
+   are carried as framework evidence; a Banking form alone is not a substitute for that
+   declaration. Conflicting or unassessed evidence grants no authority. Results keys and every
+   ingest/reingest/fallback path use the evidenced framework governing the entity and period at
+   the knowledge cutoff, with selected packages required to agree. Supported PDFs join packages
+   through the existing hash-pinned intake contract; unsupported PDFs stay retained with an
+   explicit limitation.
 5. **Refuse the rest.** Any capability the filing does not support (e.g. a statement or segment
    table absent from it) stays refused with a stated reason; nothing is guessed.
 
 **Acceptance.** The grounding record exists with its capture ids, retained before any onboarding
 check ran. ICICIBANK onboards as `BANK` with the evidenced framework; an NBFC fixture stays
-`UNSUPPORTED`. A compare run on the retained filing period gives values for shared and bank rows,
-`NOT_APPLICABLE` for non-financial-only rows, and admissions under §6.5. Apar's results are
-unchanged under dictionary v4. Gate as Phase 1.
+`UNSUPPORTED`. A compare run on the retained filing period gives values for shared and bank rows
+and `NOT_APPLICABLE` for non-financial-only rows. Demonstrate admissions under §6.5 on a rehearsal
+copy, with positive admissions for the supported admissible acceptance cells and explicit expected
+refusals for unsupported or contested cells. No admission is written on live in this phase. No
+BANK vendor-only eligibility is established by this acceptance run; §6.5 row 3 remains unavailable
+for BANK. Freeze expected shared/bank value keys and unsupported capabilities from the reviewed
+grounding evidence before acceptance, so an entirely refused run cannot pass. Dictionary v4
+extends published v3; v1–v3 remain immutable. On a rehearsal copy, reproduce Apar's approved v2/v9
+baseline and compare it with v4 under the candidate mapping/extractor versions using the same
+retained captures, cutoff and scope, with all required candidate interpretations materialized.
+Existing results preserve canonical key, state, value, interval and reason semantics; added rows
+have an explicit family/applicability disposition. Use v3 as an intermediate control. This is
+numeric regression acceptance, not inherited eligibility: changes to dictionary, mapping or either
+vendor extractor create new check classes with no evidence until separately measured. Apar's live
+pilot pins do not move in Phase 3. Gate as Phase 1.
 
 ## 9. What the five-company test gets, and D3
 
