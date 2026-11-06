@@ -409,7 +409,9 @@ surface in `config/sourcing/vendor_surface/surfaces.yaml`.
   a block headed with vendor, surface and capture date and marked
   `vendor summary — guidance, not evidence`.
 
-**Acceptance.** Both readers produce validated spans from retained captures; a span of another
+**Phase 2 scope amendment (2026-11-06).** Readers remain keyed by `(site, surface)`. Phase 2 implements Screener's existing text surfaces and a reader for the summary reached through the issuer's advertised `/concalls/summary/{concall_id}/` links, provided retained captures establish both its text region and a resolvable own issuer reference. Tijori's `concall-monitor` retained captures contain no summary text, and no working authorised summary route has been established. The Tijori reader is deferred to a tracked follow-up until such a route and retained summary format are evidenced; Phase 2 completion does not claim Tijori text coverage. All issuer, cutoff, citation, numeral and no-number-source rules below continue to apply.
+
+**Acceptance.** The supported Screener readers produce validated spans from retained captures, including the grounded concall-summary reader. The deferred Tijori reader is not counted as completed acceptance. A span of another
 issuer, or captured after the cutoff, is refused; a citation with altered offsets fails; a numeric
 claim citing only a span is refused and passes when it cites a fact ID; a span with a numeral is
 absent from the render; no `interpretations` row references a text-claim capture. Gate as Phase 1.
