@@ -32,7 +32,7 @@ from equity_os.contracts.verification.comparative import (
     ComparativeChange,
     ConceptComparative,
 )
-from equity_os.contracts.verification.vendor_first import LABEL_TEXT, AdmissionLabel
+from equity_os.contracts.verification.vendor_first import LABEL_TEXT, AdmissionLabel, weakest
 from equity_os.publication.drafting.management_ledger import LedgerStatus, ManagementLedger
 from equity_os.storage.facts.fact_store import FactRef
 
@@ -180,13 +180,15 @@ class RenderedGuidance(BaseModel):
 
 
 class RenderedCalculation(BaseModel):
-    """One derived value, traced over already-sourced stored facts."""
+    """One derived value, traced over already-sourced stored facts; ``operands`` are the roles
+    it computes from, whose admitted facts' weakest label qualifies it."""
 
     model_config = ConfigDict(frozen=True)
 
     label: str
     result: str
     trace: str
+    operands: tuple[FactRole, ...] = ()
 
 
 class EarningsUpdate(BaseModel):
@@ -280,13 +282,23 @@ class _Footnotes:
         return "\n".join(lines)
 
 
+def _qualifier(facts: Sequence[AdmittedFact | None]) -> str:
+    """The admitted facts' weakest label as a trailing qualifier; none when none is admitted."""
+    labels = [fact.label for fact in facts if fact is not None]
+    return f" ({LABEL_TEXT[weakest(labels)]})" if labels else ""
+
+
 def _render_change(
     comparative: ConceptComparative,
     change: ComparativeChange,
     notes: _Footnotes,
     places: int,
+    current_markers: str,
+    qualifier: str,
 ) -> tuple[str, str | None]:
-    """Render one prior value and its traced changes, or its explicit failure reason."""
+    """Render one prior value and its traced changes, or its explicit failure reason; the
+    current value is footnoted by ``current_markers`` and the change qualified by
+    ``qualifier``."""
     period = _comparator_period_label(change.period_start, change.period_end)
     if not change.available:
         return f"not available ({period}; {change.unavailable_reason})", None
@@ -296,7 +308,6 @@ def _render_change(
     assert change.absolute_change is not None
     assert change.prior_source is not None
 
-    current_markers = notes.markers(comparative.current_sources)
     prior_marker = notes.marker(change.prior_source)
     endpoint_markers = f"{current_markers}{prior_marker}"
     prior = _format_value(change.prior_value, comparative.unit)
@@ -328,8 +339,8 @@ def _render_change(
         else ""
     )
     return (
-        f"{prior}{prior_marker} ({period}); Δ {delta}{endpoint_markers}; {percent}",
-        f"{change.kind.value} {absolute_trace}{percent_trace}{drift_note}",
+        f"{prior}{prior_marker} ({period}); Δ {delta}{endpoint_markers}; {percent}{qualifier}",
+        f"{change.kind.value} {absolute_trace}{percent_trace}{drift_note}{qualifier}",
     )
 
 
@@ -349,6 +360,7 @@ def _render_comparatives(
             "Prior-period comparatives were not attempted for this single-issuer pipeline path."
         ]
     labels = {fact.concept_qname: _ROLE_LABELS[fact.role] for fact in facts}
+    admitted = {fact.concept_qname: fact.admitted for fact in facts}
     lines = [
         "| P&L line | Current | QoQ prior / change | YoY prior / change |",
         "| --- | ---: | --- | --- |",
@@ -358,15 +370,26 @@ def _render_comparatives(
         label = _escape_markdown_cell(
             labels.get(comparative.concept_qname, f"`{comparative.concept_qname}`")
         )
+        fact = admitted.get(comparative.concept_qname)
+        current_markers = (
+            notes.markers(comparative.current_sources)
+            if fact is None
+            else notes.marker(fact.provenance)
+        )
+        qualifier = _qualifier([fact])
         if comparative.current_value is None or comparative.unit is None:
             current = f"not available ({comparative.current_unavailable_reason})"
         else:
             current = (
                 f"{_format_value(comparative.current_value, comparative.unit)}"
-                f"{notes.markers(comparative.current_sources)}"
+                f"{current_markers}{qualifier}"
             )
-        qoq_cell, qoq_trace = _render_change(comparative, comparative.qoq, notes, places)
-        yoy_cell, yoy_trace = _render_change(comparative, comparative.yoy, notes, places)
+        qoq_cell, qoq_trace = _render_change(
+            comparative, comparative.qoq, notes, places, current_markers, qualifier
+        )
+        yoy_cell, yoy_trace = _render_change(
+            comparative, comparative.yoy, notes, places, current_markers, qualifier
+        )
         lines.append(
             f"| {label} | {_escape_markdown_cell(current)} | "
             f"{_escape_markdown_cell(qoq_cell)} | {_escape_markdown_cell(yoy_cell)} |"
@@ -457,9 +480,12 @@ def render_earnings_update(update: EarningsUpdate) -> str:
     for role in REQUIRED_ROLES:
         fact = by_role[role]
         value = _format_value(fact.value, fact.unit)
-        markers = notes.markers(fact.sources)
-        if (admitted := fact.admitted) is not None:
-            markers = f"{notes.marker(admitted.provenance)} ({LABEL_TEXT[admitted.label]})"
+        admitted = fact.admitted
+        markers = (
+            notes.markers(fact.sources)
+            if admitted is None
+            else f"{notes.marker(admitted.provenance)}{_qualifier([admitted])}"
+        )
         lines.append(
             f"| {_ROLE_LABELS[role]} | {value} | `{fact.concept_qname}` | "
             f"{fact.reconciliation_status} | {markers} |"
@@ -557,7 +583,10 @@ def render_earnings_update(update: EarningsUpdate) -> str:
     lines.append("")
     if update.calculations:
         for calc in update.calculations:
-            lines.append(f"- **{calc.label}** = {calc.result}. [computed — trace: {calc.trace}]")
+            qualifier = _qualifier([by_role[role].admitted for role in calc.operands])
+            lines.append(
+                f"- **{calc.label}** = {calc.result}{qualifier}. [computed — trace: {calc.trace}]"
+            )
         lines.append("")
     else:
         lines.append("No derived calculations for this quarter.")

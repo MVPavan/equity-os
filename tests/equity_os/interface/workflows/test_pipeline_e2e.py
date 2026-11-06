@@ -311,12 +311,16 @@ def test_apar_q2_fy26_filed_tax_etr_and_headline(store: FactStoreLike, tmp_path:
     assert result.update.calculations[1:] == (
         RenderedCalculation(label=TAX_LABEL, result="88.83", trace=f"filed tax expense {source}"),
         RenderedCalculation(
-            label=ETR_LABEL, result="26.08", trace=f"filed tax 88.83 ÷ PBT 340.56 × 100 {source}"
+            label=ETR_LABEL,
+            result="26.08",
+            trace=f"filed tax 88.83 ÷ PBT 340.56 × 100 {source}",
+            operands=(FactRole.PROFIT_BEFORE_TAX,),
         ),
         RenderedCalculation(
             label=HEADLINE_LABEL,
             result="340.53",
             trace=f"PBT 340.56 + share of associates/JV -0.03 {source}",
+            operands=(FactRole.PROFIT_BEFORE_TAX,),
         ),
     )
     facts = {fact.role: fact for fact in result.update.facts}

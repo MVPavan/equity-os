@@ -2,13 +2,14 @@
 from the vendors, end to end through ``main`` (plan Task 9 cases (a), (b) and (c)).
 
 Each case starts with no admissions for its comparison run. Apar FY26_Q2's revenue is
-``VENDORS_AGREE`` at 5,715 crore against a filed 5,715.42 (row 1); the withheld world of
-``vendor_report_support`` makes all six roles row 3.
+``VENDORS_AGREE`` within tolerance of the filed value (row 1); the withheld world of
+``vendor_report_support`` makes all six roles row 3. Vendor readings are read from the retained
+interpretations at runtime, never written here.
 """
 
 from __future__ import annotations
 
-from decimal import Decimal
+import re
 from typing import Any
 
 import pytest
@@ -33,6 +34,7 @@ from equity_os.normalisation.mapping.mapping import MappingSet, load_mapping_set
 from equity_os.publication.checking.claim_check import ClaimState
 from equity_os.publication.drafting.display import render_claim
 from equity_os.publication.drafting.earnings_update import REQUIRED_ROLES
+from equity_os.publication.drafting.pnl_lines import TAX_LABEL
 from equity_os.publication.drafting.run_draft import RUN_AUTHOR
 from equity_os.verification.comparison import run_config
 
@@ -47,6 +49,8 @@ ADMISSIONS = (
 SELECTIONS = "SELECT count(*) FROM eqos.fact_selections"
 VERSION = "SELECT max(id) FROM eqos.report_versions WHERE author = %s"
 OPERANDS = "SELECT DISTINCT interpretation_id FROM eqos.calculation_trace_operands"
+VALUE = "SELECT value FROM eqos.interpretations WHERE id = %s"
+CRORE = 10**7
 CHECKED, UNCHECKED = AdmissionLabel.CHECKED_AGAINST_FILING, AdmissionLabel.VENDORS_AGREE_NOT_CHECKED
 
 
@@ -78,9 +82,9 @@ def test_row_one_vendor_value_drafts_checked(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """(c) a tampered vendor extractor refuses at static validation, admitting nothing; (a) the
-    row-1 revenue drafts at the vendors' 5,715 crore labelled "checked against filing", its
-    calculations computed from the admitted value; a pipeline failure after selection, rerun,
-    selects nothing twice."""
+    row-1 revenue drafts at the chosen vendor interpretation's value, labelled "checked against
+    filing", its calculations computed from the admitted value; a pipeline failure after
+    selection, rerun, selects nothing twice."""
     pilot = vendor_pilot(request, monkeypatch)
     run_id = compare(pilot)
     tampered = dict(run_config.VENDOR_EXTRACTORS)
@@ -112,7 +116,10 @@ def test_row_one_vendor_value_drafts_checked(
     }
     claims = _claims(pilot)
     revenue = claims["fact.revenue"]
-    assert revenue.value == Decimal("5715") and CHECKED.value in revenue.qualifiers
+    ((chosen,),) = pilot.query(VALUE, vendor[0][0])
+    same = revenue.value is not None and revenue.value * CRORE == chosen
+    assert same, "revenue is not the chosen vendor reading"  # compared, never printed
+    assert CHECKED.value in revenue.qualifiers
     assert render_claim(revenue, DisplayStyle()).endswith(f"({LABEL_TEXT[CHECKED]})")
     for role in REQUIRED_ROLES:  # filed values too are checked against filing (row 2)
         assert CHECKED.value in claims[f"fact.{role.value}"].qualifiers, role
@@ -123,15 +130,20 @@ def test_row_one_vendor_value_drafts_checked(
 
 
 def test_withheld_package_drafts_every_number_unchecked(
-    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+    request: pytest.FixtureRequest,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """(b) with no package published by the cutoff, all six roles are row 3: the draft seals,
-    every fact and every calculation from them labelled "vendors agree, not checked"."""
+    every fact and every calculation from them labelled "vendors agree, not checked", in the
+    ledger and in the emitted Markdown."""
     pilot = vendor_pilot(request, monkeypatch, withheld=True)
     run_id = compare(pilot, ELIGIBILITY)
     assert pilot.query(ADMISSIONS, run_id) == []
     pilot.evidence_ingest(QUARTER, XBRL_KIND, END)  # after the run: the filed tax line's source
+    capsys.readouterr()
     assert report(pilot, run_id) == 0
+    _assert_markdown_unchecked(capsys.readouterr().out)
     admissions = pilot.query(ADMISSIONS, run_id)
     chosen = {row[0] for row in admissions if row[2] == UNCHECKED.value}
     assert len(chosen) >= len(REQUIRED_ROLES)
@@ -143,3 +155,23 @@ def test_withheld_package_drafts_every_number_unchecked(
     assert any(UNCHECKED.value in c.qualifiers for c in computed)
     assert not any(CHECKED.value in c.qualifiers for c in computed)  # weakest label wins
     assert _matched(pilot)
+
+
+def _assert_markdown_unchecked(markdown: str) -> None:
+    """The emitted Markdown cites each role's comparative to its admitted anchor, as the facts
+    table does, and labels the comparatives, their traces and every calculation from the roles
+    unchecked; the filed tax line alone carries no label. Checked as booleans so a failure
+    never prints a vendor reading."""
+    sections = dict(re.findall(r"^## \d+\. (\w+)\n(.*?)(?=^## |^---)", markdown, re.M | re.S))
+    text = f"({LABEL_TEXT[UNCHECKED]})"
+    rows = r"^\| ([^|]+?) \| .*?(\[\^\d+\])(.*)$"  # a row's label, first footnote, rest
+    facts = {row[0]: row[1] for row in re.findall(rows, sections["facts"], re.M)}
+    changes = re.findall(rows, sections["changes"], re.M)
+    cited = {row[0]: row[1] for row in changes}
+    assert len(facts) == len(REQUIRED_ROLES) and cited == facts, "comparatives cite the filing"
+    assert all(text in row[2] for row in changes), "a comparative is unlabelled"
+    traces = sections["changes"].split("Computed traces:")[1].strip().splitlines()
+    assert traces and all(line.endswith(text) for line in traces), "a trace is unlabelled"
+    calculations = sections["calculations"].strip().splitlines()
+    labelled = {line.split("**")[1]: text in line for line in calculations}
+    assert labelled == {label: label != TAX_LABEL for label in labelled}

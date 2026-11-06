@@ -201,14 +201,21 @@ def build_calculations(
         for name in (TAX_EXPENSE_CONCEPT, ASSOCIATES_SHARE_CONCEPT)
     )
     other_income = total_income - revenue
+    filed_tax, rate = tax_lines(pbt=pbt, tax=_operand(tax), sources=_operand_source(tax))
+    headline = headline_line(
+        pbt=pbt, share_of_associates=_operand(share), sources=_operand_source(share)
+    )
+    on_pbt = {"operands": (_PBT_ROLE,)}
     return (
         RenderedCalculation(
             label=GAP_LABEL,
             result=format_crore(other_income),
             trace=f"Total income {format_crore(total_income)} − Revenue {format_crore(revenue)}",
+            operands=(_TOTAL_INCOME_ROLE, _REVENUE_ROLE),
         ),
-        *tax_lines(pbt=pbt, tax=_operand(tax), sources=_operand_source(tax)),
-        headline_line(pbt=pbt, share_of_associates=_operand(share), sources=_operand_source(share)),
+        filed_tax,
+        rate.model_copy(update=on_pbt),
+        headline.model_copy(update=on_pbt),
     )
 
 
