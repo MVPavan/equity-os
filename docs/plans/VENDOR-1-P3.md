@@ -237,14 +237,14 @@ stay as evidenced. They and the ledger are not in force until an amendment relea
 
 | Branch | Arm | Evidence | Consequence |
 |---|---|---|---|
-| B1 | **B1c** (stop). Content would be **B1b `INDIAN_GAAP`** once the PDF is associated | No instance declares a framework [B1.01–B1.04]. All four PDF basis declarations agree [B1.05, B1.06, B1.09, B1.10]: "Accounting Standards prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949, the circulars, guidelines and directions issued by the Reserve Bank of India … and other accounting principles generally accepted in India". The releases call this "Indian GAAP" [B1.07, B1.11]. No `IND_AS` phrase occurs [B1.13–B1.18]. The new phrase matches all four as a token run [T3.15–T3.18]. | Task 4: `AccountingFramework.INDIAN_GAAP = "INDIAN_GAAP"`. 0050 also widens the four `framework` CHECKs (0001: `filing_packages`, `acquisition_attempts`, `interpretations`, `results`); without that, no bank package, attempt, interpretation or result row can be written. Task 5: `FRAMEWORK_DECLARATIONS[INDIAN_GAAP] = ("prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949",)`. The comment cites T3.15–T3.18. Task 9 applies A7's spec wording. *All of this waits for the B1c release.* |
+| B1 | **B1c** (stop). Content would be **B1b `INDIAN_GAAP`** once the PDF is associated | No instance declares a framework [B1.01–B1.04]. All four PDF basis declarations agree [B1.05, B1.06, B1.09, B1.10]: "Accounting Standards prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949, the circulars, guidelines and directions issued by the Reserve Bank of India … and other accounting principles generally accepted in India". The releases call this "Indian GAAP" [B1.07, B1.11]. No `IND_AS` phrase occurs [B1.13–B1.18]. The new phrase matches all four as a token run [T3.15–T3.18]. | Step R (B1c release amendment): `AccountingFramework.INDIAN_GAAP = "INDIAN_GAAP"`. Task 4: 0050 widens the four `framework` CHECKs (0001: `filing_packages`, `acquisition_attempts`, `interpretations`, `results`); without that, no bank package, attempt, interpretation or result row can be written. Step R: `FRAMEWORK_DECLARATIONS[INDIAN_GAAP] = ("prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949",)`. The comment cites T3.15–T3.18. Task 9 applies A7's spec wording. *All of this waits for the B1c release.* |
 | B1′ | **P** | The declaration is in the PDFs only [B1.05, B1.09; B1.01–B1.04]. The basis association is the declaration's own subject, "The standalone financial results have been prepared" [B1.05, B1.09]. Page 1, the covering letter, prints the period [B7.01, B7.09]. It sits outside the statement block, and no period heading is bound to the issuer-titled statement page [T3.51, T3.52]. | Task 5's P arm and Task 7's P paths, once released. Identity, period and basis association is revised A7, which is not met. |
 | B2 | **B2a** | Each of the four instances' namespace forms is exactly `{Banking}` [B2.01–B2.08]. | Task 5 maps `Banking` → `BANK`. |
 | B3 | **B3a** | Facts are in the registered `http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt` [B3.01, B3.06, B3.11, B3.16]. Its scope and period concepts are used at `OneD` [B3.02–B3.20]. | **Parser:** no change; no `TaxonomySpec` and no `xbrl_taxonomies.py` edit (B3b struck). |
-| B4 | **B4b** | The name is `NameOfBank` [B4.04, B4.10, B4.16, B4.22], not `NameOfTheCompany` [B4.05, B4.11, B4.17, B4.23]. Q1 contexts use scheme `http://www.sebi.gov.in/in-capmkt/Symbol` with `ICICIBANK` [B4.18, B4.24]. That equals the instance's own `Symbol` fact [B4.14, B4.20] and the master symbol [B4.25]. The Q2 contexts use the seeded ScripCode scheme [B4.06, B4.12]. | Ruling below. Task 5: `filing_identity` reads `NameOfBank` for the `BANK` form. `xbrl_identity.py` gains `SEBI_SYMBOL_ENTITY_SCHEME = "http://www.sebi.gov.in/in-capmkt/Symbol"`. `verify_xbrl_identity` and `xbrl_entity_state` map it to the NSE symbol set, as they map `NSE_ENTITY_SCHEME`. |
+| B4 | **B4b** | The name is `NameOfBank` [B4.04, B4.10, B4.16, B4.22], not `NameOfTheCompany` [B4.05, B4.11, B4.17, B4.23]. Q1 contexts use scheme `http://www.sebi.gov.in/in-capmkt/Symbol` with `ICICIBANK` [B4.18, B4.24]. That equals the instance's own `Symbol` fact [B4.14, B4.20] and the master symbol [B4.25]. The Q2 contexts use the seeded ScripCode scheme [B4.06, B4.12]. | Ruling below. Step R (B1c release amendment): `xbrl_identity.py` gains `SEBI_SYMBOL_ENTITY_SCHEME = "http://www.sebi.gov.in/in-capmkt/Symbol"`, and `verify_xbrl_identity` maps it to the NSE symbol set, as it maps `NSE_ENTITY_SCHEME`. Task 5: `filing_identity` reads `NameOfBank` for the `BANK` form, and `xbrl_entity_state` maps the same scheme. |
 | B5 | **B5a** | Both bases are listed for both periods [B5.01–B5.04]. | Discovery selects standalone. The basis status is `CONSOLIDATED_AND_STANDALONE`. |
 | B6 | **B6a** | Every collapsed row is `Integrated Filing- Financials` [B5.01–B5.04]. | No change; B6b struck. |
-| B7 | **B7b** for the package; revised A7 not met | Neither PDF prints the marker [B7.15, B7.16]. The release's exchange-code citation [T3.09–T3.12] is no longer an identity rule (Sol review 1, finding 1). The statement page's text layer is OCR-corrupted: "Operotinq expenses le)+(f)", "Tax expense !a)+(h)" [T3.19, T3.20]; "Operatinq expenses (e)+(f)" [T3.21]. Statement-line parsing on it is not evidenced. | XBRL-only package and staged inputs. The PDF is retained as the `REPORTING_FRAMEWORK` setting's evidence input. Its statement claims read `NOT_ASSESSED`; it is not a member. No `config/runs/icicibank-<period>.yaml`, no `pdf/v4/`, no `--member pdf`. The PDF extractor still bumps in Task 5, because `member_identity.py` changes. |
+| B7 | **B7b** for the package; revised A7 not met | Neither PDF prints the marker [B7.15, B7.16]. The release's exchange-code citation [T3.09–T3.12] is no longer an identity rule (Sol review 1, finding 1). The statement page's text layer is OCR-corrupted: "Operotinq expenses le)+(f)", "Tax expense !a)+(h)" [T3.19, T3.20]; "Operatinq expenses (e)+(f)" [T3.21]. Statement-line parsing on it is not evidenced. | XBRL-only package and staged inputs. The PDF is retained as the `REPORTING_FRAMEWORK` setting's evidence input. Its statement claims read `NOT_ASSESSED`; it is not a member. No `config/runs/icicibank-<period>.yaml`, no `pdf/v4/`, no `--member pdf`. The PDF extractor still bumps (in step R), because `member_identity.py` changes. |
 | B8 | P&L present, **anchors do not match**; BS and CF present at the acceptance period, absent at Q1; segment present | P&L concepts at `OneD` and `FourD` [B8.17–B8.19, B8.27; T3.01, T3.02]. The v2 PL fields are absent [B8.21, B8.22]. BS fits v2 through `Assets` [B8.29]; CF fits [B8.31, B8.32]; segment fits [B8.20]. Q1 has no BS or CF [B8.40–B8.43, B8.51–B8.54]. | **Anchor:** Task 8 creates `statement_anchors/v3.yaml` with one PL anchor: `schema_identity` of the 2026-01-31 in-capmkt namespace, `native_fields: [InterestEarned, ProfitLossFromOrdinaryActivitiesBeforeTax]`, `DURATION_ENDING_AT_PERIOD_END` [B8.18, B8.19]. v11 lists it beside v2, and it joins the XBRL extractor pin. Q1's absent BS and CF are capability `UNSUPPORTED`, with rules unchanged. The acceptance period is 2026-09-30 (Evidence pins), where all four statements are present. |
 | B10 | **B10a** | `LevelOfRounding`, `DescriptionOfPresentationCurrency`, `DateOfStartOfFinancialYear` and `DateOfEndOfFinancialYear` are at `OneD` in all four instances [B10.01–B10.16]. `OneD` declares the reporting-period end [B3.04, B3.09, B3.14, B3.19]. | **B10:** no change; B10b struck. That `_declared` reads a `Banking` instance at all is Task 5's form change, not B10. |
 | B9 | pending | — | Task 12. |
@@ -264,8 +264,8 @@ identifier under it differed from the seed.
 used only by `sourcing/exchange/xbrl_source.py` and `interface/workflows/comparatives.py`, which
 are off the onboarding and ingest paths.
 **Pins:** `xbrl_identity.py` is hashed by `SHP_EXTRACTOR_SOURCES` (`run_config.py`), and
-`member_identity.py` by the XBRL, PDF and SHP extractors. All three bump once in Task 5, so B4b
-adds no bump.
+`member_identity.py` by the XBRL, PDF and SHP extractors. All three bump once in step R (B1c
+release amendment), so B4b adds no bump.
 
 ### Amendment A7 (revised, fix rounds 1 and 2): PDF identity by a bound issuer declaration — not met
 
@@ -383,9 +383,10 @@ releases the Task 8 mapping-isolation stop**, which binds separately (Task 8).
   issuer, basis, current-period, framework and contradiction rules above. Changed capture pins
   need re-grounding and review; a printable date alone is insufficient.
 
-**Implementation, if released.** Task 5, in `member_identity.verify_pdf_identity`. It takes the
-verified instance's name as an argument, and its constants sit beside `PDF_SYMBOL_MARKER`.
-Discovery's P-arm check and `_read_xbrl`'s ingest re-check pass the name. **Tests** (Task 5; unit,
+**Implementation, if released.** Step R (B1c release amendment) implements the matching logic in
+`member_identity.verify_pdf_identity`, with the tests below. It takes the verified instance's name
+as an argument, and its constants sit beside `PDF_SYMBOL_MARKER`. Task 5 wires the callers:
+discovery's P-arm check and `_read_xbrl`'s ingest re-check pass the name. **Tests** (step R; unit,
 matching logic; synthetic pages unless marked):
 - a third-party mention rejects: another issuer's title block, whose notes read "Our lender is
   ICICI Bank Limited (NSE: ICICIBANK, BSE: 532174)";
@@ -408,8 +409,8 @@ matching logic; synthetic pages unless marked):
 - a page-1 marker naming another symbol rejects; Apar's retained PDFs verify through the marker as
   before (existing suite).
 
-**Pins.** `member_identity.py` is content-pinned by the XBRL, PDF and SHP extractors. They already
-bump once in Task 5, so a released A7 adds no version. Landing it after Task 10 would bump again
+**Pins.** `member_identity.py` is content-pinned by the XBRL, PDF and SHP extractors. They bump
+once in step R, so a released A7 adds no version. Landing it after Task 10 would bump again
 (F08 rule).
 **Spec wording for Task 9** (`docs/specs/2026-11-06-vendor-first.md` §8), only once released. The
 first A7 sentence, "with no other exchange code cited", is withdrawn. It contradicted the
@@ -425,8 +426,8 @@ first A7 sentence, "with no other exchange code cited", is withdrawn. It contrad
 ## B1c release amendment (draft)
 
 **Status: draft for Sol review (eqos-awnc). Not in force.** B1c stands and the phase stays halted
-at Task 3 until Sol approves this amendment *and* step R's release proof (below) passes. This
-amendment does not touch the Task 8 mapping-isolation stop, which binds separately and still
+at Task 3 until Sol approves this amendment *and* Sol approves step R's implementation diff and
+its complete release proof (below). This amendment does not touch the Task 8 mapping-isolation stop, which binds separately and still
 stops Task 8. A7's rule is unchanged; this amendment only supplies the reader that item 3 needs.
 
 Code facts are read at `aa1a7cb3` (tip of `fix-dictionary-v4-on-v3`, the plan's base, not yet on
@@ -442,16 +443,19 @@ implementation: `scratchpad/vendor-first/live-p3-1/route-a-proto/` (`prototype.d
 
 | # | Gap (probe) | Reader change at `aa1a7cb3` | Generic? |
 |---|---|---|---|
-| R1 | The basis is named only in the title row ("STANDALONE FINANCIAL RESULTS", p3 row 6). `_locate_on_page` (`:464–497`) starts the block below the title (`:474`), so `_super_headers` (`:690–704`) finds no basis phrase, and `_bind_columns` (`:600–669`) refuses at `:649–653` | `_locate_on_page` passes its `title` row to `_bind_columns`. Only when the block's header phrases name no basis at all, the title row binds every column group to its basis. Two conditions apply. The title row must name exactly one basis marker. Its tokens, with that marker's tokens removed once, must equal one title marker's tokens (whole line). Otherwise the refusal stays as today. | Yes. A single-basis statement page titled by its basis is a common Regulation 33 layout. The words come from the spec's existing basis and title markers, never from issuer code. A side-by-side page (Apar) has super-headers and never reaches the fallback. |
-| R2 | One duration heading spans several columns ("Three months ended" over three columns). `_column_header_text` (`:707–726`) attaches only phrases that overlap the column's printed date (`:722`). The current-quarter and prior-year-quarter columns read as instants | In `_bind_columns`, a header phrase above the header row is a *spanning heading* when it carries a duration marker (`pdf_header_text.QUARTER_HEADER_MARKERS` or `NON_QUARTER_HEADER_MARKERS`) and no year. Per printed row, each column takes its nearest spanning heading (gap 0 when overlapping). A heading's columns must be contiguous, and their span's centre must lie within half the narrowest column's width of the heading's centre. A tie or a failed check attaches nothing from that row. A column whose own header already carries a duration phrase is unchanged. | Yes. The duration vocabulary is the existing shared one, and the geometry is page-relative. |
+| R1 | The basis is named only in the title row ("STANDALONE FINANCIAL RESULTS", p3 row 6). `_locate_on_page` (`:464–497`) starts the block below the title (`:474`), so `_super_headers` (`:690–704`) finds no basis phrase, and `_bind_columns` (`:600–669`) refuses at `:649–653` | `_locate_on_page` passes its `title` row to `_bind_columns`. Only when no header phrase contains any basis marker's token run (raw occurrences, counted before `_super_headers` drops a phrase naming several bases), the title row binds every column group to its basis. A phrase naming both bases therefore keeps the refusal. Two conditions apply. The title row must name exactly one basis marker. Its tokens, with that marker's tokens removed once, must equal one title marker's tokens (whole line). Otherwise the refusal stays as today. | Yes. A single-basis statement page titled by its basis is a common Regulation 33 layout. The words come from the spec's existing basis and title markers, never from issuer code. A side-by-side page (Apar) has super-headers and never reaches the fallback. |
+| R2 | One duration heading spans several columns ("Three months ended" over three columns). `_column_header_text` (`:707–726`) attaches only phrases that overlap the column's printed date (`:722`). The current-quarter and prior-year-quarter columns read as instants | In `_bind_columns`, a header phrase above the header row is a *spanning heading* when it carries a duration marker (`pdf_header_text.QUARTER_HEADER_MARKERS` or `NON_QUARTER_HEADER_MARKERS`) and no year. Per printed row, each column takes its nearest spanning heading (gap 0 when overlapping). A heading's columns must be contiguous, and their span's centre must lie within half the narrowest column's width of the heading's centre. A tie or a failed check attaches nothing from that row. A column whose own header already carries a duration phrase takes its nearest spanning heading only when that heading's month count differs from its own, so the conflict shows in its header text for A7 to reject; otherwise it is unchanged. | Yes. The duration vocabulary is the existing shared one, and the geometry is page-relative. |
 
 Placement: `pdf_statement_pages.py` is already over the 800-line limit at the tip (831; the PDF
 fixes added 44). The R2 helper `spanning_headings(columns, phrases) -> dict[int, str]` therefore
 goes into `pdf_figure_columns.py` (73 lines; column geometry; already hashed by the PDF extractor).
 It takes plain `(text, row, x0, x1)` extents, so it imports nothing from `pdf_statement_pages`.
-`pdf_statement_pages.py` gains only the call sites and the R1 branch, about 12 lines. `_locate_on_page`
-becomes public as `locate_on_page`, so that A7 can locate a block on a given page (two call sites:
-`locate_statement` and A7). `pdf_adapter.py` and `pdf_header_text.py` do not change.
+`pdf_statement_pages.py` gains only the call sites, the R1 branch and a three-line public wrapper,
+about 15 lines. `_locate_on_page` becomes public as `locate_on_page`, so that A7 can locate a block
+on a given page (two call sites: `locate_statement` and A7). `unheaded_column_count(page,
+location)` returns the unheaded columns that the existing `_all_columns_for` already detects.
+`pdf_adapter.py` gains `header_months(text) -> frozenset[int]` beside `header_period`, from the same
+`_MONTH_MARKERS`; `header_period` is unchanged. `pdf_header_text.py` does not change.
 
 Prototype result (aa1a7cb3 plus R1 and R2, generic A7 spec: title marker "Financial results",
 default P&L end and unit markers, no issuer config):
@@ -463,6 +467,13 @@ default P&L end and unit markers, no issuer config):
 | Spanning geometry | Q2 "Three months ended" x 249–334 (centre 292) over cols 0–2, span 210–380 (centre 295, tolerance 24); "Six months ended" centre 444 over cols 3–4 (447); "Year ended" 534 over col 5 (537). Q1 "Three months ended" 411 over cols 0–2 (416); "Year ended" 536 over col 3 (540) |
 | Negatives | The consolidated statement pages (Q2 p13, Q1 p11) now bind consolidated and refuse for standalone ("no column under the STANDALONE super-header"). The auditor-report and notes pages (Q2 p7, p19; Q1 p8) refuse as on the base: their first "financial results" row is a sentence, not a whole-line title. Q1 p6 and p16 already "locate" prose on the base when forced page by page. A7 never calls the locator there, because it locates only on a block's whole-line heading page. |
 | Apar | 4 retained results PDFs (FY26 Q2–Q4, FY27 Q1) × 2 bases × 4 families = 32 locations. Locations, column periods and every banded row are identical to the base (12 refusals unchanged). Apar's own spanning headings ("For the quarter ended") already overlap each column, so R2 is a no-op there. |
+
+**Prototype divergence (Sol review 1, finding 4).** The prototype gates R1 on `_super_headers`
+returning nothing (`prototype.diff:38–49`). That is weaker than R1 above: `_super_headers` drops a
+phrase naming both bases, so on the retained Q1 page with an added "Standalone Consolidated" header
+phrase the prototype still binds all four columns as standalone. The prototype is not updated. Its
+retained positive output does not prove R1's refusal rule; step R's implementation and its tests
+are the proof.
 
 **Route (b), provenance with ISIN reconciliation.** It needs three things, none retained today.
 1. *Identifier relationship.* An authoritative record that `INE090A01013` (announcement rows
@@ -498,7 +509,7 @@ network access.
 **Recommendation: route (a).**
 - It is generic code in two files.
 - It needs no acquisition, live write or new source.
-- It adds no version beyond Task 5's bumps.
+- It adds no version beyond the plan's bumps, which move into step R.
 - It meets A7 item 3 as written.
 - The prototype already shows the exact current intervals on both retained PDFs and no Apar change.
 
@@ -507,10 +518,14 @@ Route (c) is not needed.
 
 ### Amendment (route (a))
 
-**Attaches to:** a new step **R (B1c release proof)**, run before Task 4. It takes from Task 5
-only A7's matching logic and its unit tests. It also takes from Task 4 the one enum value A7 item
-4 needs. Task 5 keeps A7's callers: discovery's P-arm check and `_read_xbrl`'s ingest re-check.
-Task 4 keeps 0050 and the other contracts.
+**Attaches to:** a new step **R (B1c release proof)**, run before Task 4. It takes from Task 5:
+A7's matching logic and its unit tests; the minimal B4b scheme support the Q1 identity proof needs
+(`SEBI_SYMBOL_ENTITY_SCHEME` and its mapping in `verify_xbrl_identity`, with its wrong-identifier
+test); the B1b `FRAMEWORK_DECLARATIONS[INDIAN_GAAP]` phrase; and the three first-party extractor
+bumps (PDF, XBRL, SHP). It takes from Task 4 the one enum value A7 item 4 needs. Task 5 keeps the
+production callers: discovery's P-arm check, `_read_xbrl`'s ingest re-check, `filing_identity`'s
+`NameOfBank` read and `xbrl_entity_state`'s scheme mapping. Task 4 keeps 0050 and the other
+contracts.
 - Step R needs no migration. A failed proof must never leave a committed migration behind.
 - Implementer: Opus.
 - Step R is developed and its proof is run before anything is committed. If the proof fails,
@@ -518,16 +533,27 @@ Task 4 keeps 0050 and the other contracts.
 
 **Files:**
 - Modify `equity_os/extraction/results_pdf/pdf_statement_pages.py`: R1, R2 call site,
-  `locate_on_page`.
+  `locate_on_page`, `unheaded_column_count`.
 - Modify `equity_os/extraction/results_pdf/pdf_figure_columns.py`: `spanning_headings`.
-- Modify `equity_os/extraction/packages/member_identity.py`: A7.
+- Modify `equity_os/extraction/results_pdf/pdf_adapter.py`: `header_months`; the PDF extractor
+  bump.
+- Modify `equity_os/extraction/packages/member_identity.py`: A7; the `INDIAN_GAAP` declaration
+  phrase; B4b's scheme in `verify_xbrl_identity`.
+- Modify `equity_os/extraction/xbrl/xbrl_identity.py`: `SEBI_SYMBOL_ENTITY_SCHEME`.
 - Modify `equity_os/contracts/measurement/observation.py`: `INDIAN_GAAP`, moved here from Task 4.
+- Modify the XBRL and SHP extractor version constants and `run_config.py`, as Task 5 listed them:
+  the three first-party bumps.
 - Tests: `test_pdf_statement_pages.py` and `test_pdf_figure_columns.py` (synthetic and
-  `retained`), `test_pdf_identity_a7.py` (new; unit plus `retained`), and an Apar characterization
-  in `test_pdf_statement_pages.py`.
+  `retained`), `test_pdf_identity_a7.py` (new; unit plus `retained`), the existing
+  `verify_xbrl_identity` suite (B4b), and an Apar characterization in `test_pdf_statement_pages.py`.
 
 **Interfaces:**
 - `locate_on_page(page: PdfPage, spec: StatementPageSpec, basis: Basis) -> StatementLocation`.
+- `unheaded_column_count(page: PdfPage, location: StatementLocation) -> int`: the columns that
+  `_all_columns_for` returns beyond the located block's header columns.
+- `header_months(text: str) -> frozenset[int]`: the month count of every duration phrase in the
+  text, scanning tokens left to right and matching `_MONTH_MARKERS` in their order, a matched
+  phrase consuming its tokens ("Half year ended" gives {6}, not {6, 12}).
 - `spanning_headings(columns: Sequence[tuple[float, float]], phrases: Sequence[tuple[str, int,
   float, float]]) -> dict[int, str]`.
 - `current_intervals(instance: RawXbrlInstance, period_end: date) -> frozenset[PeriodInterval]`:
@@ -548,15 +574,23 @@ Task 4 keeps 0050 and the other contracts.
 - *Item 1.* On the block's first page, a row above the heading row equals `issuer_name` under the
   same comparison.
 - *Item 2.* The heading row itself.
-- *Item 3.* `locate_on_page` on that page, then `header_period(super_header_text + header_text)`
-  per column, the reader's own join. Each interval in `current` equals the period of exactly one
-  column. Every other column must read as a period that ends before the period end; it is a
-  comparative and binds nothing.
+- *Item 3.* `locate_on_page` on that page. The location's `top_line` must equal the heading row's
+  index, so the columns belong to the selected title block and not to an earlier table on the
+  page. `unheaded_column_count` must be 0: every numeric column of the block is a header column,
+  bound or excluded by basis. Then per column, on the reader's own join `super_header_text +
+  header_text` (which carries every applicable shared heading after R2), `header_months` must hold
+  at most one value before `header_period` is trusted. Each interval in `current` equals the period
+  of exactly one column. Every other column must read as a period that ends before the period end;
+  it is a comparative and binds nothing.
 - *Item 4.* `framework`'s declaration phrase occurs on the block's pages, with the basis as its
   subject.
 
 Each of these rejects:
 - the locator refuses;
+- `top_line` is not the heading row (an earlier table on the same page);
+- an unheaded numeric column remains. A7 explains none, and its date is never recovered from an
+  expected interval;
+- a column's header names more than one duration (e.g. quarter and year, or quarter and H1);
 - a column's period is `None`;
 - a current interval matches no column (missing) or several (ambiguous);
 - a column ends on or after the period end without being a current interval (an instant, a
@@ -570,7 +604,11 @@ interval. Those are the retained geometry and assembled header text.
 1. The actual reader, `locate_on_page` with R1 and R2 and the generic A7 spec, binds the
    issuer-titled standalone statement page. The binding is shown on retained bytes: Q2 p3, in block
    p3–p12 whose framework notes are on p7 [B1.05, B7.08]; Q1 p3, in block p3–p10 with notes on p6
-   [B1.09, B7.14].
+   [B1.09, B7.14]. On both, `top_line` is the heading row and `unheaded_column_count` is 0. If
+   either is not, that is a halt for a further amendment, not a retune.
+   The binding's issuer name is read from the retained standalone instance itself (`NameOfBank`)
+   after `verify_xbrl_identity` accepts that instance against the seeded identifiers: Q2 through
+   the seeded ScripCode scheme, Q1 through B4b's `in-capmkt/Symbol` scheme. No test types the name.
 2. The current intervals bind uniquely, from the instance:
    - Q2: Q 2026-07-01..2026-09-30 to col 0 only, and H1 2026-04-01..2026-09-30 to col 3 only.
    - Q1: Q 2026-04-01..2026-06-30 to col 0 only.
@@ -595,54 +633,77 @@ interval. Those are the retained geometry and assembled header text.
    - The same test passes unchanged after the change.
    - The existing results-PDF, evidence-ingest and admission suites pass.
    - Apar's marker path in `verify_pdf_identity` is unchanged.
-8. The probe is re-run against the implementation. Its complete output and sha256 are recorded in
-   the grounding record as the new route (a) evidence. Success is never attributed to the base.
+8. The probe is re-run against the implementation, its private `_locate_on_page` calls
+   (`period-probe/probe.py:140`) changed to the public `locate_on_page`, keeping its distinction
+   between diagnostic location and binding. Its complete output and sha256 are recorded in the
+   grounding record as the new route (a) evidence. Success is never attributed to the base.
 
 **Tests:**
 - R1 (synthetic pages):
   - a title-only basis page binds every column;
   - a title sentence that contains the words refuses as today;
   - a title naming both bases refuses;
+  - an ambiguous basis below a valid title refuses: a header phrase "Standalone Consolidated" under
+    "Standalone financial results";
   - a block that has super-headers ignores the title.
 - R2 (synthetic pages):
   - a centred spanning heading over three columns gives each column the duration;
   - an off-centre heading attaches nothing;
   - equidistant headings attach nothing;
-  - a column's own duration wins.
-- A7 unit cases: the existing list under amendment A7, plus a "Nine months ended" column at the
-  period end, which rejects as conflicting.
+  - a column's own duration with the same month count takes nothing; with a different one, both
+    show in its header text.
+- A7 unit cases: the existing list under amendment A7, plus:
+  - a "Nine months ended" column at the period end rejects as conflicting;
+  - an earlier table on the same page (a "Summary of financial results" table with its own dated
+    headers, above the issuer line and the whole-line basis heading) rejects: `top_line` is not
+    the heading row;
+  - quarter and year in one column ("Three months ended Year ended June 30, 2026") rejects;
+  - quarter and H1 in one column ("Three months ended Six months ended September 30, 2026")
+    rejects;
+  - "Half year ended" reads as one duration.
+- B4b (unit): the Q1 `in-capmkt/Symbol` scheme with `ICICIBANK` verifies; the same scheme with
+  another identifier rejects.
 - `retained`:
   - acceptance 1–3 on both ICICIBANK PDFs;
   - the consolidated statement page refuses for standalone;
   - the notes and auditor pages never start a block;
   - the Q1 PDF checked against the Q2 instance's intervals rejects (Q and H1 missing);
+  - the Q1 statement page, in memory with only its middle comparative's header words removed
+    (figures kept), rejects as an unheaded column; no date is recovered for it;
+  - the Q1 duration phrase, in memory with quarter and year wording in one column, rejects;
   - Apar's characterization (acceptance 7).
 
   The ICICIBANK `retained` tests read the grounding captures by sha256 from the snapshot store.
   They never stage them as members.
 
 **Verification:**
+- the three first-party extractor bumps are made first, before any check that consumes pins;
 - `uv run --no-sync pytest -n 4 tests/equity_os/extraction/results_pdf
   tests/equity_os/extraction/packages`, retained tests included;
 - then the evidence-ingest and admission suites that import the reader;
 - mypy and ruff.
 
-The orchestrator checks acceptance 1–8 against the output. It then records the release:
+The orchestrator checks acceptance 1–8 against the output and assembles the bounded
+implementation diff with the complete proof (test output, the probe's output and sha256). Sol
+reviews that evidence in the review loop. Only after Sol's `APPROVE` does the orchestrator record
+the release:
 - the status line and B1 move to **B1b** `INDIAN_GAAP`, B1′ P, A7 met;
 - the ledger is frozen with its sha256 (Task 3's verification);
-- the step R commit is cited.
+- the step R commit is cited, with both approvals (this amendment's and the proof's: reviewer,
+  verdict, date).
 
 Tasks 4–7 then proceed. Task 8 stays stopped by its isolation stop.
 
-**Version bumps:** none beyond the plan's.
-- `pdf_statement_pages.py`, `pdf_figure_columns.py` and `member_identity.py` are hashed by the PDF
-  extractor. Its single Task 5 bump, `pdf-occurrences/5` → `/6`, covers them.
-- `member_identity.py` is also hashed by the XBRL and SHP extractors, which already bump once in
-  Task 5.
+**Version bumps:** none beyond the plan's; the three first-party bumps move from Task 5 into
+step R.
+- `pdf_statement_pages.py`, `pdf_figure_columns.py`, `pdf_adapter.py` and `member_identity.py` are
+  hashed by the PDF extractor. Its single bump, `pdf-occurrences/5` → `/6`, is made in step R and
+  covers them.
+- `member_identity.py` is also hashed by the XBRL and SHP extractors, and `xbrl_identity.py` by the
+  SHP extractor. Both bump once, in step R.
 - The F08 development-version window now runs from step R to Task 8. Step R pins only disposable
-  `eqos_test_*` databases.
-- `pdf_adapter.py`, `pdf_header_text.py`, `_SEMANTICS_VERSION`, the dictionary and the mapping
-  sets do not change.
+  `eqos_test_*` databases. Task 5's later edits to `member_identity.py` stay inside that window.
+- `pdf_header_text.py`, `_SEMANTICS_VERSION`, the dictionary and the mapping sets do not change.
 
 **Ordering against the PDF fixes:**
 - Step R starts only from `main` after `fix-dictionary-v4-on-v3` lands, which follows VENDOR-1
@@ -656,9 +717,9 @@ Tasks 4–7 then proceed. Task 8 stays stopped by its isolation stop.
 
 | Pin | Bytes changed by | Consequence |
 |---|---|---|
-| `XBRL_EXTRACTOR_VERSION` (hashes `member_identity.py`, `first_party_extract.py`, `xbrl_taxonomies.py`) | Task 5; ~~Task 8 on B3b~~ | bumped once in Task 5 (F08 rule below) |
-| `PDF_EXTRACTOR_VERSION` (hashes `member_identity.py`, `first_party_extract.py`) | Task 5 | `pdf-occurrences/5` (the base) → `/6` once, in Task 5 (F08 rule below) |
-| `SHP_EXTRACTOR_VERSION` (hashes `member_identity.py`, `xbrl_identity.py`) | Task 5 (B4b edits both) | bumped in Task 5 |
+| `XBRL_EXTRACTOR_VERSION` (hashes `member_identity.py`, `first_party_extract.py`, `xbrl_taxonomies.py`) | step R (B1c release amendment), Task 5; ~~Task 8 on B3b~~ | bumped once in step R (F08 rule below) |
+| `PDF_EXTRACTOR_VERSION` (hashes `member_identity.py`, `first_party_extract.py` and the results-PDF reader) | step R, Task 5 | `pdf-occurrences/5` (the base) → `/6` once, in step R (F08 rule below) |
+| `SHP_EXTRACTOR_VERSION` (hashes `member_identity.py`, `xbrl_identity.py`) | step R (B4b edits both), Task 5 | bumped once, in step R |
 | Screener financials extractor (`vendor_screener.EXTRACTOR_VERSION`; hashes `screener_session_models.py`, `screener_session_page.py`) | Task 5 (`BasisTopology.consolidated_published`, R2-04) | `screener-v1` → `screener-v2` in Task 5 |
 | Screener shareholding extractor (`vendor_shareholding.SCREENER_VERSION`; hashes the same two files and `vendor_shareholding.py`) | Task 5 (same edit; the constant's bump edits `vendor_shareholding.py`) | `screener-shp-v2` → `screener-shp-v3` in Task 5; stored Screener SHP pins stay; a later SHP run re-ingests (Apar follow-up, Interactions) |
 | Tijori shareholding extractor (`vendor_shareholding.TIJORI_VERSION`; hashes `vendor_shareholding.py`; `run_config.py:132–139`) | Task 5 (the `SCREENER_VERSION` edit changes this file's bytes, R4-02) | `tijori-shp-v2` → `tijori-shp-v3` in Task 5; stored pins stay; a later Tijori SHP run re-ingests (Apar follow-up) |
@@ -675,7 +736,8 @@ read only by `run_config.py`, but declaring it there would leave a stale v2 cons
 | `_SEMANTICS_VERSION` (`run_config.py:195`) | Task 7 (framework and issuer applicability change how inputs become results) | bumped; `require_pins` refuses an earlier semantics pin |
 | mapping set content | Task 8 (v11; B7a `pdf/v4/`), Task 12 (v12, names `tijori/v6/display.yaml`) | the display file joins the set's content hash via the new `display_file` key; no constructions file changes (a needed one would be `constructions/v4`) |
 
-**F08 rule (Sol confirmed).** One development version per extractor may span Tasks 5–8 while its
+**F08 rule (Sol confirmed).** One development version per extractor may span step R (B1c release
+amendment) to Task 8 while its
 bytes are unfinalised and pinned only in disposable `eqos_test_*` databases (recreated when bytes
 change). Any durable pin of it (live, a retained rehearsal copy, another phase's use) before its
 bytes are final forces a new version; "Task 11 has not run" is not proof that none exists — Task 10
@@ -697,18 +759,19 @@ new code is refused by version, never recomputed (historical replay needs the ol
 | `docs/plans/VENDOR-1-P3.md` | modify | 3, 12 | branch resolution; B9 addendum |
 | `equity_os/contracts/companies/issuer_class.py` | create | 4 | `IssuerClass` |
 | `equity_os/companies/identity/identity_seed.py` | modify | 4 | two setting keys, `OWNER_DECISION` |
-| `equity_os/contracts/measurement/observation.py` | modify | 4 (B1b) | one `AccountingFramework` value |
+| `equity_os/contracts/measurement/observation.py` | modify | R (B1b) | one `AccountingFramework` value |
+| `equity_os/extraction/results_pdf/{pdf_statement_pages,pdf_figure_columns,pdf_adapter}.py`, `equity_os/extraction/xbrl/xbrl_identity.py` | modify | R | R1, R2, `locate_on_page`, `unheaded_column_count`, `header_months`; PDF extractor bump; `SEBI_SYMBOL_ENTITY_SCHEME` (B4b) |
 | `migrations/0050_issuer_class.sql` | create | 4 | settings-key and evidence-kind CHECKs |
 | `equity_os/companies/onboarding/{verification,discovery,derived_settings}.py`, `nse_filings.py` | modify | 5 | form, framework, identity, bank PDF acquisition, analysis-basis selection, basis status, B6b, B10b; `derived_settings.framework_evidence` reader (R2-01); `screener_topology(..., configured)` and `discover`'s configured topology (R2-04) |
 | `equity_os/interface/commands/sourcing/screener_page_cli.py` | modify | 5 | `watchlist_topology(config_root, symbol)` (R2-04) |
 | `equity_os/extraction/vendors/screener/screener_session_models.py`, `vendor_screener.py`, `extraction/surfaces/vendor_shareholding.py` | modify | 5 | `BasisTopology.consolidated_published` (R2-04); the two Screener extractor bumps; the Tijori and Upstox shareholding bumps (R4-02) |
-| `equity_os/extraction/packages/{member_identity,capture_intake}.py` | modify | 5 | bank form predicate, PDF framework evidence, B1b phrases; `xbrl_source_id(issuer_class, basis)`; refuse `nse-grounding` members |
+| `equity_os/extraction/packages/{member_identity,capture_intake}.py` | modify | R, 5 | A7, B1b phrase, B4b scheme in `verify_xbrl_identity` (R); bank form predicate, PDF framework evidence; `xbrl_source_id(issuer_class, basis)`; refuse `nse-grounding` members (5) |
 | `equity_os/extraction/packages/{first_party_extract,first_party_ingest}.py` | modify | 5 | `IngestRequest.framework_evidence`; `_read_xbrl` verifies with it on fresh extraction and reuse; its sha256 joins the extraction context (R2-01) |
 | `equity_os/companies/onboarding/bank_onboarding.py` | create | 5 | decision binding, issuer-class inputs, pin choice, `stage_inputs` (R2-02) |
 | `equity_os/contracts/companies/onboarding.py` | modify | 5 | `BANK_ONBOARDING_VERSIONS` |
 | `config/companies/basis_decisions/icicibank.yaml` | create | 5 | the decision binding |
 | `equity_os/verification/admission/vendor_first.py` | modify | 4, 5 | `IssuerClass.NON_FINANCIAL` (4); `issuer_class` per reading 4 (5) |
-| `equity_os/verification/comparison/run_config.py` | modify | 5, 7, 12 | extractor bumps (5); semantics (7); Tijori extractor (12) |
+| `equity_os/verification/comparison/run_config.py` | modify | R, 5, 7, 12 | first-party extractor bumps (R); Screener and shareholding bumps (5); semantics (7); Tijori extractor (12) |
 | `config/normalisation/dictionary/v5/*` | create | 6 | v4 plus issuer applicability and bank rows |
 | `equity_os/normalisation/dictionary/{dictionary,applicability}.py` | modify | 6 | `issuer_applicability`, context `issuer_class` |
 | `equity_os/verification/comparison/engine_issuer_context.py` | create | 7 | `issuer_context(settings, entity_id, period_end, cutoff)` |
@@ -901,7 +964,8 @@ evidence and (B1b) the bank framework.
 
 Files:
 - Create: `issuer_class.py`, `migrations/0050_issuer_class.sql`
-- Modify: `identity_seed.py`, B1b `observation.py`, `vendor_first.py` (`IssuerClass.NON_FINANCIAL`)
+- Modify: `identity_seed.py`, `vendor_first.py` (`IssuerClass.NON_FINANCIAL`). B1b's
+  `observation.py` value lands in step R (B1c release amendment).
 - Test: the migration suite (upgrade from 0049; the CHECKs reject an unknown key and kind)
 
 Approach: 0050 replaces the two CHECKs with their lists plus the new values (as 0022 did), and
@@ -923,11 +987,13 @@ HDFCLIFE (insurer) still end `UNSUPPORTED`; Apar onboards as before under `ONBOA
 
 Files:
 - Create: `bank_onboarding.py`, `config/companies/basis_decisions/icicibank.yaml`
+- Step R (B1c release amendment) has already landed `SEBI_SYMBOL_ENTITY_SCHEME` and its
+  `verify_xbrl_identity` mapping, the B1b `INDIAN_GAAP` phrase, A7's matching logic in
+  `verify_pdf_identity`, and the three first-party extractor bumps. Task 5 does not repeat them.
 - Modify: `verification.py` (`financial_rule` → `issuer_form`; B4b: `NameOfBank` for `BANK`, the
-  `in-capmkt/Symbol` scheme in `xbrl_entity_state`), `xbrl_identity.py` (B4b:
-  `SEBI_SYMBOL_ENTITY_SCHEME`), `member_identity.py` (bank form in `verify_xbrl_framework`; PDF
-  framework evidence; B1b `INDIAN_GAAP` phrase; B4b scheme in `verify_xbrl_identity`; A7 in
-  `verify_pdf_identity`), `discovery.py` (classification
+  `in-capmkt/Symbol` scheme in `xbrl_entity_state`), `member_identity.py` (bank form in
+  `verify_xbrl_framework`; PDF framework evidence; A7's callers pass the verified name),
+  `discovery.py` (classification
   across filings, analysis-basis selection, bank sources, bank PDF acquisition via `results_pdfs`
   under the first-party documents surface), `nse_filings.py` (`filing_window(rows, as_of,
   basis=None)`; ~~B6b~~), `derived_settings.py` (framework and `ISSUER_CLASS` from the forms;
@@ -941,8 +1007,8 @@ Files:
   `first_party_extract.py` and `first_party_ingest.py` (framework evidence), `vendor_first.py`
   (`issuer_class` per reading 4), `screener_session_models.py` (`consolidated_published`),
   `screener_page_cli.py` (`watchlist_topology`), `vendor_screener.py` and `vendor_shareholding.py`
-  (Screener bumps; `tijori-shp-v3`, `upstox-shp-v3`, R4-02), `run_config.py` (three first-party
-  extractor bumps)
+  (Screener bumps; `tijori-shp-v3`, `upstox-shp-v3`, R4-02), `run_config.py` (the Screener and
+  shareholding bumps)
 - Test: `test_onboarding_verification.py` (HDFCBANK moves to the bank route; BAJFINANCE, HDFCLIFE
   unchanged; the five Screener basis cases); `test_bank_onboarding.py` (`pg`, `retained`);
   `test_issuer_class.py` (unit)
@@ -1053,8 +1119,9 @@ sha256); Apar's staged XBRL-only layout ingests as before. P arm (taken), throug
 ingest: onboarding ingests the PDF-only-declared instance; the reuse check passes with the same
 evidence; a contradictory PDF refuses at ingest; other evidence yields a new context, not reuse;
 an existing-enum framework case. B4b: the Q1 standalone instance (`in-capmkt/Symbol` scheme)
-verifies in discovery and at ingest; the same scheme with another identifier refuses. A7: the
-unit cases under amendment A7. Unit (`issuer_form`, `issuer_class`): the four retained forms; NBFC under Ind AS → `None`;
+verifies in discovery and at ingest; the same scheme with another identifier refuses in
+discovery (step R's unit test covers `verify_xbrl_identity`). A7: step R's unit cases stay green;
+Task 5 adds its callers' integration above. Unit (`issuer_form`, `issuer_class`): the four retained forms; NBFC under Ind AS → `None`;
 mixed forms → `None`; Apar's legacy provenance → `NON_FINANCIAL`; a cutoff before a new entity's
 setting → `None` (no fallback); a superseding setting wins from its `valid_from`.
 
@@ -1403,13 +1470,13 @@ Apar re-ingest follow-up filed and linked (Interactions).
 
 ## Dependency order and file ownership
 
-1 → 2 → 3 → 4 → {5, 6} → 7 (after 5, 6); 8 after 6; 9 after 5; 10 after 4–9; 11 after 10 and FIVE-1
+1 → 2 → 3 → R (B1c release amendment) → 4 → {5, 6} → 7 (after 5, 6); 8 after 6; 9 after 5; 10 after 4–9; 11 after 10 and FIVE-1
 Tasks 1–2; 12 after 11 and 8; 13 after 12's gate rerun. Task 5's replay integration and Task 8's
 intake test run after Tasks 6 and 8 (and 7 for the intake test) land.
 
 Parallel: 5 and 6; 8 and 9 alongside 7 (disjoint files). One writer at a time, in this order, for
 shared files: `results_filing.py` (1, 7), `source_catalog.py` (1, 5), `onboard_cli.py` (1, 5, 7,
-12), `vendor_first.py` (4, 5), `run_config.py` (5, 7, 12), `vendor_reingest.py` (7, 12),
+12), `vendor_first.py` (4, 5), `run_config.py` (R, 5, 7, 12), `vendor_reingest.py` (7, 12),
 `evidence_cli.py` (7), `first_party_extract.py` and `first_party_ingest.py` (5), `nse_filings.py`
 (5); FIVE-1's edits to `onboard_cli.py`, `discovery.py`, `fallback.py` come first. Other phases' edits to these files are preserved; a worker rebases its reading
 on the current tip at task start.
@@ -1463,7 +1530,7 @@ and keeps a row the unchanged period, disclosure or basis rules make inapplicabl
   T7, T13; `issuer_context` (T7); `screener_topology(..., configured)`, `watchlist_topology`,
   `BasisTopology.consolidated_published` (T5) → T7, T12.
 - **Versions:** dictionary v5, mapping sets v11 (T8) and v12 (T12), `pdf/v4/` (T8 B7a),
-  `pdf-occurrences/6`, `screener-v2`, `screener-shp-v3`, `tijori-shp-v3`, `upstox-shp-v3` (T5); none collides with the PDF fixes'
+  `pdf-occurrences/6` (step R), `screener-v2`, `screener-shp-v3`, `tijori-shp-v3`, `upstox-shp-v3` (T5); none collides with the PDF fixes'
   v4, v10, `pdf/v3`, `constructions/v3`, `pdf-occurrences/5`.
 - **Placeholders:** branch-dependent content is named by branch and arm; B9 is pending by design
   until Task 12's addendum.
