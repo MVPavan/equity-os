@@ -649,6 +649,7 @@ def test_from_stock_report_projects_facts_and_missing() -> None:
         corroborating_sources=("screener",),
         first_party_source_count=2,
         readings=(reading,),
+        admission_label=None,
     )
     report = SimpleNamespace(
         symbol="MTARTECH",

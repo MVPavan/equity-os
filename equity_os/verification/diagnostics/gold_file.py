@@ -24,6 +24,7 @@ from pathlib import Path
 import structlog
 from pydantic import BaseModel, ConfigDict
 
+from equity_os.contracts.verification.vendor_first import AdmissionLabel
 from equity_os.verification.comparison.agreement import (
     AgreementResult,
     AgreementStatus,
@@ -40,7 +41,7 @@ DEFAULT_GOLD_DIR = Path("data/gold")
 
 
 class GoldFact(BaseModel):
-    """One material fact as retained in a gold file."""
+    """One material fact as retained in a gold file; ``admission_label`` when it was admitted."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -55,6 +56,7 @@ class GoldFact(BaseModel):
     first_party_source_count: int
     needs_human_review: bool
     source_values: tuple[SourceValue, ...]
+    admission_label: AdmissionLabel | None = None
 
 
 class GoldFile(BaseModel):

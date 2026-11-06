@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from equity_os.contracts.measurement.observation import Observation
 from equity_os.contracts.verification.comparative import ConceptComparative
+from equity_os.contracts.verification.vendor_first import AdmissionLabel
 from equity_os.verification.comparison.agreement import AgreementStatus, SourceClass
 from equity_os.verification.diagnostics.gold_file import RegressReport
 
@@ -70,7 +71,7 @@ class SourceReading(BaseModel):
 
 
 class FactOutcome(BaseModel):
-    """The cross-source reconciliation of one material fact."""
+    """The cross-source reconciliation of one material fact; ``admission_label`` when admitted."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -83,6 +84,7 @@ class FactOutcome(BaseModel):
     first_party_source_count: int
     needs_human_review: bool
     readings: tuple[SourceReading, ...]
+    admission_label: AdmissionLabel | None = None
 
 
 class CrossFootOutcome(BaseModel):
