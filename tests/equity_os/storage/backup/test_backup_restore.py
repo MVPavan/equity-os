@@ -239,7 +239,13 @@ def test_restore_refuses_non_test_targets(
     entrypoint: str,
 ) -> None:
     settings = pg_db.settings
-    before = databases(settings)
+
+    def reachable() -> set[str]:
+        """Databases this test could touch; other workers' test clones come and go."""
+        prefix = settings.test_db_prefix
+        return {d for d in databases(settings) if d == pg_db.dbname or not d.startswith(prefix)}
+
+    before = reachable()
     if entrypoint == "cli":
         use_env(monkeypatch, pg_db, settings.db)
         args = ["db", "restore", "--set", str(tmp_path), "--database", name, "--unwitnessed"]
@@ -256,4 +262,4 @@ def test_restore_refuses_non_test_targets(
                 config_root=CONFIG,
                 **restore_args(pg_db, tmp_path, tmp_path / "s", live=None),
             )
-    assert databases(settings) == before
+    assert reachable() == before
