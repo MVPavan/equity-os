@@ -482,12 +482,17 @@ SEED_VENDORS = [key for key in VENDOR_EXTRACTORS if isinstance(key, str)]
 SEED_VENDOR_VERSIONS = {"tijori": "tijori-v4"}  # bumped since the seed commit (VENDOR-1 T2)
 
 
+def _seed_sources(source_id: str) -> tuple[str, ...]:
+    """A vendor extractor's package sources; config files joined the pins after the seed."""
+    return tuple(path for path in VENDOR_EXTRACTORS[source_id][1] if not path.startswith("../"))
+
+
 def _seed_pins(root: Path) -> list[VersionPin]:
     """Every extractor pin computed from the seed commit's bytes of its sources, the first-party
     ones at the seed versions (call with ``run_config._SOURCE_ROOT`` patched to ``root``)."""
     for relative in {
         *(path for paths in EXTRACTOR_SOURCES.values() for path in paths),
-        *(path for key in SEED_VENDORS for path in VENDOR_EXTRACTORS[key][1]),
+        *(path for key in SEED_VENDORS for path in _seed_sources(key)),
     }:
         (root / relative).parent.mkdir(parents=True, exist_ok=True)
         (root / relative).write_bytes(_seed_bytes(relative))
@@ -501,7 +506,7 @@ def _seed_pins(root: Path) -> list[VersionPin]:
     ]
     vendors = []
     for source_id in SEED_VENDORS:  # a seed-era database pinned these over their old paths
-        version, sources = VENDOR_EXTRACTORS[source_id]
+        version, sources = VENDOR_EXTRACTORS[source_id][0], _seed_sources(source_id)
         version = SEED_VENDOR_VERSIONS.get(source_id, version)
         old = tuple(_seed_path(path).split("/", 2)[2] for path in sources)  # under the old root
         for path, moved in zip(old, sources, strict=True):

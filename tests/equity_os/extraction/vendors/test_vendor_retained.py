@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator
 from datetime import UTC, date, datetime
@@ -18,11 +19,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, NamedTuple
 
+import onboarding_support
 import pytest
 from evidence_support import BOTH
 from pg_support import PgTestDatabase, cloned_database
 from retained_support import APAR_MANIFEST, INPUTS_DIR, STORE_DIR, apar_intake, seed_apar
 from test_evidence_vendor import screener, tijori
+from test_shareholding_filing import EVIDENCE_TABLES
 
 from equity_os.contracts.measurement.canonical import Basis, PeriodKind, Representation
 from equity_os.contracts.measurement.evidence import (
@@ -35,6 +38,7 @@ from equity_os.contracts.measurement.evidence_tier import EvidenceTier
 from equity_os.contracts.measurement.observation import AccountingFramework
 from equity_os.contracts.sourcing.acquisition_outcome import ExtractionOutcome
 from equity_os.contracts.verification.config_versions import ConfigVersions
+from equity_os.contracts.verification.versioning import VersionContentDriftError
 from equity_os.extraction.surfaces.vendor_ingest import (
     VendorIngestReport,
     VendorIngestRequest,
@@ -47,7 +51,8 @@ from equity_os.normalisation.mapping.mapping import MappingSet
 from equity_os.sourcing.vendors.tijori.tijori_source import TijoriSource
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records.repository import EvidenceRepository
-from equity_os.verification.comparison.run_config import load_run_config
+from equity_os.verification.comparison import run_config
+from equity_os.verification.comparison.run_config import load_run_config, vendor_extractor_pin
 
 REPO = Path(__file__).resolve().parents[4]
 CONFIG = REPO / "config"
@@ -62,9 +67,8 @@ SCREENER = (
 PERIOD_END = date(2026, 6, 30)
 VERSIONS = ConfigVersions(dictionary="v2", mapping_set="v9")
 OLDER = ConfigVersions(dictionary="v2", mapping_set="v5")  # onboarding's, as live holds Apar
-DISPLAY = vendor_tijori.load_tijori_display(
-    CONFIG / "normalisation/mappings/tijori/v5/display.yaml"
-)
+DISPLAY_FILE = "normalisation/mappings/tijori/v5/display.yaml"
+DISPLAY = vendor_tijori.load_tijori_display(CONFIG / DISPLAY_FILE)
 # The retained Apar qt_c occurrences under tijori-v4 (v1's one rule), recorded before tijori-v5.
 QT_C = (230, "2724155f97b0525dbd100229de893c5df1f766722d209d10e811e1f2d62fd95d")
 _FIELDS = {
@@ -231,9 +235,9 @@ def test_reingest_adds_new_versions_and_leaves_older_rows(
     pg_db: PgTestDatabase, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """``eqos vendor reingest`` over an entity-period ingested under older versions (tijori-v4,
-    mapping set v5, as live holds Apar) adds rows under tijori-v5 and the named mapping set;
-    every older occurrence and interpretation stays byte-for-byte as it was. The older generation
-    is today's extractor recorded under the version label ``tijori-v4``."""
+    mapping set v5, as live holds Apar) adds rows under the current Tijori extractor and the named
+    mapping set; every older occurrence and interpretation stays byte-for-byte as it was. The older
+    generation is today's extractor recorded under the version label ``tijori-v4``."""
     entity_id = seed_apar(pg_db)
     ingest(pg_db, entity_id, OLDER, "tijori-v4")
 
@@ -264,7 +268,7 @@ def test_reingest_adds_new_versions_and_leaves_older_rows(
         assert all(row in after[kind] for row in before[kind])
     added = [row for row in after["interpretations"] if row not in before["interpretations"]]
     assert {(row["mapping_set_version"], row["extractor_version"]) for row in added} == {
-        ("v9", "tijori-v5"),
+        ("v9", vendor_tijori.EXTRACTOR_VERSION),
         ("v9", "screener-v1"),
     }
 
@@ -410,3 +414,28 @@ def test_v9_interprets_a_filing_package_as_v6_does(
     assert set(counts) == {"v6", "v9"}
     assert counts["v9"] == counts["v6"]
     assert {representation for representation, _ in counts["v6"]} == {"XBRL", "PDF"}
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_a_changed_display_rule_is_drift_refused_before_any_write(
+    pg_db: PgTestDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A display rule decides a Tijori cell's unit and precision, so changing one under the pinned
+    extractor version moves the pin and the next ingest is refused before it writes evidence."""
+    entity_id = seed_apar(pg_db)
+    ingest(pg_db, entity_id, VERSIONS, vendor_tijori.EXTRACTOR_VERSION)
+    pinned = vendor_extractor_pin(vendor_tijori.SOURCE_ID, vendor_tijori.SURFACE)
+    root = tmp_path / "equity_os"
+    shutil.copytree(run_config._SOURCE_ROOT, root, ignore=shutil.ignore_patterns("__pycache__"))
+    rules = tmp_path / "config" / DISPLAY_FILE
+    rules.parent.mkdir(parents=True)
+    rules.write_text((CONFIG / DISPLAY_FILE).read_text().replace("raw_scale: 7", "raw_scale: 5", 1))
+    monkeypatch.setattr(run_config, "_SOURCE_ROOT", root)
+    changed = vendor_extractor_pin(vendor_tijori.SOURCE_ID, vendor_tijori.SURFACE)
+    assert changed.version == pinned.version
+    assert changed.content_sha256 != pinned.content_sha256
+    before = {table: onboarding_support.count(pg_db, table) for table in EVIDENCE_TABLES}
+    with pytest.raises(VersionContentDriftError, match="vendor_extractor:tijori"):
+        ingest(pg_db, entity_id, VERSIONS, vendor_tijori.EXTRACTOR_VERSION)
+    assert {table: onboarding_support.count(pg_db, table) for table in EVIDENCE_TABLES} == before

@@ -106,6 +106,7 @@ def test_changed_vendor_extractor_under_its_version_is_refused(
     shutil.copytree(run_config._SOURCE_ROOT, root, ignore=shutil.ignore_patterns("__pycache__"))
     with (root / "extraction/vendors/tijori/vendor_tijori.py").open("a") as source:
         source.write("\n# Test-only unbumped extractor content change.\n")
+    (root.parent / "config").symlink_to(run_config._SOURCE_ROOT.parent / "config")
     monkeypatch.setattr(run_config, "_SOURCE_ROOT", root)
     with pytest.raises(VersionContentDriftError, match="vendor_extractor:tijori"):
         stage.vendor("tijori/financials", "LAURUSLABS-TIJ")

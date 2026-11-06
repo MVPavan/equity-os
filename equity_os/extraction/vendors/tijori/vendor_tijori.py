@@ -42,7 +42,7 @@ from equity_os.sourcing.vendors.tijori.tijori_source import TijoriSource
 SOURCE_ID = "tijori"
 SURFACE = "financials"
 SCHEMA_IDENTITY = "tijori-financials-island-v1"
-EXTRACTOR_VERSION = "tijori-v5"  # v5: a display rule per (section, basis)
+EXTRACTOR_VERSION = "tijori-v6"  # v6: the display rules join the extractor pin
 UNKNOWN_UNIT = "unknown"
 _TTM_FOOTER = "TTM Values as of {label}"
 _FAMILY = {

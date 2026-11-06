@@ -92,8 +92,8 @@ EXISTING_PINS = {
         "9ffad9ac400ba8913edf7bdc69151ce24448ed53311ee4d9c7e82f64d90b15a0",
     ),
     ("tijori", "financials"): (
-        "tijori-v5",
-        "46b534f205691fcfc173657098858175bb3b35ba5e69a1120a8e3d7810ef99c9",
+        "tijori-v6",  # v6: the display rules joined the pin (VENDOR-1 P1 review finding 7)
+        "4e2c3ebad484e95a17c97f24175d9cf9dfb0bbe5157cd4495e01886ecfc54671",
     ),
     ("upstox", "income-statement"): (
         "upstox-v2",
@@ -280,7 +280,7 @@ def test_tree_a_deeper_drilldown_level_is_unsupported_schema(
 def test_pins_existing_vendor_extractors_are_unchanged_and_tree_sources_are_pinned(
     guarded: PgTestDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The ``screener-v1``, ``tijori-v5`` and ``upstox-v2`` pins equal HEAD's. The tree surfaces
+    """The ``screener-v1``, ``tijori-v6`` and ``upstox-v2`` pins equal HEAD's. The tree surfaces
     pin their own versions, and one changed byte in the tree extractor under its pinned version
     is drift, refused before any vendor evidence is written."""
     for pair, pinned in EXISTING_PINS.items():
@@ -295,6 +295,7 @@ def test_pins_existing_vendor_extractors_are_unchanged_and_tree_sources_are_pinn
     shutil.copytree(run_config._SOURCE_ROOT, source, ignore=shutil.ignore_patterns("__pycache__"))
     extractor = source / "extraction/surfaces/vendor_shareholding.py"
     extractor.write_bytes(extractor.read_bytes() + b"\n")
+    (source.parent / "config").symlink_to(run_config._SOURCE_ROOT.parent / "config")
     monkeypatch.setattr(run_config, "_SOURCE_ROOT", source)
     before = {table: count(guarded, table) for table in EVIDENCE_TABLES}
     assert _ingest(RAW, snapshots, APAR) != 0

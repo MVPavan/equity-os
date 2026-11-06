@@ -125,7 +125,8 @@ _SCREENER_SHP = (
     ),
 )
 _TIJORI_SHP = ("shareholding", "shareholding_table", "shareholding_breakup", "page", "tables")
-# Per ``(source, surface)``, else per source: the version and the adapter/parser files hashed.
+# Per ``(source, surface)``, else per source: the version and the files hashed (adapter, parser
+# and any config the extractor reads).
 VENDOR_EXTRACTORS: Mapping[str | tuple[str, str], tuple[str, tuple[str, ...]]] = {
     catalog.SCREENER_SHAREHOLDING: _SCREENER_SHP,
     catalog.SCREENER_INVESTORS: _SCREENER_SHP,
@@ -167,6 +168,7 @@ VENDOR_EXTRACTORS: Mapping[str | tuple[str, str], tuple[str, tuple[str, ...]]] =
             "extraction/vendors/tijori/tijori_tables.py",
             "extraction/vendors/tijori/tijori_common.py",
             _VENDOR_INGEST,
+            "../config/normalisation/mappings/tijori/v5/display.yaml",  # the extractor's rules
         ),
     ),
     vendor_upstox.SOURCE_ID: (
