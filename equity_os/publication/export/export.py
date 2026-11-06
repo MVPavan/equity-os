@@ -18,7 +18,9 @@ from pydantic import BaseModel, ConfigDict
 
 from equity_os.contracts.publication.ledger import ClaimState, ReportKind
 from equity_os.contracts.storage.memory import RetrievedItem
+from equity_os.contracts.verification.vendor_first import AdmissionLabel
 from equity_os.publication.approval.lifecycle import version_status
+from equity_os.publication.checking.citation_admission import latest
 from equity_os.publication.drafting.display import narrative
 from equity_os.storage.records import store
 
@@ -41,17 +43,9 @@ _DECISIONS: LiteralString = (
     "WHERE subject_kind = 'REPORT_VERSION' AND subject_id = %s ORDER BY sequence"
 )
 _CREATOR: LiteralString = "SELECT creator FROM eqos.validations WHERE id = %s"
-# Each claim's later source notes (VENDOR-1 §6.6, §6.9): a vendor capture behind it that is no
-# longer held (expired, or its vendor's licence ended), and the class of an unchecked admission
-# under the version's pinned runs, of its fact or of an operand its trace reaches, contradicted by
-# a filing; each at its earliest date.
-_SOURCE_NOTES: LiteralString = """WITH RECURSIVE reach(claim_key, trace) AS (
-    SELECT claim_key, calculation_trace_id FROM eqos.numeric_claims
-        WHERE version_id = %(version)s AND calculation_trace_id IS NOT NULL
-    UNION SELECT r.claim_key, o.operand_trace_id FROM reach r
-        JOIN eqos.calculation_trace_operands o ON o.calculation_trace_id = r.trace
-        WHERE o.operand_trace_id IS NOT NULL)
-SELECT claim_key, 'vendor source expired' AS note, min(at) AS at
+# Each claim's vendor capture that is no longer held (expired, or its vendor's licence ended), at
+# its earliest date (VENDOR-1 §6.9).
+_EXPIRED: LiteralString = """SELECT claim_key, 'vendor source expired' AS note, min(at) AS at
 FROM (SELECT k.claim_key, least(l.ended_at, s.recorded_at) AS at FROM eqos.numeric_claims k
     CROSS JOIN LATERAL unnest(eqos.row_captures('numeric_claims', to_jsonb(k))) x(capture)
     JOIN eqos.capture_refs c ON c.id = x.capture
@@ -60,17 +54,25 @@ FROM (SELECT k.claim_key, least(l.ended_at, s.recorded_at) AS at FROM eqos.numer
         WHERE capture_ref_id = c.id ORDER BY id DESC LIMIT 1) s
         ON s.state NOT IN ('RETAINED', 'RESTORED')
     WHERE k.version_id = %(version)s AND eqos.is_vendor_source(c.source_id)) expired
-WHERE at IS NOT NULL GROUP BY claim_key
-UNION ALL SELECT k.claim_key, 'class later contradicted by a filing on', min(x.recorded_at)
+WHERE at IS NOT NULL GROUP BY claim_key"""
+# Each claim's admissions under the version's pinned runs, of its fact (operand null) or of an
+# operand its trace reaches, with the version's cutoff and their class's earliest counterexample.
+_ADMISSIONS: LiteralString = """WITH RECURSIVE reach(claim_key, trace) AS (
+    SELECT claim_key, calculation_trace_id FROM eqos.numeric_claims
+        WHERE version_id = %(version)s AND calculation_trace_id IS NOT NULL
+    UNION SELECT r.claim_key, o.operand_trace_id FROM reach r
+        JOIN eqos.calculation_trace_operands o ON o.calculation_trace_id = r.trace
+        WHERE o.operand_trace_id IS NOT NULL)
+SELECT DISTINCT k.claim_key, o.interpretation_id AS operand, a.id, a.overlay_position, a.label,
+    v.knowledge_cutoff, (SELECT min(x.recorded_at) FROM eqos.vendor_counterexamples x
+        WHERE x.class_digest = a.class_digest) AS contradicted
 FROM eqos.numeric_claims k JOIN eqos.report_versions v ON v.id = k.version_id
 JOIN eqos.fact_admissions a ON a.run_id = ANY(v.pinned_run_ids)
-    AND ((a.fact_origin, a.fact_origin_id) = (k.fact_origin, k.fact_origin_id)
-        OR a.interpretation_id IN (SELECT o.interpretation_id FROM reach r
-            JOIN eqos.calculation_trace_operands o ON o.calculation_trace_id = r.trace
-            WHERE r.claim_key = k.claim_key))
-JOIN eqos.vendor_counterexamples x ON x.class_digest = a.class_digest
-WHERE k.version_id = %(version)s GROUP BY k.claim_key
-ORDER BY claim_key, note"""
+LEFT JOIN (reach r JOIN eqos.calculation_trace_operands o ON o.calculation_trace_id = r.trace)
+    ON r.claim_key = k.claim_key AND o.interpretation_id = a.interpretation_id
+WHERE k.version_id = %(version)s AND ((a.fact_origin, a.fact_origin_id)
+    = (k.fact_origin, k.fact_origin_id) OR o.interpretation_id IS NOT NULL)"""
+_CONTRADICTED = "class later contradicted by a filing on"
 _UNKNOWN = "unknown stock {stock!r}"
 _NONE = "none"
 _TITLE = "# {stock} {period} {report_kind} v{position}"
@@ -135,7 +137,9 @@ def status_note(
     status = version_status(cursor, version_id)
     with cursor.connection.cursor(row_factory=dict_row) as own:
         decisions = own.execute(_DECISIONS, (version_id,)).fetchall()
-        notes = own.execute(_SOURCE_NOTES, {"version": version_id}).fetchall()
+        notes = own.execute(_EXPIRED, {"version": version_id}).fetchall()
+        admissions = own.execute(_ADMISSIONS, {"version": version_id}).fetchall()
+    notes = sorted(notes + _contradicted(admissions), key=lambda n: (n["claim_key"], n["note"]))
     check = store.latest_validation(cursor, version_id)
     validation, untrusted = [_NONE], [_NONE]
     if check is not None:
@@ -170,3 +174,19 @@ def status_note(
         ),
     ]
     return "\n\n".join(parts) + "\n"
+
+
+def _contradicted(admissions: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Per claim, the earliest counterexample of an unchecked class authorising its fact or an
+    operand at the version's cutoff (the admission citation authority picks, ``latest``)."""
+    groups: dict[tuple[str, int | None], list[dict[str, Any]]] = {}
+    for row in admissions:
+        groups.setdefault((row["claim_key"], row["operand"]), []).append(row)
+    earliest: dict[str, Any] = {}
+    for (claim_key, _), group in groups.items():
+        authority = latest(group, group[0]["knowledge_cutoff"])
+        if authority is None or authority["label"] == AdmissionLabel.CHECKED_AGAINST_FILING:
+            continue
+        if (at := authority["contradicted"]) is not None:
+            earliest[claim_key] = min(at, earliest.get(claim_key, at))
+    return [{"claim_key": k, "note": _CONTRADICTED, "at": at} for k, at in earliest.items()]

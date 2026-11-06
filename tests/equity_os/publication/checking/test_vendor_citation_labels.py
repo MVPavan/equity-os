@@ -10,10 +10,12 @@ checked.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 import pytest
 from evidence_support import CONFIG, XBRL_KIND, ingest, policy
 from prep2b_support import Pilot
+from psycopg import Cursor
 from psycopg.rows import dict_row
 from vendor_report_support import ELIGIBILITY, END, QUARTER, compare, report, vendor_pilot
 
@@ -23,6 +25,7 @@ from equity_os.contracts.publication.ledger import (
     ClaimState,
     InputTime,
     NumericClaim,
+    ReportKind,
     ResolvedCitation,
 )
 from equity_os.contracts.verification.vendor_first import AdmissionLabel
@@ -33,6 +36,7 @@ from equity_os.publication.checking.citations import resolve_citation
 from equity_os.publication.checking.claim_check import check_claim
 from equity_os.publication.drafting.display import DisplayError, content_hash
 from equity_os.publication.drafting.run_draft import RUN_AUTHOR
+from equity_os.publication.export.export import VersionIdentity, status_note
 from equity_os.storage.records import store
 from equity_os.storage.records.repository import EvidenceRepository
 from equity_os.verification.admission.admission import admit_run
@@ -45,6 +49,7 @@ pytestmark = [pytest.mark.pg, pytest.mark.retained]
 CHECKED = AdmissionLabel.CHECKED_AGAINST_FILING
 UNCHECKED = AdmissionLabel.VENDORS_AGREE_NOT_CHECKED
 REVENUE = "fact.revenue"
+CONTRADICTED = "class later contradicted by a filing on"
 VERSION = "SELECT max(id) FROM eqos.report_versions WHERE author = %s"
 # The revenue fact's admissions, earliest first: run, label, class and result.
 ADMISSIONS = """SELECT a.run_id, a.label, a.class_digest, a.result_id
@@ -130,7 +135,8 @@ def test_the_latest_admission_by_the_cutoff_authorises_and_its_label_shows(
     calculation over it resolve checked now, and unchecked at the draft's cutoff (before the
     checked admission). A later contradiction of the former unchecked class withdraws only that
     unchecked authorisation: with both runs pinned the values stay checked, with the first alone
-    they are withdrawn."""
+    they are withdrawn. Closing finding 6: so too the status note, which notes the contradiction
+    on the version the unchecked admission authorises, not on a successor pinning both runs."""
     pilot, first, version_id = drafted
     draft = pilot.version(version_id)
     second = compare(pilot)
@@ -156,6 +162,16 @@ def test_the_latest_admission_by_the_cutoff_authorises_and_its_label_shows(
     for claim in (claims[REVENUE], computed):
         assert _label(pilot, version_id, claim, runs, later) is CHECKED, claim.claim_key
         assert _label(pilot, version_id, claim, (first,), later) is None, claim.claim_key
+    pilot.approve(version_id)
+    successor = draft.model_copy(
+        update={"predecessor_id": version_id, "pinned_run_ids": runs, "knowledge_cutoff": now}
+    )
+    with pilot.pg_db.runtime_pool() as pool, pool.connection() as conn, conn.cursor() as cursor:
+        successor_id = store.create_version(cursor, successor)
+        notes = {v: _status_note(cursor, pilot, v) for v in (version_id, successor_id)}
+    for claim in (claims[REVENUE], computed):
+        assert f"- {claim.claim_key}: {CONTRADICTED} " in notes[version_id], claim.claim_key
+        assert f"- {claim.claim_key}: {CONTRADICTED} " not in notes[successor_id], claim.claim_key
 
 
 def test_a_calculation_is_known_no_earlier_than_both_witnesses(
@@ -181,6 +197,20 @@ def test_a_calculation_is_known_no_earlier_than_both_witnesses(
     for mode in RunMode:
         state = check_claim(computed, resolved, mode=mode, cutoff=between, imported=False)
         assert state is ClaimState.POST_CUTOFF, mode
+
+
+def _status_note(cursor: Cursor[Any], pilot: Pilot, version_id: int) -> str:
+    """The version's status note (its identity lines are not under test)."""
+    identity = VersionIdentity(
+        version_id=version_id,
+        entity_id=pilot.entity_id,
+        stock="stock",
+        period=QUARTER,
+        report_kind=ReportKind.EARNINGS_UPDATE,
+        position=1,
+        content_hash="unread",
+    )
+    return status_note(cursor, identity, ())
 
 
 def _label(
