@@ -107,10 +107,9 @@ protocols, with the additions in "Live protocol" below.
    triggered or not (`fallback.py`, read), so `compare fallback --run <id>` admits every run it is
    given and is a write even when it fetches nothing. FIVE-COMPANY-TEST §5.4 stands.
 4. **One version set for all five: dictionary v5, mapping set v12**, the last Phase 3 sets
-   (`VENDOR-1-P3.md` Tasks 6, 12). The check class digests dictionary, mapping set, policy,
-   (Renumbered 2026-11-06: the results-PDF fixes `eqos-djv/ghv/dol/n21` take dictionary v4 and
-   mapping set v10 first, so Phase 3 creates dictionary v5 and mapping sets v11 and v12.)
-   extractors and issuer class (`vendor_first.check_class`, read), so v5/v12 does not pool bank and
+   (`VENDOR-1-P3.md` Tasks 6, 12; renumbered 2026-11-06 because the results-PDF fixes
+   `eqos-djv/ghv/dol/n21` take dictionary v4 and mapping set v10 first). The check class digests
+   dictionary, mapping set, policy, extractors and issuer class (`vendor_first.check_class`, read), so v5/v12 does not pool bank and
    non-bank evidence; classes stay distinct by canonical id, basis, framework and issuer class.
    **Consequence:** Apar's eligibility `v1` (classes under v2/v9 and the pre-Phase-3 extractors)
    matches no class of the test's runs, so the test's first runs cannot admit under §6.5 row 3;
