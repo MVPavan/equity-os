@@ -51,7 +51,7 @@ on vendor agreement alone.
 | Vendor disagreements in the sample | 0 |
 | Tijori interpretations | 20 `MAPPED`, 2,030 `UNMAPPED`, 10 `INVALID` (`UNIT_MISMATCH`, `pl_c_s` Sales) |
 | Tijori unmapped native fields (occurrence path) | 196 across `qt_c`, `pl_c_d`, `pl_c_s`, `bs_c_d`, `bs_c_s`, `cf_c`, `fr_c` (43 of them ratios) |
-| Screener interpretations | 297 `MAPPED`, 210 `UNMAPPED`, 9 `PERIOD_AMBIGUOUS`; 18 mapping entries, 4 of them vendor aggregates |
+| Screener interpretations | 297 `MAPPED`, 210 `UNMAPPED` (17 native fields per section), 9 `PERIOD_AMBIGUOUS`; 15 concepts mapped, 4 of them vendor aggregates |
 | Screener FY `finance_costs` vs filing | 7.70–7.78% off in all 7 pairs; quarterly matches. Inferred: a definition difference |
 | Standalone values stored | none |
 | Compare runs with vendor sides in scope | run 5 only |
@@ -73,8 +73,8 @@ files.
 **Reason.** The labels are the vendor's template. "Net Sales" in Tijori `qt_c` is the same row
 for every non-financial company, so the same code works unchanged on a second company. That is
 the owner's test for standard data. The comparison spec already says mappings are "once per
-source surface and schema version, never per company" (§2 there). About 210 statement labels
-(196 Tijori, 14 Screener; verified counts) is a dictionary someone writes once, not a job for a
+source surface and schema version, never per company" (§2 there). About 170 statement labels
+(153 Tijori outside the `fr_c` ratios, 17 Screener per section; verified counts) is a dictionary someone writes once, not a job for a
 model on every run.
 
 **The proposal path.** `map_labels` (`equity_os/extraction/model/vendor_surface_labels.py`,
@@ -155,7 +155,7 @@ The **check class** is (canonical id, period kind, basis, vendor surface pair).
   half-width is ≤ 0.5% of the value's magnitude (the existing `magnitude_threshold: '0.005'`,
   `config/verification/comparison_policy/v1.yaml`). Otherwise the cell is `VENDORS_IMPRECISE`.
   **Reason:** an intersection test at Screener's ₹1 crore precision is loose for small lines.
-  For a ₹3 crore line, ±0.5 crore is ~17% (verified width 1e7 paise on every Screener pair).
+  For a ₹3 crore line, ±0.5 crore is ~17% (verified: interval width ₹1 crore on every Screener pair).
   Agreement that cannot discriminate cannot vouch.
 - **T2, eligibility.** A check class may use rule C only after ≥4 key-periods in which both
   vendors agreed under T1 have been compared with a filed value (any company), with 0
