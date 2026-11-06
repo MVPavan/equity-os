@@ -46,7 +46,7 @@ def test_nse_listings_preserve_occurrences_and_classify_only_filed_documents() -
         TRANSCRIPT=1,
         CONCALL_SCHEDULE=2,
         CONCALL_RECORDING=1,
-        PRESENTATION=1,
+        PRESENTATION=2,
         CREDIT_RATING=1,
         RESULTS=1,
         CONCALL_UNRESOLVED=0,
@@ -154,3 +154,22 @@ def test_results_are_recognised_under_both_nse_categories() -> None:
     notice = dict(desc="Outcome of Board Meeting", attchmntText="regarding Board meeting held")
     assert classify_announcement(notice) == "OTHER"
     assert classify_announcement(dict(desc="Press Release", attchmntText=text)) == "OTHER"
+
+
+def test_presentations_are_recognised_by_attachment_text() -> None:
+    """Apar files presentations under four categories (eqos-3ndm); a results filing that
+    mentions one stays RESULTS, so its PDF still reaches results extraction."""
+    from equity_os.sourcing.documents.first_party_documents import classify_announcement
+
+    for desc, text in (
+        ("Updates", "regarding 'Corporate Presentation - July, 2026'."),
+        ("General Updates", "about Corporate Presentation May, 2025"),
+        (
+            "Analysts/Institutional Investor Meet/Con. Call Updates",
+            "about Presentation and Link of Recording",
+        ),
+    ):
+        assert classify_announcement(dict(desc=desc, attchmntText=text)) == "PRESENTATION"
+    both = "the financial results and investor presentation for the period ended"
+    row = dict(desc="Outcome of Board Meeting", attchmntText=both)
+    assert classify_announcement(row) == "RESULTS"

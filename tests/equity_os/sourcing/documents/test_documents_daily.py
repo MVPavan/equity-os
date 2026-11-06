@@ -154,12 +154,12 @@ def test_repeat_is_idempotent_and_future_meeting_amendments_are_seen(
     assert lane.run() == 0
     out = capsys.readouterr().out
     assert out.count("RESULTS_SCHEDULED\t") == 1 and "2026-10-29" in out
-    assert len(lane.refs) == 3 and lane.counts() == (47, 4, 4)
+    assert len(lane.refs) == 4 and lane.counts() == (47, 5, 5)
     baseline = lane.counts()
     lane.sent.clear()
     assert lane.run() == 0 and lane.counts() == baseline
     assert not any(r.source_id.endswith("-documents") for r in lane.sent)
-    assert capsys.readouterr().out.count("\texists") == 3
+    assert capsys.readouterr().out.count("\texists") == 4
     blobs = SnapshotStore(lane.args.snapshot_root).blob_inventory()
     assert [b.source_id for b in blobs].count("nse-documents") == 1
     future = next(row for row in lane.board if row["bm_date"] == "29-Oct-2026")
@@ -284,7 +284,7 @@ def test_crash_rolls_back_registration_and_restart_recovers_document_without_net
                 == record.retrieved_at
             )
     else:
-        assert lane.run() == 0 and lane.counts() == (47, 4, 4)
+        assert lane.run() == 0 and lane.counts() == (47, 5, 5)
 
 
 def test_bd_failures_closed_refs_candidates_and_lock_are_reconciled(
@@ -311,7 +311,7 @@ def test_bd_failures_closed_refs_candidates_and_lock_are_reconciled(
             attchmntFile="https://nsearchives.nseindia.com/unresolved.pdf",
         )
     )
-    assert lane.run() == 0 and len(lane.refs) == 4
+    assert lane.run() == 0 and len(lane.refs) == 5
     assert any(ref.startswith("docs-candidate:") for ref in lane.refs)
     assert not any(r.url.endswith("unresolved.pdf") for r in lane.sent)
     baseline = len(lane.refs)
@@ -551,3 +551,16 @@ def test_symbol_change_keeps_one_bead_per_occurrence(lane: Lane) -> None:
             "span_to,retrieved_at,outcome,capture_ref_id FROM eqos.document_listings LIMIT 1"
         )
     assert lane.run() == 0 and lane.refs == beads
+
+
+def test_presentation_filed_as_update_is_fetched_and_unrelated_update_is_not(lane: Lane) -> None:
+    """Apar filed its July 2026 corporate presentation, which states FY26 capacity, as
+    'Updates'; a category-only rule listed it and never fetched it (eqos-3ndm)."""
+    lane.board = []
+    assert lane.run() == 0
+    fetched = {r.url: r.surface for r in lane.sent if r.source_id == "nse-documents"}
+    corporate = "https://nsearchives.nseindia.com/corporate/"
+    assert fetched[
+        corporate + "APARINDSSM_27072026165132_IntimationofCorporatePresentation.pdf"
+    ] == ("NSE_PRESENTATION")
+    assert corporate + "APARINDS_25082026145919_SubmissionofBRSR.pdf" not in fetched

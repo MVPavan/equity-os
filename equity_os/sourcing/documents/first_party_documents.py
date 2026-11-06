@@ -30,6 +30,7 @@ CONCALL_SUBJECTS = {
     "about transcript": "TRANSCRIPT",
     "about schedule of meet": "CONCALL_SCHEDULE",
     "about link of recording": "CONCALL_RECORDING",
+    "about presentation": "PRESENTATION",
 }
 RESULTS_CATEGORIES = frozenset({"Outcome of Board Meeting", "Financial Result Updates"})
 NSE_API = "https://www.nseindia.com/api/"
@@ -78,14 +79,16 @@ def classify_announcement(row: dict[str, Any]) -> AnnouncementClass:
     if desc == CONCALL_CATEGORY:
         found = (kind for subject, kind in CONCALL_SUBJECTS.items() if subject in text)
         return AnnouncementClass(next(found, AnnouncementClass.CONCALL_UNRESOLVED))
-    if desc == "Investor Presentation":
-        return AnnouncementClass.PRESENTATION
     if desc.startswith("Credit Rating"):
         return AnnouncementClass.CREDIT_RATING
     # NSE files the same results under either category (Apar: "Financial Result Updates"
     # until Jan 2025, "Outcome of Board Meeting" since).
     if desc in RESULTS_CATEGORIES and "financial results" in text:
         return AnnouncementClass.RESULTS
+    # Presentations also arrive as 'Updates' or 'General Updates' (Apar's 'Corporate
+    # Presentation - July, 2026'), so the attachment text decides once results are ruled out.
+    if desc == "Investor Presentation" or "presentation" in text:
+        return AnnouncementClass.PRESENTATION
     return AnnouncementClass.OTHER
 
 
