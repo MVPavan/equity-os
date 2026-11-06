@@ -1,12 +1,10 @@
 # VENDOR-1: vendor-first sourcing with filing checks
 
-**Status:** draft. Revised after Sol (`gpt-6.1-sol`) spec review 1 (REQUEST_CHANGES, 22 findings);
-Sol re-reviews next. **Bead:** filed by the orchestrator. **Date:** 2026-11-06.
+**Status:** draft. **Bead:** filed by the orchestrator. **Date:** 2026-11-06.
 
-Statements are marked **verified** (code read or store queried read-only on 2026-11-06 at
-`a66962e7`), **inferred**, or **not established**. Measurement figures come from
-`scratchpad/vendor-first/measure-1/`, Apar only (entity 1; the store holds one reporting entity,
-verified).
+Code facts were read at `77637a17`; store facts were queried read-only. **Inferred** and **not
+established** mark everything else. Measurement figures come from
+`scratchpad/vendor-first/measure-1/`, Apar only (entity 1, the store's one reporting entity).
 
 ## 1. Owner order (2026-11-05) and how it is read
 
@@ -15,15 +13,14 @@ verified).
 3. Every mechanism is built.
 4. Next step after this spec: a test on APARINDS, ICICIBANK (a bank), LAURUSLABS, MTARTECH, NETWEB.
 
-**Reading (adopted from review 1, finding 1):** vendor-first sourcing with filing checks. The
-vendor candidate is chosen first. A filing's presence alone never changes the source. The filed
-value is used only when vendor sourcing fails, or when a filing comparison establishes a
-difference. "Filings prove numbers" governs checking and fallback; it does not make filings
-primary.
+**Reading:** vendor-first sourcing with filing checks. The vendor candidate is chosen first. A
+filing's presence alone never changes the source. The filed value is used only when vendor sourcing
+fails, or when a filing comparison establishes a difference. "Filings prove numbers" governs
+checking and fallback; it does not make filings primary.
 
 ## 2. Owner decisions (defaults in force)
 
-The spec proceeds on these. Each stands until the owner changes it.
+Each stands until the owner changes it.
 
 1. **Numeric retention.** Admitted vendor numeric cells (both witnesses of a vendor-sourced fact)
    are kept privately, never committed to the public repo, for as long as a sealed report cites
@@ -41,11 +38,11 @@ The spec proceeds on these. Each stands until the owner changes it.
 
 Each phase ships on its own, closes with its own Sol review, and leaves the system consistent.
 
-| Phase | Scope | Findings |
-|---|---|---|
-| 1. Core | Numbers on non-bank issuers: mapping and extraction fixes, vendor-first selection and admission, eligibility, citation, fallback workflow, retention | 1–9, 12–20, 22 |
-| 2. Vendor text | Tijori and Screener summaries as cited vendor text; numeral-scanner rule | 11, note |
-| 3. Banks | Bank route grounded in a retained ICICIBANK filing | 10, 21 |
+| Phase | Scope |
+|---|---|
+| 1. Core | Numbers on non-bank issuers: mapping and extraction fixes, standalone-only onboarding, vendor-first selection and admission, eligibility, citation, fallback workflow, retention |
+| 2. Vendor text | Tijori and Screener summaries as cited vendor text; numeral rule |
+| 3. Banks | Bank route grounded in a retained ICICIBANK filing |
 
 All three land before the five-company test (§9).
 
@@ -58,7 +55,7 @@ All three land before the five-company test (§9).
 - A mutable eligibility system. Eligibility is one pinned artifact plus counterexample blocking.
 - NBFCs and insurers (stay `UNSUPPORTED`).
 
-## 5. What the measurement found (verified)
+## 5. What the measurement found
 
 | Finding | Number |
 |---|---|
@@ -73,7 +70,7 @@ re-measurement mean something.
 
 ## 6. Phase 1: the core
 
-### 6.1 Mapping and the label inventory (findings 3, 16)
+### 6.1 Mapping and the label inventory
 
 Vendor row labels are standard data: the reviewed per-surface mapping files
 (`config/normalisation/mappings/screener/…`, `…/tijori/…`) are extended, new versions, no new
@@ -87,14 +84,18 @@ mechanism. `map_labels` may draft entries; comparison never reads `vendor_label_
   `RELATED_NOT_EQUIVALENT` and never votes; Screener annual interest vs `finance_costs` is in this
   class unless the phase explains the 7.7%.
 - Standalone tables (Tijori `*_s` sections, the Screener standalone page) get entries; capture
-  fetches them when the company's basis is standalone (NETWEB). Standalone never pairs with
-  consolidated.
+  fetches them when the entity's basis status is `STANDALONE_ONLY` (§6.2). Standalone never pairs
+  with consolidated.
+- Dimensioned keys: an entry keeps its dimensions where the vendor table carries them. Dimension
+  members are enumerated from the filing package today; where a key's members cannot be
+  enumerated without a package, the cell refuses with an explicit reason instead of dropping the
+  dimension.
 
-**Units and precision cannot come from a mapping file (verified).** `MappingEntry` has no
-raw-unit field; `vendor_tijori.py` (`extract_tijori`, the `scoped_row` branch) sets unit, scale and
-declared precision only for the one section named in `config/normalisation/mappings/tijori/v1/display.yaml`
-(`qt_c`), and `UNKNOWN_UNIT` elsewhere, which `interpret.py` (`interpret`, the `policy.units` lookup)
-rejects as `INVALID`/`UNIT_MISMATCH`. Fix:
+**Units and precision cannot come from a mapping file.** `MappingEntry` has no raw-unit field;
+`vendor_tijori.py` (`extract_tijori`, the `scoped_row` branch) sets unit, scale and declared
+precision only for the one section named in `config/normalisation/mappings/tijori/v1/display.yaml`
+(`qt_c`), and `UNKNOWN_UNIT` elsewhere, which `interpret.py` (`interpret`, the `policy.units`
+lookup) rejects as `INVALID`/`UNIT_MISMATCH`. Fix:
 
 - `display.yaml` v2 becomes a list of rules, one per supported (section, basis), each with its own
   `unit_evidence_ref` and `precision_evidence_ref` taken from a retained capture. Sections without
@@ -103,17 +104,39 @@ rejects as `INVALID`/`UNIT_MISMATCH`. Fix:
   (`VENDOR_EXTRACTORS` in `run_config.py` pins it), and retained captures are re-ingested.
 - Precision is never inferred from serialized digits.
 
-### 6.2 Vendor-only runs (finding 2)
+### 6.2 Standalone-only onboarding
 
-Verified: `engine.py` `_group_periods` takes reporting currency only from filing-package
-interpretations, and `ApplicabilityContext.disclosed_rows` comes from the package. A company-period
-with vendor captures and no filing package therefore cannot run. Fix: when a group has no filing
-package, the engine resolves context from evidenced metadata: currency from the vendor
-occurrences' evidenced unit (§6.1 rules), framework and fiscal year from identity settings,
-`disclosed_rows` from the vendor tables' structure (rows present, never values), period kind from
-the vendor column. Nothing is defaulted; a missing input refuses the group.
+Today `discovery.py` refuses `STANDALONE_BASIS` when the filing window has no consolidated row,
+`ListingRow.qualifies` (`nse_filings.py`) accepts only consolidated rows, `derived_settings.py`
+hard-codes `BasisStatus.CONSOLIDATED_AND_STANDALONE`, and onboarding ingests with
+`Basis.CONSOLIDATED`. NETWEB is expected to be standalone-only (inferred; its listing decides).
+Change, from listing evidence only:
 
-### 6.3 Predicates (finding 15)
+- **Filing selection.** When the window holds standalone rows and no consolidated row, discovery
+  selects the standalone integrated Financials rows (the qualifying predicate takes the basis) and
+  runs the same instance, entity, identity and framework checks on their XBRL. The instance is
+  registered under a standalone XBRL source entry in `source_catalog.py` (today's
+  `NSE_XBRL_INSTANCE` names the consolidated source). Any consolidated row keeps today's path.
+- **Basis status.** Derived settings write `STANDALONE_ONLY` when discovery selected standalone
+  filings, `CONSOLIDATED_AND_STANDALONE` otherwise; the value is never defaulted.
+- **Ingest and pairing.** Onboarding ingests with `Basis.STANDALONE`. For a `STANDALONE_ONLY`
+  entity, consolidated cells are `NOT_APPLICABLE` and no consolidated vendor table pairs with a
+  standalone filing or vendor table.
+
+### 6.3 Vendor-only runs and default vendor sides
+
+`engine.py` `_group_periods` takes reporting currency only from filing-package interpretations,
+and `ApplicabilityContext.disclosed_rows` comes from the package, so a company-period with vendor
+captures and no filing package cannot run. Fix: when a group has no filing package, the engine
+resolves context from evidenced metadata: currency from the vendor occurrences' evidenced unit
+(§6.1 rules), framework, fiscal year and basis status from identity settings, `disclosed_rows`
+from the vendor tables' structure (rows present, never values), period kind from the vendor
+column. Nothing is defaulted; a missing input refuses the group.
+
+`compare_cli.py` defaults `--vendor` to empty. Change: financial-results runs include Screener and
+Tijori by default, including fallback reruns (§6.8).
+
+### 6.4 Predicates
 
 Policy file `config/verification/vendor_first/policy/v1.yaml`, pinned through `eqos.version_pins`
 like every run artifact: `precision_limit: '0.005'`, `min_clean_key_periods: 4`. This is a
@@ -133,7 +156,7 @@ exact). S = Screener, T = Tijori, F = the run's first-party side.
 4. `VENDORS_AGREE`.
 
 The pair-outcome distinction `AGREE` / `AGREE_UNQUALIFIED` plays no part in T1; mapping tier
-enters only through rule 1 and through the check class (§6.5).
+enters only through rule 1 and through the check class (§6.6).
 
 **Filing state of a cell.** First match wins:
 
@@ -143,51 +166,57 @@ enters only through rule 1 and through the check class (§6.5).
 3. `FILING_DIFFERS`: admissible, and F is disjoint from the S interval or from the T interval.
 4. `FILING_AGREES`: admissible, and F intersects both.
 
-"Differs" therefore means either vendor, not only the chosen one: a counterexample to "the vendors
-agree, so the filing matches".
+"Differs" means either vendor, not only the chosen one: a counterexample to "the vendors agree, so
+the filing matches".
 
-### 6.4 One admission path (findings 1, 4, 8, 13, 14)
+### 6.5 One admission path
 
-`admit_run` keeps one path. Per cell, first match wins:
+`admit_run` keeps one path. Before any row is evaluated, every cell with T1 `VENDORS_AGREE` and
+`FILING_DIFFERS` records a counterexample (§6.6) in the admission transaction, whatever row then
+applies. A filing/vendor mismatch can itself open a non-diagnostic `HIGH` item
+(`routing.py`, `_pair_route`), so such a cell may refuse at row 0a; its counterexample is still
+recorded. Per cell, first match wins:
 
 | # | Condition | Admitted value | Label |
 |---|---|---|---|
 | 0a | An open non-diagnostic `HIGH` item names the cell | none | refusal `REVIEW_OPEN` |
 | 0b | `FILING_FAILED` | none | refusal `FILING_UNRESOLVED` |
-| 1 | `VENDORS_AGREE`, `FILING_AGREES` | vendor value | `CHECKED_AGAINST_FILING` |
-| 2 | `VENDORS_AGREE`, `FILING_DIFFERS` | filed value; a counterexample is stored (§6.5) | `CHECKED_AGAINST_FILING` |
-| 3 | `VENDORS_AGREE`, `FILING_ABSENT`, class eligible (§6.5) | vendor value | `VENDORS_AGREE_NOT_CHECKED` |
+| 1 | `VENDORS_AGREE`, `FILING_AGREES` | vendor value and its declared precision | `CHECKED_AGAINST_FILING` |
+| 2 | `VENDORS_AGREE`, `FILING_DIFFERS` | filed value | `CHECKED_AGAINST_FILING` |
+| 3 | `VENDORS_AGREE`, `FILING_ABSENT`, class eligible (§6.6) | vendor value | `VENDORS_AGREE_NOT_CHECKED` |
 | 4 | `VENDORS_AGREE`, `FILING_ABSENT`, class not eligible | none | refusal `CHECK_REQUIRED` |
 | 5 | T1 is `VENDOR_UNMAPPED`, `VENDORS_DISAGREE` or `VENDORS_IMPRECISE`; filing admissible | filed value | `CHECKED_AGAINST_FILING` |
 | 6 | As 5, `FILING_ABSENT` | none | refusal with the T1 outcome |
 
 The vendor value is the narrower interval's (tie: Screener). Rows 0a–0b run before any source is
 chosen, so vendor agreement never bypasses a failed or contested filing. Refusals in rows 4 and 6
-are **triggers** (§6.7); 0a and 0b go to the review queue as today.
+are **triggers** (§6.8); 0a and 0b go to the review queue as today.
 
-**Labels (finding 13).** Two, the owner's: `CHECKED_AGAINST_FILING` ("checked against filing": the
-value equals, or is, an admissible filed value) and `VENDORS_AGREE_NOT_CHECKED` ("vendors agree,
-not checked against filing"). The comparison outcome (T1, filing state) is not a label; it stays
-in the run's results and pair records, reachable from the admission's `result_id`.
+**Labels.** Two, the owner's: `CHECKED_AGAINST_FILING` ("checked against filing") and
+`VENDORS_AGREE_NOT_CHECKED` ("vendors agree, not checked against filing"). When the filing agrees
+within declared precision, the selected vendor value and precision are retained and labelled
+`CHECKED_AGAINST_FILING`; otherwise that label carries the admissible filed value. The comparison
+outcome (T1, filing state) is not a label; it stays in the run's results and pair records,
+reachable from the admission's `result_id`.
 
-**Vendor bridge (finding 8).** `fact_for` today requires a known occurrence knowledge time and
-builds anchors for XBRL and PDF only (verified). For a vendor value it:
+**Vendor bridge.** `fact_for` today requires a known occurrence knowledge time and builds anchors
+for XBRL and PDF only. For a vendor value it:
 
-- anchors natively: Tijori as `JSON_ISLAND`, Screener as `HTML_TABLE` (both exist in
-  `SourceAnchorType`; verified); an occurrence lacking a required anchor field raises `BridgeError`;
+- anchors natively: Tijori as `JSON_ISLAND`, Screener as `HTML_TABLE` (both in
+  `SourceAnchorType`); an occurrence lacking a required anchor field raises `BridgeError`;
 - sets the fact's knowledge time to the later of the two witnesses' capture-registration times.
   The occurrences keep `KnowledgeTimeStatus.UNKNOWN`; no publication time is invented;
 - records both witnesses: the chosen interpretation as today, the other in
   `witness_interpretation_id`. Epistemic class `observed`; bridge version `admission-bridge/2`.
 
-**Which admission authorises a selected fact (finding 14).** Selection stays per fact row
-(`select_admitted` → `select_canonical`). `read_selected` takes the label from the latest admission
-of the selected row whose `overlay_position` is at or before the cutoff; the knowledge-time witness
-stays the earliest, as in `citations.py`. `SelectedFact` gains `label`. Historical cutoffs return
-the same facts as before.
+**Which admission authorises a selected fact.** Selection stays per fact row (`select_admitted` →
+`select_canonical`). `read_selected` takes the label from the latest admission of the selected row
+whose `overlay_position` is at or before the cutoff; the knowledge-time witness stays the earliest,
+as in `citations.py`. `SelectedFact` gains `label`. Historical cutoffs return the same facts as
+before.
 
-**Migration `migrations/0047_admission_label.sql` (finding 18).** 0046 stays reserved for
-research-4; the runner is filename-ordered and gap-tolerant (verified: `migrations.py`).
+**Migration `migrations/0047_admission_label.sql`.** 0046 stays reserved for research-4; the runner
+is filename-ordered and gap-tolerant (`migrations.py`).
 
 - `fact_admissions`: `label text NOT NULL DEFAULT 'CHECKED_AGAINST_FILING'`, then `DROP DEFAULT`
   (every existing row is a first-party filed value that passed the first-party rule, so no UPDATE
@@ -198,9 +227,9 @@ research-4; the runner is filename-ordered and gap-tolerant (verified: `migratio
   recorded_at DEFAULT eqos.store_now())`, `UNIQUE (class_digest, result_id)`, append-only with the
   existing `reject_mutation` triggers. It stores no vendor value.
 - `eqos.row_captures`: the `fact_admissions` branch also yields `witness_interpretation_id`, so
-  retention guards hold both witnesses' captures (finding 12).
+  retention guards hold both witnesses' captures.
 
-### 6.5 Eligibility: a pinned artifact plus counterexample blocking (findings 5, 6, 7)
+### 6.6 Eligibility: a pinned artifact plus counterexample blocking
 
 **Check class** = digest of (canonical id, period kind, basis, framework, issuer class, the
 Screener entry and the Tijori entry with their mapping-set version, both extractor versions,
@@ -209,21 +238,25 @@ evidence, so incompatible evidence is invalidated by identity, not by a rule. Is
 identity setting (`NON_FINANCIAL` for every onboarded issuer today, since onboarding refuses
 financial issuers; `BANK` in Phase 3).
 
-**Artifact.** `eqos vendor measure` (product code replacing the scratch `measure*.py`) reads stored
-run results and writes `config/verification/vendor_first/eligibility/v1.yaml`: per class, the
-distinct key-periods (dedup identity: `key_digest`) in `FILING_AGREES` and `FILING_DIFFERS`, their
-run ids, `eligible` (≥ `min_clean_key_periods` agrees, 0 differs), the code version of the command,
-and `available_from` (the commit time of the reviewed file). It holds counts and ids, no vendor
-values, and is committed after review. Runs pin it through `eqos.version_pins`; the admission
-records it in `eligibility_version`. In `AS_KNOWN` mode a cutoff before `available_from` sees no
-eligibility.
+**Artifact.** `eqos vendor measure --available-from <timestamp>` (product code replacing the
+scratch `measure*.py`) reads stored run results and writes
+`config/verification/vendor_first/eligibility/v1.yaml`. Measurement includes only cells whose T1
+outcome is `VENDORS_AGREE`; clean evidence additionally requires `FILING_AGREES`. Per class it
+records the distinct key-periods (dedup identity: `key_digest`) in `FILING_AGREES` and
+`FILING_DIFFERS`, their run ids, `eligible` (≥ `min_clean_key_periods` agrees, 0 differs), the
+command's code version, and `available_from`. `available_from` is the argument, fixed before the
+file is generated and written into it; the command refuses a value earlier than the latest
+recorded time of any counted run. Nothing depends on the file's later commit time. The artifact
+holds counts and ids, no vendor values, and is committed after review. Runs pin it through
+`eqos.version_pins`; the admission records it in `eligibility_version`. In `AS_KNOWN` mode a cutoff
+before `available_from` sees no eligibility.
 
-**Pilot evidence only (finding 5).** Eligibility is scoped to the exact mapping entries and
-conditions in the class. Four clean key-periods are provisional pilot evidence, valid only within
-owner decision 4; they establish no reusable concept class.
+**Pilot evidence only.** Eligibility is scoped to the exact mapping entries and conditions in the
+class. Four clean key-periods are provisional pilot evidence, valid only within owner decision 4;
+they establish no reusable concept class.
 
-**Counterexample blocking (finding 6).** Row 2 of §6.4 inserts a `vendor_counterexamples` row in
-the same transaction. From then on:
+**Counterexample blocking.** A counterexample is recorded per §6.5, independently of the cell's
+admission row. From then on:
 
 - a class with any counterexample is not eligible, whatever the artifact says; the artifact is the
   reviewed baseline, the store is the override, and nothing waits for a file edit;
@@ -233,40 +266,57 @@ the same transaction. From then on:
 - sealed reports keep their stored values; a later render shows "class later contradicted by a
   filing on ‹date›".
 
-### 6.6 Citation (finding 9)
+### 6.7 Citation
 
-Verified: `citations.py` `_admitted` resolves a fact only when every admission's capture is
-first-party; calculation inputs resolve the same way. Change: an admission with a
-`witness_interpretation_id` resolves when both witnesses' captures are retained catalog vendor
-captures of the two vendor-primary sources, and the admission is not withdrawn (§6.5, §6.8). The
-resolved citation carries the label. A calculation shows the weakest label among its inputs.
-Nothing else in citation resolution changes.
+`citations.py` `_admitted` resolves a fact only when every admission's capture is first-party;
+calculation inputs resolve the same way. Change: an admission with a `witness_interpretation_id`
+resolves when both witnesses' captures are retained catalog vendor captures of the two
+vendor-primary sources, and the admission is not withdrawn (§6.6, §6.9). The resolved citation
+carries the label. A calculation shows the weakest label among its inputs. Nothing else in
+citation resolution changes.
 
-### 6.7 Fallback workflow (finding 20)
+### 6.8 Fallback workflow
 
-`admit_run`'s outcome already lists refusals; triggers are rows 4 and 6 of §6.4, grouped per
+`admit_run`'s outcome already lists refusals; triggers are rows 4 and 6 of §6.5, grouped per
 (entity, period end, basis), since a filing covers a whole period. A new subcommand
-`eqos compare fallback --run <id>` consumes that list and calls the existing steps in order, per
-company-period:
+`eqos compare fallback --run <id>` consumes that list and, per company-period, runs:
 
-1. acquire the filing (XBRL, then results PDF) through the existing exchange acquisition used by
-   `eqos documents backfill` (inferred: that path acquires exchange filings when no vendor flag is
-   set; the phase confirms it);
-2. stage, extract and interpret it as `eqos evidence ingest` does;
-3. a fresh `eqos compare run` for the period;
-4. `admit_run` on that run.
+1. **Acquire.** No existing route lists and fetches NSE financial-results XBRL for a named
+   company-period. `discovery.py` fetches the results listings and XBRL only during onboarding,
+   for the latest two filings (`FILINGS_CHECKED`) of a six-quarter window; `NseXbrlSource`
+   (`xbrl_source.py`) is the legacy consolidated-only pilot download and registers no capture;
+   `eqos documents backfill` without vendor flags reads announcements, meetings and annual
+   reports, never the results listings, and only for covered issuers (`documents_cli.py`
+   `_Pass._issuers`). The new route reuses those helpers and takes the entity, its held NSE symbol
+   and ISIN, period end and basis from the triggering run, so no intake pass over other issuers
+   runs and watchlist coverage is not changed:
+   - **XBRL:** fetch the legacy and integrated listings (`nse_filings.listing_url`,
+     `LEGACY_LISTING`, `INTEGRATED_LISTING`) through `discovery.acquiring_fetch` and
+     `register_capture`; parse with `listing_rows`; keep rows with the requested period end and
+     basis and collapse them to the latest broadcast as `filing_window` does (a tie or a missing
+     broadcast ends `FILING_UNAVAILABLE`); fetch that row's `xbrl_url` the same way.
+   - **Results PDF:** the announcements step of `documents_cli._Pass` (`_listing` on
+     `ANNOUNCEMENTS`, then `_documents`) is extracted into a function over one issuer and one span,
+     called for this entity over the period end to seven days after the XBRL broadcast; the
+     `RESULTS_CATEGORIES` row (`first_party_documents.py`) gives the PDF.
+2. **Ingest.** Write the package manifest with `onboard_cli.package_manifest` and call
+   `ingest_first_party` with the requested basis, as onboarding's `_ingest` does. The PDF joins the
+   package when the issuer has a `pdf_parse` config, as `eqos evidence ingest` requires; otherwise
+   the package is XBRL-only and the PDF stays retained.
+3. **Compare.** A fresh `eqos compare run` for the period (vendor sides included by default).
+4. **Admit.** `admit_run` on that run.
 
 Terminal outcome per company-period, printed and stored with the run id: `ADMITTED` (every trigger
 cell admitted), `FILING_UNAVAILABLE` (no filing acquirable; cells stay refused), `FILING_UNRESOLVED`
 (extraction failed or review opened; review queue owns it), `STILL_REFUSED` (listing the cells and
 reasons). No retries beyond those the acquisition layer already has.
 
-### 6.8 Retention (finding 12)
+### 6.9 Retention
 
 Owner decision 1 applies. Mechanically:
 
 - the vendor captures behind both witnesses stay private (store and retained blobs, never the
-  repo), are held by the retention guard through `row_captures` (§6.4) while a sealed report cites
+  repo), are held by the retention guard through `row_captures` (§6.5) while a sealed report cites
   the fact, and follow each vendor's retention and licence terms in the source catalog;
 - when either witness's capture expires or its vendor's licence ends, the admission is withdrawn
   for new reports: `read_selected` and citation resolution refuse it; sealed reports keep their
@@ -274,55 +324,62 @@ Owner decision 1 applies. Mechanically:
 - a backup restore does not resurrect a withdrawn admission; only a hash-matched re-fetch from the
   vendor within licence makes the capture `RESTORED` and the admission usable again.
 
-### 6.9 Display
+### 6.10 Display
 
 Every renderer reading `read_selected` prints the label text beside the number (today
 `equity_os/interface/entry/cli.py`); thesis-model adapters pass it where they pass
 `single_sourced`. A fact without a label fails the render.
 
-### 6.10 Phase 1 acceptance (checked by code on retained Apar captures unless noted)
+### 6.11 Phase 1 acceptance (code-checked on retained Apar captures unless noted)
 
 1. **Inventory.** Every native statement label in the retained Apar Tijori and Screener captures
-   (excluding `fr_c`) has exactly one disposition in the pinned mapping files. The phase report
-   gives cell counts per disposition, computed by code under the pinned mapping version. Tijori
+   (excluding `fr_c`) has exactly one disposition; the phase report gives cell counts per
+   disposition under the pinned mapping version. In sections with a display rule, Tijori
    `INVALID`/`UNIT_MISMATCH` = 0.
-2. **Units and precision.** Every supported Tijori (section, basis) has a display rule with both
-   evidence refs; a fixture row in an unsupported section stays `UNKNOWN_UNIT`. A value whose digits
-   suggest a different precision than its rule gets the rule's precision.
+2. **Units and precision.** Every supported Tijori (section, basis) has a rule with both evidence
+   refs; a fixture row in an unsupported section stays `UNKNOWN_UNIT`; a value whose digits
+   suggest another precision gets the rule's.
 3. **Three-way coverage.** The command computes the expected set from reviewed mappings with full
    keys (entity, canonical id, period, basis, framework, dimensions); a fresh run has a three-way
-   comparison for each member. The phase report states the measured count. The earlier 60
-   concept-periods over 15 concepts is an estimate, not a gate.
-4. **Vendor-only run.** An integration case with vendor captures and no filing package, occurrence
-   or interpretation produces a complete run and a row-3 admission under a pinned eligibility
-   fixture.
-5. **Admission.** One integration case per row of §6.4, including: failed filing plus agreeing
-   vendors refuses `FILING_UNRESOLVED`; an agreeing filing keeps the vendor value. Existing
-   admission tests pass, with label `CHECKED_AGAINST_FILING`.
-6. **Predicates.** Unit cases: disjoint precise intervals → `VENDORS_DISAGREE`; intersecting
+   comparison for each member, and a dimensioned key that cannot be enumerated refuses
+   explicitly. The report states the measured count.
+4. **Standalone-only onboarding.** A fixture whose listings hold only standalone rows onboards with
+   standalone filings verified, basis status `STANDALONE_ONLY` and a standalone package; a
+   consolidated vendor table is not paired with its standalone filing, and its consolidated cells
+   are `NOT_APPLICABLE`. Apar onboards as before.
+5. **Runs.** An ordinary `eqos compare run` with no vendor flags has Screener and Tijori sides. A
+   case with vendor captures and no filing package, occurrence or interpretation produces a
+   complete run and a row-3 admission under a pinned eligibility fixture.
+6. **Admission.** One case per row of §6.5, including: failed filing plus agreeing vendors refuses
+   `FILING_UNRESOLVED`; an agreeing filing keeps the vendor value and precision; agreeing vendors,
+   a differing filing and an already open `HIGH` item refuse `REVIEW_OPEN` and still record the
+   counterexample. Existing admission tests pass with label `CHECKED_AGAINST_FILING`.
+7. **Predicates.** Unit cases: disjoint precise intervals → `VENDORS_DISAGREE`; intersecting
    coarse → `VENDORS_IMPRECISE`; half-width exactly at the limit → agree; m = 0 both exact →
    agree, else imprecise; F disjoint from one vendor only → `FILING_DIFFERS`.
-7. **Eligibility.** The command's output is byte-identical on two runs over the same stored
-   results. A version mismatch gives `CHECK_REQUIRED`. A counterexample in run N blocks row 3 in
-   run N+1 with the artifact unchanged, and `read_selected` drops the earlier unchecked fact for
-   later cutoffs only.
-8. **Citation.** Seal a report citing a row-3 fact and a calculation using it; both resolve with
-   the label, and `row_captures` returns both witnesses' captures.
-9. **Retention.** Expiry, and separately licence end, of either witness withdraws the admission for
-   a new report; the sealed report keeps its value with the note; a backup restore does not revive
-   it; a hash-matched re-fetch does.
-10. **Fallback.** End to end on an Apar period whose filing is withheld from the first run:
-    trigger → acquisition → extraction → comparison → admission ends `ADMITTED`; an unavailable
-    filing ends `FILING_UNAVAILABLE` with cells still refused.
-11. **Known difference.** No FY `finance_costs` cell is admitted under row 3.
-12. **Labels.** The rendered admitted-fact output carries a label for every number.
-13. **Gate.** `scripts/verify.sh gate` passes; mypy strict and ruff clean.
+8. **Eligibility.** Same stored results and arguments give byte-identical output. Key-periods
+   whose T1 is `VENDORS_IMPRECISE` contribute zero clean observations, even with `FILING_AGREES`.
+   A version mismatch gives `CHECK_REQUIRED`. A counterexample in run N blocks row 3 in run N+1
+   with the artifact unchanged, and `read_selected` drops the earlier unchecked fact for later
+   cutoffs only.
+9. **Citation.** A sealed report citing a row-3 fact and a calculation using it resolves both with
+   the label; `row_captures` returns both witnesses' captures.
+10. **Retention.** Expiry, and separately licence end, of either witness withdraws the admission
+    for a new report; the sealed report keeps its value with the note; a backup restore does not
+    revive it; a hash-matched re-fetch does.
+11. **Fallback.** On an Apar period whose filing is withheld from the first run, the command
+    acquires the XBRL and results PDF for that period only, ingests, reruns with vendor sides and
+    ends `ADMITTED`; an unavailable filing ends `FILING_UNAVAILABLE` with cells still refused; no
+    other issuer is fetched and coverage is unchanged.
+12. **Known difference.** No FY `finance_costs` cell is admitted under row 3.
+13. **Labels.** The rendered output carries a label for every number.
+14. **Gate.** `scripts/verify.sh gate` passes; mypy strict and ruff clean.
 
-## 7. Phase 2: vendor text (finding 11, numeral-scanner note)
+## 7. Phase 2: vendor text
 
-Verified: `vendor_surface_claims.extract_text` queries Screener captures only, through a
-Screener-only reader, over `SURFACES` = three Screener surfaces; Tijori `concall-monitor` is a
-market-scope surface in `config/sourcing/vendor_surface/surfaces.yaml`.
+`vendor_surface_claims.extract_text` queries Screener captures only, through a Screener-only
+reader, over `SURFACES` = three Screener surfaces; Tijori `concall-monitor` is a market-scope
+surface in `config/sourcing/vendor_surface/surfaces.yaml`.
 
 - **Readers by site.** `SURFACES` becomes keyed by (site, surface); the reader table gains the
   Tijori `concall-monitor` reader and the Screener company-page concall notes reader. Both are
@@ -334,10 +391,10 @@ market-scope surface in `config/sourcing/vendor_surface/surfaces.yaml`.
   citation resolution re-reads the offsets from the retained capture and refuses a mismatch.
 - **Never a number source.** `vendor_text_claims` never produce occurrences or interpretations.
   The claim check refuses a span as evidence for a claim with a numeric object.
-- **Numerals (review note).** A span containing any numeral (per `numeral_scan.py`) is never
-  rendered; it stays private as an extraction pointer that directs the document-extraction model
-  to the transcript or presentation, whose extractions carry their own page and quote. Spans
-  without numerals render in a block headed with vendor, surface and capture date and marked
+- **Numerals.** A span containing any numeral (per `numeral_scan.py`) is never rendered; it stays
+  private as an extraction pointer that directs the document-extraction model to the transcript or
+  presentation, whose extractions carry their own page and quote. Spans without numerals render in
+  a block headed with vendor, surface and capture date and marked
   `vendor summary — guidance, not evidence`.
 
 **Acceptance.** Both readers produce validated spans from retained captures; a span of another
@@ -345,28 +402,29 @@ issuer, or captured after the cutoff, is refused; a citation with altered offset
 claim citing only a span is refused and passes when it cites a fact ID; a span with a numeral is
 absent from the render; no `interpretations` row references a text-claim capture. Gate as Phase 1.
 
-## 8. Phase 3: banks (findings 10, 21)
+## 8. Phase 3: banks
 
-Verified: onboarding verifies Ind AS (`verification.py`), derived settings write an Ind AS
-framework (`derived_settings.py`), discovery refuses a non-Ind AS filing (`discovery.py`), and
-results runs assume it; `AccountingFramework` has `IND_AS`, `IFRS`, `US_GAAP`, `UNKNOWN`. Inferred,
-not established: Indian banks file in the Banking Regulation Act Third Schedule format, not under
-Ind AS. No ICICIBANK entity or capture exists in the store (verified). So the bank route starts
-from evidence:
+Onboarding verifies Ind AS (`verification.py`), derived settings write an Ind AS framework
+(`derived_settings.py`), discovery refuses financial issuers and non-Ind AS filings and does not
+acquire the results PDF (`discovery.py`), and results runs assume Ind AS; `AccountingFramework`
+has `IND_AS`, `IFRS`, `US_GAAP`, `UNKNOWN`. Inferred, not established: Indian banks file in the
+Banking Regulation Act Third Schedule format, not under Ind AS. The store holds no ICICIBANK entity
+or capture. So the bank route starts from evidence:
 
-1. **Ground.** Acquire and retain one ICICIBANK results filing (XBRL and PDF) through existing
-   discovery, without onboarding it. Record from it: framework, XBRL schema and taxonomy, statement
-   layout, bases reported. Every later step cites this record.
+1. **Ground.** Acquire and retain the ICICIBANK XBRL and results PDF through the raw listing and
+   fetch helpers of §6.8 step 1, before onboarding eligibility, framework or schema validation.
+   Record from them: framework, XBRL schema and taxonomy, statement layout, bases reported. Every
+   later step cites this record. Retained but unsupported evidence grants no onboarding authority.
 2. **Framework and onboarding.** Add the framework value the filing evidences (only if no existing
    value fits). Onboarding verification and derived settings accept it for issuer class `BANK`,
    set from evidence. NBFCs and insurers stay `UNSUPPORTED`. ICICIBANK's analysis basis is
    standalone (owner decision 2), stored apart from its reported bases.
-3. **Dictionary v4 (finding 21).** Shared concepts stay shared for banks: PBT, tax, PAT, EPS,
-   share capital, reserves, total assets and any other row whose definition holds for both.
-   Applicability on issuer class restricts only sector-specific rows, layouts and formulas: bank-only
-   rows (interest earned, interest expended, provisions and contingencies, deposits, advances,
-   investments as a bank line) and non-financial-only rows and formulas (revenue from operations,
-   cost of materials, inventories, working-capital formulas).
+3. **Dictionary v4.** Shared concepts stay shared for banks: PBT, tax, PAT, EPS, share capital,
+   reserves, total assets and any other row whose definition holds for both. Applicability on
+   issuer class restricts only sector-specific rows, layouts and formulas: bank-only rows (interest
+   earned, interest expended, provisions and contingencies, deposits, advances, investments as a
+   bank line) and non-financial-only rows and formulas (revenue from operations, cost of
+   materials, inventories, working-capital formulas).
 4. **Discovery, context, extraction, comparison.** Discovery accepts the evidenced bank filing
    family; the engine context carries issuer class; XBRL and PDF mapping entries for the bank rows
    are written from the retained filing; vendor entries from ICICIBANK's Tijori and Screener
@@ -374,36 +432,38 @@ from evidence:
 5. **Refuse the rest.** Any capability the filing does not support (e.g. a statement or segment
    table absent from it) stays refused with a stated reason; nothing is guessed.
 
-**Acceptance.** The grounding record exists with its capture ids. ICICIBANK onboards as `BANK`
-with the evidenced framework; an NBFC fixture stays `UNSUPPORTED`. A compare run on the retained
-filing period gives values for shared and bank rows, `NOT_APPLICABLE` for non-financial-only rows,
-and admissions under §6.4. Apar's results are unchanged under dictionary v4. Gate as Phase 1.
+**Acceptance.** The grounding record exists with its capture ids, retained before any onboarding
+check ran. ICICIBANK onboards as `BANK` with the evidenced framework; an NBFC fixture stays
+`UNSUPPORTED`. A compare run on the retained filing period gives values for shared and bank rows,
+`NOT_APPLICABLE` for non-financial-only rows, and admissions under §6.5. Apar's results are
+unchanged under dictionary v4. Gate as Phase 1.
 
-## 9. What the five-company test gets, and D3 (finding 22)
+## 9. What the five-company test gets, and D3
 
-For each company: onboarding (bank included), basis-correct vendor capture, mapped vendor values,
-admission with labels, the fallback command, and `eqos vendor measure`.
+For each company: onboarding (the bank per §8, NETWEB per §6.2 if its listings show standalone
+only), basis-correct vendor capture, mapped vendor values, admission with labels, the fallback
+command, and `eqos vendor measure`.
 
 The test supplies evidence toward D3; it does not qualify mappings by itself. A mapping is promoted
 to `EQUIVALENCE_DEMONSTRATED` only when ≥5 distinct companies inside that mapping's own
 qualification scope (surface, schema, basis, period kind, conditions) carry it and a discriminating
-case exists. ICICIBANK is outside every non-financial mapping's scope and NETWEB (standalone)
+case exists. ICICIBANK is outside every non-financial mapping's scope and a standalone-only NETWEB
 outside every consolidated one, so most mappings will not reach five from this test; only mappings
 whose sample and discrimination requirements both pass are promoted.
 
-## 10. Document amendments (finding 19)
+## 10. Document amendments
 
 Made by Phase 1 (Phase 3 for the bank lines), in
 `docs/specs/2026-10-11-canonical-financial-data-and-cross-source-comparison.md`:
 
 - **§4, replace** "Vendor observations, including API-document-anchored ones, never get fact
   authority (the API-document bar stays)." **with** "Vendor observations get no fact authority,
-  except under VENDOR-1 (`docs/specs/2026-11-06-vendor-first.md` §6.4, owner order 2026-11-05):
+  except under VENDOR-1 (`docs/specs/2026-11-06-vendor-first.md` §6.5, owner order 2026-11-05):
   within that spec's pilot scope, a Screener and a Tijori observation that agree may be admitted
   with their own `JSON_ISLAND` / `HTML_TABLE` anchors and a visible label. API-document-anchored
   observations stay barred."
 - **Stage 2, replace** "A vendor observation cannot be admitted as a fact (API-document bar
-  holds)." **with** "A vendor observation is admitted only under VENDOR-1 §6.4 (API-document bar
+  holds)." **with** "A vendor observation is admitted only under VENDOR-1 §6.5 (API-document bar
   holds)."
 - **§8 outcome table, replace** "e.g. bank, NBFC or insurer, a foreign listing, or no Ind AS
   filing" **with** "e.g. NBFC or insurer, a foreign listing, or no filing in a supported
@@ -425,8 +485,8 @@ Made by Phase 1 (Phase 3 for the bank lines), in
   says nothing. Counterexample blocking catches it on first contact with a filing; classes measured
   only on Apar remain exposed.
 - **Small sample.** Four clean key-periods is a weak bar, accepted only within owner decision 4.
-- **Precision.** Row 1 keeps the vendor value even when the filing is exact; admitted numbers carry
-  vendor precision (₹1 crore on Screener).
+- **Precision.** Row 1 keeps the vendor value and precision even when the filing is exact; admitted
+  numbers carry vendor precision (₹1 crore on Screener).
 - **Vendor licence for summaries.** Whether showing numeral-free Tijori summary spans is within its
   terms is not established; the source catalog's role and retention authority gate capture.
 - **Bank formats.** Not established until Phase 3 step 1.
