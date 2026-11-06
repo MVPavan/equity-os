@@ -21,7 +21,14 @@
 
 **Status:** fix round 4 (final) after Sol plan review 4 (`CHANGES REQUIRED`: R2-04, R4-01,
 R4-02, notes), over round 3 (R2-03, R2-04, R3-01), renumbered after the results-PDF fixes, over round 2's R2-01–R2-05 and round 1's F01–F26 and
-A1–A6; for Sol re-review. **Bead:** `eqos-awnc`. **Prerequisite:** FIVE-1 Tasks 1–2
+A1–A6. **Approved 2026-11-06 by orchestrator ruling** under the agent-stack rule for a loop that has not
+converged after 3 rounds. There were four gpt-6.1-sol rounds. Fix round 4 applied Sol's stated smallest fix to each
+residual, and the orchestrator checked those fixes against review 4's findings. Two residual rulings:
+- The committed and reviewed watchlist topology entry, the existing NETWEB mechanism, counts as the
+  independent Screener topology evidence.
+- A standalone-only bank with no such entry ends with Screener `UNVERIFIED`. That fails closed and is accepted.
+
+The phase-end Sol review covers the implementation. **Bead:** `eqos-awnc`. **Prerequisite:** FIVE-1 Tasks 1–2
 (`docs/plans/FIVE-1-enablement.md`) gate Task 11 and phase completion; Tasks 1–10 proceed.
 **Origin:** `docs/specs/2026-11-06-vendor-first.md` §8 (authoritative, amended per A1–A5), §6.1
 (A6), §6.6 (A3), §1–§4 (owner order; decision 2: ICICIBANK's analysis basis is standalone) and §6.8
