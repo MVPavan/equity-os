@@ -8,7 +8,8 @@
 #
 # role, assigned from those declarations:
 #   first-party         issuer or exchange data; catalog class first_party, or exchange identity surfaces
-#   vendor cross-check  derived aggregator whose values are compared with first-party values
+#   vendor cross-check  derived aggregator whose values are compared with first-party values, and, for Screener and Tijori under
+#                       VENDOR-1, the primary number source within its pilot scope
 #   diagnostic          read or retained, never a vote (catalog diagnostic_only, or SourceRole DIAGNOSTIC)
 #   reference           not evidence of a value: news metadata, owner config, internal stores, definitions
 # status: active = code acquires or reads it today; planned = named by the owner, no code yet.

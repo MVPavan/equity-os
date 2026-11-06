@@ -434,8 +434,11 @@ separate from the fact store's reconciled facts. Admission creates a candidate f
 existing write path when: the observation is first-party; its extraction status in a named run is
 `AGREE`, or `NOT_APPLICABLE` for a single-representation family; and no non-diagnostic `HIGH` item is open
 for the cell in the queue overlay at admission time. The admission record stores the run id and the queue
-overlay position it used. Vendor observations, including API-document-anchored ones, never get
-fact authority (the API-document bar stays). Existing consumers keep the fact-store interfaces
+overlay position it used. Vendor observations get no fact authority,
+except under VENDOR-1 (`docs/specs/2026-11-06-vendor-first.md` §6.5, owner order 2026-11-05):
+within that spec's pilot scope, a Screener and a Tijori observation that agree may be admitted
+with their own `JSON_ISLAND` / `HTML_TABLE` anchors and a visible label. API-document-anchored
+observations stay barred. Existing consumers keep the fact-store interfaces
 (fact roles, translated per §1; canonical selections; stored fact references); Stage 2 moves them
 onto PostgreSQL.
 
@@ -891,7 +894,7 @@ status.
 - Apar Q2 FY26 consumer report (nonzero associates): tax expense 88.83 crore (filed, not
   PBT − PAT = 88.86), effective tax rate 26.08% (88.83 ÷ 340.56), headline PBT 340.53, PAT
   251.70.
-- A vendor observation cannot be admitted as a fact (API-document bar holds).
+- A vendor observation is admitted only under VENDOR-1 §6.5 (API-document bar holds).
 - The Stage 1 diagnostic fixture's cell remains admissible; the open `PARSE_CHECK_DISAGREE` item
   does not block admission.
   *Amendment 2026-10-14 (ruling R3/OQ2, orchestrator ruling after Sol r3, 2026-10-15): under the Stage 1 Upstox amendment no
