@@ -14,10 +14,13 @@ the stock's promoted memory at a store-clock boundary before the pipeline starts
 sealed in the heading and nothing else reads it (PILOT-GAP memory). A QoQ prior cites the
 predecessor run version's admitted ``fact.<role>`` when its key, value and file are the fact's
 (``predecessor``, PILOT-4), checked before the run's first write and swapped in at the write;
-that version's comparison runs join the draft's pins. The derived falsifier sections and
-their threshold claims follow, bound to the thesis approved at the derivation cutoff
-(:mod:`falsifier_status`), then the risk probe (:mod:`risk_probe`) and management credibility
-(:mod:`credibility`).
+that version's comparison runs join the draft's pins. A vendor-valued fact that version admitted,
+and each fact a reworked head admitted that the rework carries, is read back as admitted, so its
+QoQ prior or carried role computes from the admitted value, file, interpretation and label
+(VENDOR-1 finding 3); a filed QoQ prior stays the filed comparator. The
+derived falsifier sections and their threshold claims follow, bound to the thesis approved at
+the derivation cutoff (:mod:`falsifier_status`), then the risk probe (:mod:`risk_probe`) and
+management credibility (:mod:`credibility`).
 """
 
 from __future__ import annotations
@@ -52,7 +55,9 @@ from equity_os.analysis.lenses.thesis_tests.falsifier_status import (
     evaluate,
 )
 from equity_os.contracts.measurement.evidence import RunMode
+from equity_os.contracts.measurement.fact import Fact
 from equity_os.contracts.measurement.guidance_claim import GuidanceClaim
+from equity_os.contracts.measurement.role import FactRole
 from equity_os.contracts.publication.ledger import (
     CitationKind,
     NumericClaim,
@@ -65,6 +70,7 @@ from equity_os.contracts.publication.ledger import (
 from equity_os.contracts.sourcing.snapshot import SnapshotError
 from equity_os.contracts.sourcing.source_catalog import SourceCatalog
 from equity_os.contracts.storage.retention import OriginalExpiredError
+from equity_os.contracts.verification.vendor_first import AdmissionLabel
 from equity_os.normalisation.dictionary.role_translation import LEGACY_CONCEPTS
 from equity_os.publication.approval.lifecycle import (
     _LOCK,
@@ -79,6 +85,7 @@ from equity_os.publication.drafting.display import FILED, content_hash
 from equity_os.publication.drafting.earnings_update import (
     _ROLE_LABELS,
     REQUIRED_ROLES,
+    AdmittedFact,
     EarningsUpdate,
 )
 from equity_os.publication.drafting.guidance_lines import (
@@ -141,6 +148,12 @@ WHERE r.entity_id = %s AND r.period = %s AND r.kind = 'EARNINGS_UPDATE'"""
 _BOOTSTRAPS: LiteralString = """SELECT DISTINCT r.period FROM eqos.reports r
 JOIN eqos.report_versions v ON v.report_id = r.id
 WHERE r.entity_id = %s AND r.kind = 'BOOTSTRAP_THESIS'"""
+# A fact's latest admission under a version's pinned runs, with the fact it admitted.
+_ADMITTED: LiteralString = """SELECT a.store_id, a.interpretation_id, a.witness_interpretation_id,
+    a.label, f.fact_json FROM eqos.fact_admissions a
+JOIN eqos.fact_rows f ON f.origin = a.fact_origin AND f.origin_id = a.fact_origin_id
+WHERE a.fact_origin = %s AND a.fact_origin_id = %s AND a.run_id = ANY(%s)
+ORDER BY a.id DESC LIMIT 1"""
 # The captures behind every operand of the given traces and of the traces they reach.
 _OPERAND_BLOBS: LiteralString = (
     "WITH RECURSIVE "
@@ -166,10 +179,11 @@ class Successor(BaseModel):
 
 class Prior(BaseModel):
     """The run's entity, the pinned predecessor head (``None`` for the bootstrap period) with
-    its guidance claims and, for a run-generated head, its ``fact.*`` claims and pinned runs,
-    its episode claims, credibility record and carried actuals with the captures behind them, the
-    period's own head with its record, the first-seen time of each required original, and the
-    period's head this run reworks, selectively or whole."""
+    its guidance claims and, for a run-generated head, its ``fact.*`` claims, the vendor-valued
+    facts it admitted and pinned runs, its episode claims, credibility record and carried actuals
+    with the captures behind them, the period's own head with its record, the first-seen time of
+    each required original, and the period's head this run reworks, selectively or whole, with
+    the facts it admitted that the rework carries."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -179,8 +193,10 @@ class Prior(BaseModel):
     sealed_digest: str | None = None
     entries: tuple[NumericClaim, ...] = ()
     facts: tuple[NumericClaim, ...] = ()
+    admitted: Mapping[FactRole, AdmittedFact] = {}
     pinned_run_ids: tuple[int, ...] = ()
     rework: Rework | None = None
+    carried_facts: Mapping[FactRole, AdmittedFact] = {}
     full_successor: Successor | None = None
     episodes: tuple[NumericClaim, ...] = ()
     record: credibility.Record = credibility.Record()
@@ -286,9 +302,12 @@ def preflight(
                 update={"full_successor": Successor(head=current, rejected=keys)}
             )
         elif current is not None:
-            prior = prior.model_copy(
-                update={"rework": plan(cursor, EvidenceRepository(pool), current)}
-            )
+            reworked = plan(cursor, EvidenceRepository(pool), current)
+            if reworked is not None:
+                pins = store.read_version(cursor, current).pinned_run_ids
+                held = [reworked.claims[key] for key in reworked.carried]
+                carried = _admitted(cursor, held, pins)
+                prior = prior.model_copy(update={"rework": reworked, "carried_facts": carried})
         if current is not None:
             prior = prior.model_copy(
                 update={
@@ -325,6 +344,11 @@ def preflight(
                 "sealed_digest": digest,
                 "entries": tuple(c for c in quotes if c.section_key != CREDIBILITY),
                 "facts": facts,
+                "admitted": {
+                    role: fact
+                    for role, fact in _admitted(cursor, facts, pins).items()
+                    if fact.witness_interpretation_id is not None
+                },
                 "pinned_run_ids": pins,
                 "episodes": tuple(c for c in quotes if c.section_key == CREDIBILITY),
                 "record": credibility.version_record(version),
@@ -432,8 +456,8 @@ def write_run_draft(
 
 
 def predecessor(prior: Prior, claims: tuple[NumericClaim, ...]) -> tuple[NumericClaim, ...]:
-    """``claims`` with each QoQ prior cited, unlabelled, to the prior head's admitted
-    ``fact.<role>``; refuses one whose key, value or file is not that fact's."""
+    """``claims`` with each QoQ prior cited to the prior head's admitted ``fact.<role>``, keeping
+    only an admission label; refuses one whose key, value or file is not that fact's."""
     facts = {c.claim_key: c for c in prior.facts if c.citation.fact_origin_id is not None}
     found = []
     for claim in claims:
@@ -457,6 +481,36 @@ def predecessor(prior: Prior, claims: tuple[NumericClaim, ...]) -> tuple[Numeric
             claim = cited.model_copy(update={"qualifiers": labels})
         found.append(claim)
     return tuple(found)
+
+
+def _admitted(
+    cursor: Cursor[Any], claims: Sequence[NumericClaim], run_ids: Sequence[int]
+) -> dict[FactRole, AdmittedFact]:
+    """Each ``fact.*`` claim's fact as its latest admission under ``run_ids`` admitted it; none
+    for a fact admitted by none of them."""
+    found = {}
+    for claim in claims:
+        cited = claim.citation
+        if not claim.claim_key.startswith(FACT_PREFIX) or cited.fact_origin is None:
+            continue
+        origin = (cited.fact_origin, cited.fact_origin_id, list(run_ids))
+        row = cursor.execute(_ADMITTED, origin).fetchone()
+        if row is None:
+            continue
+        store_id, interpretation_id, witness, label, body = row
+        observation = Fact.model_validate_json(body).observation
+        assert cited.fact_origin_id is not None
+        ref = FactRef(store_id=store_id, origin=cited.fact_origin, origin_id=cited.fact_origin_id)
+        found[FactRole(claim.claim_key.removeprefix(FACT_PREFIX))] = AdmittedFact(
+            ref=ref,
+            value=observation.normalized_value,
+            decimals=observation.decimals,
+            provenance=observation.provenance,
+            label=AdmissionLabel(label),
+            interpretation_id=interpretation_id,
+            witness_interpretation_id=witness,
+        )
+    return found
 
 
 def gate_lines(
@@ -601,16 +655,21 @@ def _check_sources(
     assert cutoff is not None
     blobs = {c.citation.source_sha256 for c in claims if c.citation.source_sha256 is not None}
     blobs |= _operand_blobs(cursor, claims)
-    held = (f.admitted for f in run.update.facts)  # vendor witnesses: check_sources holds them
-    blobs -= {a.provenance.file_sha256 for a in held if a and a.witness_interpretation_id}
     check_blobs(
         cursor,
-        blobs,
+        blobs - vendor_witnesses(prior, run.update),
         allowed=allowed_captures(prior, run.xbrl, run.pdfs),
         cutoff=cutoff,
         retrospective=run.retrospective,
         catalog=catalog,
     )
+
+
+def vendor_witnesses(prior: Prior, update: EarningsUpdate) -> set[str]:
+    """The vendor captures behind the run's admitted facts (a rework's carried ones included)
+    and the prior head's: ``check_sources`` held them for the run that admitted them."""
+    held = (*(fact.admitted for fact in update.facts), *prior.admitted.values())
+    return {a.provenance.file_sha256 for a in held if a and a.witness_interpretation_id}
 
 
 def _operand_blobs(cursor: Cursor[Any], claims: tuple[NumericClaim, ...]) -> set[str]:

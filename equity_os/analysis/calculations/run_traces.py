@@ -14,15 +14,17 @@ tax / PBT × 100. Keys follow the import's (``measurement_key``,
 ``change_key``); claim keys are the import's claim keys. The bound claims come back as the
 draft's changes and calculations lines. With a ``Carry`` (a rework, PREP-5) each line is first
 built unbound and only the lines it does not carry are bound; it is closed before any trace is
-stored. Each interpretation figure is labelled ``FILED``; a ``check`` sees every line's claims
-before any is bound.
+stored. A QoQ prior whose quarter's approved head admitted the role from the vendors (VENDOR-1
+finding 3) is that admitted fact: its value, file, interpretation and label, the changes
+computed from it. Each other interpretation figure is labelled ``FILED``; a ``check`` sees every
+line's claims before any is bound.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from datetime import date
-from decimal import ROUND_HALF_EVEN, Decimal
+from decimal import ROUND_HALF_EVEN, Context, Decimal, localcontext
 from fractions import Fraction
 from functools import cache, partial
 from pathlib import Path
@@ -44,6 +46,7 @@ from equity_os.contracts.measurement.qualification import ScopedTier
 from equity_os.contracts.measurement.role import FactRole
 from equity_os.contracts.publication.ledger import NumericClaim, Rounding
 from equity_os.contracts.verification.comparative import (
+    PERCENT_CONTEXT_PRECISION,
     RUN_PERCENT_PLACES,
     TAXONOMY_DRIFT_PREFIX,
     ComparatorKind,
@@ -116,6 +119,7 @@ DISCLOSED = frozenset({OPEN_QUESTIONS, NOT_PERFORMED})
 _HUNDRED = Interval.exact(Fraction(100))
 _NEG_HUNDRED = Interval.exact(Fraction(-100))
 _CRORE_SCALE = UNITS[CRORE][2] or 1
+_PERCENT = Decimal(1).scaleb(-RUN_PERCENT_PLACES)  # a run's percent change, as comparatives
 # The code-side formulas carry no equivalence proof.
 _UNPROVEN = ScopedTier(
     tier=EvidenceTier.EQUIVALENCE_UNPROVEN, qualification_ref=None, condition_evidence=()
@@ -211,36 +215,29 @@ class _Binder:
 
     def admitted(
         self, name: str, fact: AdmittedFact, key: MeasurementKey, run_value: Decimal
+    ) -> _Operand:
+        """An admitted fact's operand from its own interpretation; no capture is read and no
+        blob added."""
+        (item,) = self.repo.get_interpretations([fact.interpretation_id])
+        where = f"{key.canonical_id} admitted from interpretation {fact.interpretation_id}"
+        if item.key is None or item.key.digest() != key.digest():
+            raise RunDraftError(f"{where} is not of the key")
+        held = _operand_value(key, item, SelectionSource.PACKAGE_AS_REPORTED, where)
+        return name, self.checked(held, where, run_value)
+
+    def admission(
+        self, name: str, fact: AdmittedFact, key: MeasurementKey, run_value: Decimal
     ) -> _Lookup:
-        """An admitted role's operand from its own interpretation, looked up once when needed;
-        no capture is read and no blob added."""
-
-        def lookup() -> _Operand:
-            (item,) = self.repo.get_interpretations([fact.interpretation_id])
-            where = f"{key.canonical_id} admitted from interpretation {fact.interpretation_id}"
-            if item.key is None or item.key.digest() != key.digest():
-                raise RunDraftError(f"{where} is not of the key")
-            held = _operand_value(key, item, SelectionSource.PACKAGE_AS_REPORTED, where)
-            return name, self.checked(held, where, run_value)
-
-        cached = cache(lookup)
-        self.labels[cached] = fact.label
-        return cached
-
-    def role(
-        self,
-        name: str,
-        fact: RenderedFact,
-        key: MeasurementKey,
-        carried: Mapping[FactRole, AdmissionLabel],
-    ) -> _Lookup:
-        """A required role's operand: admitted, or filed (under its carried label, if any)."""
-        if fact.admitted is not None:
-            return self.admitted(name, fact.admitted, key, fact.value)
-        found = self.lazy(name, fact.sources[0], key, fact.value)
-        if fact.role in carried:
-            self.labels[found] = carried[fact.role]
+        """``admitted``, looked up once and only when needed, under the fact's label."""
+        found = cache(partial(self.admitted, name, fact, key, run_value))
+        self.labels[found] = fact.label
         return found
+
+    def role(self, name: str, fact: RenderedFact, key: MeasurementKey) -> _Lookup:
+        """A required role's operand: admitted, or filed."""
+        if fact.admitted is not None:
+            return self.admission(name, fact.admitted, key, fact.value)
+        return self.lazy(name, fact.sources[0], key, fact.value)
 
     def filed(
         self, source: Provenance, key: MeasurementKey, selection: SelectionSource
@@ -300,10 +297,11 @@ class _Binder:
         run_value: Decimal,
         unit: str,
     ) -> NumericClaim:
-        """A retained figure's claim at the run's value, labelled filed; bound, it cites its
-        interpretation."""
+        """A retained figure's claim at the run's value, labelled with its admission label or
+        filed; bound, it cites its interpretation."""
         claim = _valued(name, section, run_value, unit, key, source)
-        claim = claim.model_copy(update={"qualifiers": tuple(sorted({*claim.qualifiers, FILED}))})
+        label = self.labels[operand].value if operand in self.labels else FILED
+        claim = claim.model_copy(update={"qualifiers": tuple(sorted({*claim.qualifiers, label}))})
 
         def bind() -> NumericClaim:
             held = operand()[1]
@@ -428,15 +426,15 @@ def bind_computed(
     versions: ConfigVersions,
     carry: Carry | None = None,
     check: Callable[[tuple[NumericClaim, ...]], object] | None = None,
-    carried: Mapping[FactRole, AdmissionLabel] | None = None,
+    predecessors: Mapping[FactRole, AdmittedFact] | None = None,
 ) -> tuple[Line, ...]:
     """The run's changes and calculations lines: a stored trace per retained computed value and
     the interpretation of each comparator figure and the filed tax expense, all bound before
     any trace is stored; any missing interpretation or mismatch raises. Operands are read under
     ``versions`` (the comparison run's pins). ``carry`` keeps the
     lines it carries unbound and is closed before any trace is stored; ``check`` refuses the
-    unbound claims before any lookup. A ``carried`` role (a rework's, not admitted again) is
-    looked up filed under its predecessor fact's label."""
+    unbound claims before any lookup. A role's QoQ prior in ``predecessors`` (the predecessor
+    head's vendor-valued facts) is that fact."""
     start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
     binder = _Binder(repo, entity_id, start, end, versions)
     facts = {fact.role: fact for fact in update.facts}
@@ -445,7 +443,7 @@ def bind_computed(
     for comparative in update.comparatives:
         fact = by_concept[comparative.concept_qname]
         key, unit = binder.key(LEGACY_CONCEPTS[fact.concept_qname], fact.unit), fact.unit
-        current = binder.role("current", fact, key, carried or {})
+        current = binder.role("current", fact, key)
         for change in (comparative.qoq, comparative.yoy):
             label = f"{_ROLE_LABELS[fact.role]} {change.kind.value} vs "
             label += f"{change.period_start}..{change.period_end}"
@@ -459,17 +457,25 @@ def bind_computed(
             period = PeriodInterval.duration(change.period_start, change.period_end)
             prior_key = key.model_copy(update={"period": period})
             source, value = change.prior_source, change.prior_value
-            historical = SelectionSource.HISTORICAL_PACKAGE
-            prior = binder.lazy("prior", source, prior_key, value, historical)
+            absolute, percent = change.absolute_change, change.percent_change
+            admitted = (predecessors or {}).get(fact.role)
+            if admitted is not None and change.kind is ComparatorKind.QOQ:
+                source, value = admitted.provenance, admitted.value / _scale(prior_key)
+                absolute = fact.value - value
+                if percent is not None:
+                    with localcontext(Context(prec=PERCENT_CONTEXT_PRECISION)):
+                        percent = (absolute / value * 100).quantize(_PERCENT, ROUND_HALF_EVEN)
+                prior = binder.admission("prior", admitted, prior_key, value)
+            else:
+                historical = SelectionSource.HISTORICAL_PACKAGE
+                prior = binder.lazy("prior", source, prior_key, value, historical)
             pair = (current, prior)
             abs_key = change_key(key, change.kind, ABS)
             claims = [
                 binder.figure(f"{base}.prior", CHANGES, prior, prior_key, source, value, unit),
-                binder.trace(
-                    f"{base}.abs", CHANGES, DIFFERENCE, abs_key, pair, change.absolute_change, unit
-                ),
+                binder.trace(f"{base}.abs", CHANGES, DIFFERENCE, abs_key, pair, absolute, unit),
             ]
-            if change.percent_change is not None:
+            if percent is not None:
                 claims.append(
                     binder.trace(
                         f"{base}.pct",
@@ -477,7 +483,7 @@ def bind_computed(
                         CHANGE_PCT,
                         change_key(key, change.kind, PCT),
                         pair,
-                        change.percent_change,
+                        percent,
                         PERCENT,
                         precision=RUN_PERCENT_PLACES,
                         rounding=Rounding.ROUND_HALF_EVEN,
@@ -500,7 +506,7 @@ def bind_computed(
     def reported(name: str, role: FactRole) -> _Lookup:
         fact = facts[role]
         key = binder.key(LEGACY_CONCEPTS[fact.concept_qname], CRORE)
-        return binder.role(name, fact, key, carried or {})
+        return binder.role(name, fact, key)
 
     pbt = facts[FactRole.PROFIT_BEFORE_TAX].value
     tax: _Lookup | None = None

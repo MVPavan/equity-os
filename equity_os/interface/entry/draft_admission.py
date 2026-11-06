@@ -28,7 +28,6 @@ from equity_os.publication.checking.citations import witnesses
 from equity_os.publication.checking.claim_check import CRORE, PER_SHARE
 from equity_os.publication.drafting.earnings_update import REQUIRED_ROLES, AdmittedFact
 from equity_os.publication.revision.import_mapping import measurement_key
-from equity_os.publication.revision.rework import Rework
 from equity_os.storage.facts.pg_fact_store import PgFactStore
 from equity_os.storage.records.repository import EvidenceRepository
 from equity_os.verification.admission.admission import (
@@ -197,19 +196,6 @@ def select_roles(
             witness_interpretation_id=record.witness_interpretation_id,
         )
     return admitted
-
-
-def carried_labels(rework: Rework | None) -> dict[FactRole, AdmissionLabel]:
-    """Each carried required role's label, as its predecessor's fact claim states it."""
-    if rework is None:
-        return {}
-    return {
-        role: AdmissionLabel(qualifier)
-        for role in REQUIRED_ROLES
-        if (name := f"fact.{role.value}") in rework.carried
-        for qualifier in rework.claims[name].qualifiers
-        if qualifier in AdmissionLabel
-    }
 
 
 def _members(

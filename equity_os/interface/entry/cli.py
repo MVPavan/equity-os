@@ -105,7 +105,6 @@ from equity_os.interface.entry.draft_admission import (
 )
 from equity_os.interface.entry.draft_admission import (
     admit_roles,
-    carried_labels,
     check_sources,
     run_versions,
     select_roles,
@@ -132,6 +131,7 @@ from equity_os.publication.drafting.run_draft import (
     recall,
     section_body,
     stated_claims,
+    vendor_witnesses,
     write_run_draft,
 )
 from equity_os.publication.revision.importer import load_import_config
@@ -372,7 +372,7 @@ def run_command(
                     _check_carried(cursor, prior.rework, store_id)
             chosen = admit_roles(pool, store_id, run_id, config, entity_id, carried)
             check_sources(pool, manifest, chosen, config, xbrl, pdfs, versions)
-            admitted = select_roles(pool, store_id, run_id, chosen)
+            admitted = select_roles(pool, store_id, run_id, chosen) | dict(prior.carried_facts)
             bound: list[tuple[Line, ...]] = []
             probes: list[Probe] = []
             credibility: list[Built] = []
@@ -382,7 +382,7 @@ def run_command(
                 with pool.connection() as conn, conn.cursor() as cursor:
                     check_blobs(
                         cursor,
-                        blobs,
+                        blobs - vendor_witnesses(prior, update),
                         allowed=allowed_captures(prior, xbrl, pdfs),
                         cutoff=update.source_cutoff,
                         retrospective=retrospective,
@@ -424,7 +424,7 @@ def run_command(
                     versions=versions,
                     carry=gate,
                     check=partial(predecessor, prior),  # before any trace persists
-                    carried=carried_labels(prior.rework),
+                    predecessors=prior.admitted,
                 )
                 bound.append(lines)
                 probes.append(
