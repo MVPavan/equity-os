@@ -2,13 +2,16 @@
 
 ``resolve_citation`` returns ``None`` (row 1, ``UNRESOLVED``) unless the cited record exists
 and has authority: ``FIGURE`` and ``CALCULATION`` only first-party values (every capture
-behind them; an interpretation ``FIGURE`` with no run its own mapped value), a quote only a
+behind them; an interpretation ``FIGURE`` with no run its own mapped value) or vendor values
+admitted under the pinned runs and still held (VENDOR-1 §6.9: both witnesses retained or
+restored, no licence end, an unchecked class not contradicted by the cutoff), a quote only a
 non-vendor capture, a ``COMPARISON`` its own run and key, a
 ``POLICY`` an owner ``SET_POLICY`` decision on a report of the same entity, a ``THESIS_CLAIM``
 a falsifier threshold of the entity's bootstrap thesis whose version an approval recorded at the
 pinned sealed digest (its earliest such approval's time is the input time), an admitted fact
 only its admissions under the citing version's pinned runs, and a declared
-``source_sha256`` only the cited fact's file or capture's blob. A capture's
+``source_sha256`` only the cited fact's file or capture's blob. An admitted fact or a trace
+over admitted operands carries the weakest admission label (§6.10). A capture's
 first-seen time is the earlier of its registration and its blob's legacy acquisitions (D8).
 A claim is labelled ``FILED`` exactly when it is an interpretation ``FIGURE`` with no run, and
 only a comparator prior (``cmp.*.prior``), the filed tax total (``calc.2``) or a risk probe's
@@ -23,7 +26,7 @@ from __future__ import annotations
 import json
 import re
 import tempfile
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence, Set
 from datetime import datetime
 from decimal import Decimal
 from fractions import Fraction
@@ -51,6 +54,8 @@ from equity_os.contracts.publication.ledger import (
     ResolvedCitation,
 )
 from equity_os.contracts.sourcing.source_catalog import (
+    SCREENER_PAGE,
+    TIJORI_PAGE,
     SourceCatalog,
     SourceClass,
     UnknownSourceError,
@@ -60,6 +65,7 @@ from equity_os.contracts.verification.comparison import (
     ExtractionStatus,
     SourceState,
 )
+from equity_os.contracts.verification.vendor_first import AdmissionLabel, weakest
 from equity_os.extraction.results_pdf.pdf_source import PdfIntegrityError, load_pdf
 from equity_os.normalisation.derivation.interval import truncate_value
 from equity_os.normalisation.dictionary.role_translation import translate
@@ -75,6 +81,7 @@ from equity_os.storage.raw_files.capture_retention import retained_capture
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records.repository_rows import capture_of, period_of
 from equity_os.verification.admission.admission import ADMITTED_CONCEPT_PREFIX
+from equity_os.verification.admission.eligibility import counterexample_at
 from equity_os.verification.comparison.fact_view import CANONICAL_ENTITY_SCHEME
 from equity_os.verification.review_queue.queue import overlay_at
 from equity_os.verification.review_queue.trust import trusted
@@ -133,7 +140,7 @@ _FILE_CAPTURES: LiteralString = (
 )
 # An admitted fact's admissions of the report's issuer under the pinned runs, with their keys.
 _ADMITTED: LiteralString = """SELECT r.key_digest, r.value_kind, r.currency, a.overlay_position,
-    o.capture_ref_id
+    o.capture_ref_id, a.interpretation_id, a.witness_interpretation_id, a.label, a.class_digest
 FROM eqos.fact_admissions a JOIN eqos.results r ON r.id = a.result_id
 JOIN eqos.occurrences o ON o.id = a.occurrence_id
 WHERE a.fact_origin = %s AND a.fact_origin_id = %s AND r.entity_id = %s
@@ -161,6 +168,13 @@ _SOURCE: LiteralString = """SELECT coalesce(
     (SELECT c.blob_sha256 FROM eqos.interpretations i
      JOIN eqos.capture_refs c ON c.id = i.capture_ref_id WHERE i.id = %s),
     (SELECT blob_sha256 FROM eqos.capture_refs WHERE id = %s)) AS sha256"""
+# A vendor value's two witness captures: each source, registration and whether it is held
+# (retained or restored, its vendor's licence not ended; §6.7, §6.9).
+_WITNESSES: LiteralString = """SELECT c.source_id, c.surface, c.registered_at,
+    eqos.capture_state(c.id) IN ('RETAINED', 'RESTORED')
+        AND NOT EXISTS (SELECT 1 FROM eqos.licence_ends l WHERE l.source_id = c.source_id)
+FROM eqos.interpretations i JOIN eqos.capture_refs c ON c.id = i.capture_ref_id
+WHERE i.id IN (%s, %s)"""
 _FILED_TAX = "calc.2"
 _INTERPRETATION: LiteralString = """SELECT value, key_digest, value_kind, currency
 FROM eqos.interpretations WHERE id = %s AND status = 'MAPPED' AND entity_id = %s"""
@@ -186,6 +200,16 @@ TRACES: LiteralString = """traces(id) AS (
     UNION SELECT o.operand_trace_id FROM eqos.calculation_trace_operands o
         JOIN traces t ON o.calculation_trace_id = t.id WHERE o.operand_trace_id IS NOT NULL
 )"""
+# The labels of the admissions under the pinned runs whose interpretation a trace reaches.
+_TRACE_ADMISSIONS: LiteralString = (
+    "WITH RECURSIVE "
+    + TRACES
+    + """ SELECT a.interpretation_id, a.witness_interpretation_id, a.label,
+    a.class_digest FROM traces t
+JOIN eqos.calculation_trace_operands o ON o.calculation_trace_id = t.id
+JOIN eqos.fact_admissions a ON a.interpretation_id = o.interpretation_id
+WHERE a.run_id = ANY(%(runs)s)"""
+)
 # Every interpretation behind the cited traces and interpretations, through trace operands,
 # nested traces and constructed interpretations' operands, in id order so the pinned input
 # fingerprint does not depend on the query plan.
@@ -199,7 +223,7 @@ _INPUTS: LiteralString = (
     UNION SELECT o.operand_interpretation_id FROM eqos.interpretation_operands o
         JOIN interps i ON o.interpretation_id = i.id
 )
-SELECT c.source_id, i.recorded_at, i.occurrence_id, oc.knowledge_time,
+SELECT i.id, c.source_id, i.recorded_at, i.occurrence_id, oc.knowledge_time,
     oc.first_seen_at AS occurrence_first_seen, """
     + _FIRST_SEEN
     + """ AS first_seen
@@ -225,6 +249,8 @@ WHERE r.entity_id = %(entity)s AND c.citation_kind = 'SOURCE_QUOTE' AND c.quote 
 ORDER BY c.id, i.id"""
 
 _Row = Mapping[str, Any]
+_VENDOR_PAGES = (SCREENER_PAGE, TIJORI_PAGE)
+_CHECKED = AdmissionLabel.CHECKED_AGAINST_FILING
 _Times = tuple[tuple[InputTime, datetime | None], ...]
 
 
@@ -256,13 +282,17 @@ def resolve_citation(
     catalog: SourceCatalog,
     snapshots: SnapshotStore,
     run_ids: Sequence[int] = (),
+    cutoff: datetime | None = None,
 ) -> ResolvedCitation | None:
     """What the claim's citation resolves to at ``overlay_position``, or ``None``.
 
     ``entity_id`` is the stock of the claim's report, which every keyed record and a ``POLICY``
     decision must share; ``run_ids`` are the citing version's pinned comparison runs, the only
-    runs whose admissions an admitted fact resolves through.
+    runs whose admissions an admitted fact resolves through; ``cutoff`` is the citing version's
+    (default the overlay position), by which an unchecked vendor value's class must stand
+    uncontradicted.
     """
+    cutoff = overlay_position if cutoff is None else cutoff
     citation = claim.citation
     filed = (
         citation.kind is CitationKind.FIGURE
@@ -284,6 +314,7 @@ def resolve_citation(
                 catalog,
                 claim,
                 run_ids,
+                cutoff,
             )
         if citation.kind is CitationKind.FIGURE and citation.interpretation_id is not None:
             times = _input_times(own, (), (citation.interpretation_id,), catalog)
@@ -295,7 +326,8 @@ def resolve_citation(
                 own, _CELL, citation.interpretation_id, claim, entity_id, overlay_position, times
             )
         if citation.kind is CitationKind.CALCULATION and citation.calculation_trace_id is not None:
-            return _trace(own, citation.calculation_trace_id, claim, entity_id, catalog)
+            trace = citation.calculation_trace_id
+            return _trace(own, trace, claim, entity_id, catalog, run_ids, cutoff)
         if citation.kind is CitationKind.SOURCE_QUOTE and citation.capture_ref_id is not None:
             capture = _first_party_capture(own, citation.capture_ref_id, catalog)
             if capture is None:
@@ -431,6 +463,7 @@ def _fact(
     catalog: SourceCatalog,
     claim: NumericClaim,
     run_ids: Sequence[int],
+    cutoff: datetime,
 ) -> ResolvedCitation | None:
     """A legacy fact of the report's issuer, through its translation and its bound capture; a
     native admitted fact, through its pinned admissions (``_admitted``); or a native
@@ -441,7 +474,7 @@ def _fact(
         return None
     observation = json.loads(row["fact_json"], parse_float=Decimal)["observation"]
     if origin == NATIVE_ORIGIN and observation["concept_qname"].startswith(ADMITTED_CONCEPT_PREFIX):
-        return _admitted(own, row, origin_id, entity_id, catalog, claim, run_ids)
+        return _admitted(own, row, origin_id, entity_id, catalog, claim, run_ids, cutoff)
     recorded: _Times = ()
     if origin == NATIVE_ORIGIN:
         key, capture = _native_key(own, row, entity_id), _file_capture(own, row, catalog)
@@ -474,21 +507,27 @@ def _admitted(
     catalog: SourceCatalog,
     claim: NumericClaim,
     run_ids: Sequence[int],
+    cutoff: datetime,
 ) -> ResolvedCitation | None:
     """An admitted fact of the report's issuer, through its admissions under the pinned runs:
-    their one key, value kind and currency, its base-unit value in the claim's scale, and the
-    earliest pinned admission with its own capture as the witness of when it was known; every
-    admitted occurrence's capture must be first-party."""
+    their one key, value kind and currency, its base-unit value in the claim's scale, the
+    earliest pinned admission with its own capture as the witness of when it was known, and the
+    weakest admission label; a filed admission's capture must be first-party, a vendor one's
+    two witnesses held and not withdrawn (``_held``)."""
     admissions = own.execute(
         _ADMITTED, (NATIVE_ORIGIN, origin_id, entity_id, list(run_ids))
     ).fetchall()
     cells = {(a["key_digest"], a["value_kind"], a["currency"]) for a in admissions}
-    captures = {
-        capture: _first_party_capture(own, capture, catalog)
-        for capture in {a["capture_ref_id"] for a in admissions}
-    }
-    seen = {ref: capture["first_seen"] for ref, capture in captures.items() if capture is not None}
-    if len(cells) != 1 or len(seen) != len(captures):
+    seen = {}
+    for admission in admissions:
+        capture = own.execute(_CAPTURE, (admission["capture_ref_id"],)).fetchone()
+        vendor = admission["witness_interpretation_id"] is not None
+        if capture is None or not (
+            _held(own, admission, cutoff) if vendor else _first_party(capture["source_id"], catalog)
+        ):
+            return None
+        seen[admission["capture_ref_id"]] = capture["first_seen"]
+    if len(cells) != 1:
         return None
     ((digest, value_kind, currency),) = cells
     witness = min(admissions, key=lambda admission: admission["overlay_position"])
@@ -505,6 +544,28 @@ def _admitted(
             (InputTime.RECORDED, _instant(row["created_at"])),
             (InputTime.RECORDED, witness["overlay_position"]),
         ),
+        admission_label=weakest(admission["label"] for admission in admissions),
+    )
+
+
+def witnesses(cursor: Cursor[Any], chosen: int, witness: int) -> tuple[datetime, ...] | None:
+    """The registration times of a vendor value's two witness captures, when both are held
+    captures of the two vendor-primary sources; else ``None``."""
+    with cursor.connection.cursor() as own:
+        rows = own.execute(_WITNESSES, (chosen, witness)).fetchall()
+    pages = {(source_id, surface) for source_id, surface, _, held in rows if held}
+    return tuple(row[2] for row in rows) if pages == set(_VENDOR_PAGES) else None
+
+
+def _held(own: Cursor[Any], admission: _Row, cutoff: datetime) -> bool:
+    """Whether a vendor-valued admission stands: both witnesses held, and an unchecked one's
+    class not contradicted by a filing at or before ``cutoff`` (§6.6, §6.9)."""
+    chosen, witness = admission["interpretation_id"], admission["witness_interpretation_id"]
+    if witnesses(own, chosen, witness) is None:
+        return False
+    return (
+        admission["label"] == _CHECKED
+        or counterexample_at(own, admission["class_digest"], cutoff) is None
     )
 
 
@@ -562,14 +623,28 @@ def _interpretation(
 
 
 def _trace(
-    own: Cursor[Any], trace_id: int, claim: NumericClaim, entity_id: int, catalog: SourceCatalog
+    own: Cursor[Any],
+    trace_id: int,
+    claim: NumericClaim,
+    entity_id: int,
+    catalog: SourceCatalog,
+    run_ids: Sequence[int],
+    cutoff: datetime,
 ) -> ResolvedCitation | None:
-    """A computed trace whose every operand is first-party, under a claim key of the report's
-    issuer (the caller matches the trace's key digest to the claim's)."""
+    """A computed trace whose every operand is first-party or a standing vendor admission under
+    the pinned runs, under a claim key of the report's issuer (the caller matches the trace's
+    key digest to the claim's); it carries the weakest label of its admitted operands."""
     if _issuer_key(claim, entity_id) is None:
         return None
     row = own.execute(_TRACE, (trace_id,)).fetchone()
-    times = _input_times(own, (trace_id,), (), catalog)
+    params = {"traces": [trace_id], "runs": list(run_ids)}
+    admissions = own.execute(_TRACE_ADMISSIONS, params).fetchall()
+    held = {
+        a["interpretation_id"]
+        for a in admissions
+        if a["witness_interpretation_id"] is not None and _held(own, a, cutoff)
+    }
+    times = _input_times(own, (trace_id,), (), catalog, held)
     if row is None or row["value"] is None or times is None:
         return None
     value = (
@@ -577,7 +652,10 @@ def _trace(
         if EXACT_DIGITS in claim.qualifiers
         else _claim_scaled(row["value"], claim)
     )
-    return ResolvedCitation(value=value, key_digest=row["key_digest"], times=times)
+    label = weakest(a["label"] for a in admissions) if admissions else None
+    return ResolvedCitation(
+        value=value, key_digest=row["key_digest"], times=times, admission_label=label
+    )
 
 
 def _issuer_key(claim: NumericClaim, entity_id: int) -> MeasurementKey | None:
@@ -651,20 +729,24 @@ def _input_times(
     traces: Iterable[int],
     interpretations: Iterable[int],
     catalog: SourceCatalog,
+    vendor: Set[int] = frozenset(),
 ) -> _Times | None:
     """Every input time behind the traces and interpretations, or ``None`` when any capture
-    behind them is not first-party."""
+    behind them is not first-party, other than the ``vendor`` interpretations'."""
     rows = own.execute(
         _INPUTS, {"traces": list(traces), "interpretations": list(interpretations)}
     ).fetchall()
-    if not rows or not all(_first_party(row["source_id"], catalog) for row in rows):
+    if not rows or not all(
+        row["id"] in vendor or _first_party(row["source_id"], catalog) for row in rows
+    ):
         return None
     times: list[tuple[InputTime, datetime | None]] = []
     for row in rows:
         times.append((InputTime.FIRST_SEEN, row["first_seen"]))
         times.append((InputTime.RECORDED, row["recorded_at"]))
         if row["occurrence_id"] is not None:
-            times.append((InputTime.KNOWLEDGE, row["knowledge_time"]))
+            if row["id"] not in vendor:  # a vendor value is known by its capture's first sight
+                times.append((InputTime.KNOWLEDGE, row["knowledge_time"]))
             times.append((InputTime.FIRST_SEEN, row["occurrence_first_seen"]))
     return tuple(times)
 

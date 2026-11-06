@@ -25,6 +25,7 @@ from structlog.testing import capture_logs
 from test_transcript_admission import issuer_config
 
 import equity_os.interface.entry.cli as cli
+import equity_os.interface.entry.draft_admission as draft_admission
 from equity_os.analysis.calculations.run_traces import RunDraftError
 from equity_os.contracts.measurement.canonical import Representation, ValueIdentity
 from equity_os.contracts.measurement.evidence import RunMode
@@ -155,13 +156,15 @@ def _counts(pilot: Pilot) -> tuple[Any, ...]:
 
 def _refuses(pilot: Pilot, quarter: str, match: str, **options: Any) -> None:
     """The quarter's run, its originals and comparison run in place, refuses
-    (``RunDraftError`` unless ``error``) and writes no row to any table a run writes."""
-    error = options.pop("error", RunDraftError)
+    (``RunDraftError`` unless ``error``) and writes no row to any table a run writes but the
+    first ``kept`` (fact rows, admissions, selections: they persist once written, VENDOR-1
+    Task 9)."""
+    error, kept = options.pop("error", RunDraftError), options.pop("kept", 0)
     pilot.registered(quarter)
     before = _counts(pilot)
     with pytest.raises(error, match=match):
         pilot.run(quarter, **options)
-    assert _counts(pilot) == before
+    assert _counts(pilot)[kept:] == before[kept:]
 
 
 def _intercept(monkeypatch: pytest.MonkeyPatch, before: Callable[[Prior, RunDraft], Any]) -> None:
@@ -247,14 +250,14 @@ def test_an_unbindable_comparator_refuses_before_any_write(
     request: pytest.FixtureRequest, mapping_set: MappingSet
 ) -> None:
     """FY26_Q2's YoY comparator ingested under a mapping without profit for the period: the
-    run refuses before it stores a fact or selection."""
+    run refuses, its facts admitted and selected, before it stores a trace or version."""
     pilot = _pilot(request, xbrls=tuple(xbrl for xbrl in XBRLS if xbrl[0] != "FY25_Q2"))
     ingest = request.getfixturevalue("ingest")
     entries = tuple(e for e in mapping_set.entries if e.canonical_id != "profit_for_period")
     partial = mapping_set.model_copy(update={"entries": entries})
     comparator = ingest.intake({Representation.XBRL: COMPARATOR_KIND}, "FY25_Q2")
     ingest.run(comparator, date(2024, 9, 30), mapping_set=partial)
-    _refuses(pilot, "FY26_Q2", "no single mapped interpretation of profit_for_period")
+    _refuses(pilot, "FY26_Q2", "no single mapped interpretation of profit_for_period", kept=3)
 
 
 def _compare_run(pilot: Pilot, quarter: str) -> int:
@@ -354,9 +357,14 @@ def test_a_package_not_the_runs_own_refuses_before_any_write(
     pilot: Pilot, monkeypatch: pytest.MonkeyPatch, representation: Representation, late: bool
 ) -> None:
     """The comparison run's package keeps the run's other member but this one is another
-    capture, or was published after the source cutoff: the run refuses before it writes."""
+    capture, or was published after the source cutoff: the run refuses after admission, before
+    it selects or writes anything else."""
     cutoff = load_config(pilot.config("FY26_Q2")).quarter.knowledge_cutoff
     real = EvidenceRepository.get_packages
+
+    class Swapped(EvidenceRepository):
+        def get_packages(self, ids: Any) -> Any:
+            return swapped(self, ids)
 
     def swapped(self: EvidenceRepository, ids: Any) -> Any:
         found = []
@@ -371,8 +379,8 @@ def test_a_package_not_the_runs_own_refuses_before_any_write(
         return found
 
     pilot.registered("FY26_Q2")
-    monkeypatch.setattr(EvidenceRepository, "get_packages", swapped)
-    _refuses(pilot, "FY26_Q2", f"'s {representation.value} member is not the run's own")
+    monkeypatch.setattr(draft_admission, "EvidenceRepository", Swapped)  # the package check's
+    _refuses(pilot, "FY26_Q2", f"'s {representation.value} member is not the run's own", kept=2)
 
 
 def _append(pilot: Pilot, prior: Prior, conn: Any, report_id: int | None = None) -> None:

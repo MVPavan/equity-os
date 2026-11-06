@@ -282,6 +282,7 @@ def check_version(
                 catalog=catalog,
                 snapshots=snapshots,
                 run_ids=draft.pinned_run_ids,
+                cutoff=draft.knowledge_cutoff,
             ),
             bound.get(claim.claim_key)
             if imported or claim.citation.kind is not CitationKind.SOURCE_QUOTE

@@ -41,6 +41,25 @@ _DECISIONS: LiteralString = (
     "WHERE subject_kind = 'REPORT_VERSION' AND subject_id = %s ORDER BY sequence"
 )
 _CREATOR: LiteralString = "SELECT creator FROM eqos.validations WHERE id = %s"
+# Each claim's later source notes (VENDOR-1 §6.6, §6.9): a vendor capture behind it that is no
+# longer held (expired, or its vendor's licence ended), and an unchecked admitted fact's class
+# contradicted by a filing; each at its earliest date.
+_SOURCE_NOTES: LiteralString = """SELECT claim_key, 'vendor source expired' AS note, min(at) AS at
+FROM (SELECT k.claim_key, least(l.ended_at, s.recorded_at) AS at FROM eqos.numeric_claims k
+    CROSS JOIN LATERAL unnest(eqos.row_captures('numeric_claims', to_jsonb(k))) x(capture)
+    JOIN eqos.capture_refs c ON c.id = x.capture
+    LEFT JOIN eqos.licence_ends l ON l.source_id = c.source_id
+    LEFT JOIN LATERAL (SELECT state, recorded_at FROM eqos.capture_states
+        WHERE capture_ref_id = c.id ORDER BY id DESC LIMIT 1) s
+        ON s.state NOT IN ('RETAINED', 'RESTORED')
+    WHERE k.version_id = %(version)s AND eqos.is_vendor_source(c.source_id)) expired
+WHERE at IS NOT NULL GROUP BY claim_key
+UNION ALL SELECT k.claim_key, 'class later contradicted by a filing on', min(x.recorded_at)
+FROM eqos.numeric_claims k
+JOIN eqos.fact_admissions a USING (fact_origin, fact_origin_id)
+JOIN eqos.vendor_counterexamples x ON x.class_digest = a.class_digest
+WHERE k.version_id = %(version)s GROUP BY k.claim_key
+ORDER BY claim_key, note"""
 _UNKNOWN = "unknown stock {stock!r}"
 _NONE = "none"
 _TITLE = "# {stock} {period} {report_kind} v{position}"
@@ -49,8 +68,15 @@ _DECISION = "{n}. {kind} by {decider} at {recorded_at}"
 _VALIDATION = "- id: {id}\n- mode: {mode}\n- creator: {creator}\n- version-level states: {states}"
 _CLAIM = "- {key}: {state}"
 _FLAG = "- memory item {id}: {statement}"
+_NOTE = "- {claim_key}: {note} {at}"
 _SECTION = "## {heading}\n\n{body}"
-_HEADINGS = ("Decisions", "Latest validation", "Untrusted claims", "Revalidation flags")
+_HEADINGS = (
+    "Decisions",
+    "Latest validation",
+    "Untrusted claims",
+    "Revalidation flags",
+    "Source notes",
+)
 
 
 class VersionIdentity(BaseModel):
@@ -92,11 +118,13 @@ def status_note(
     cursor: Cursor[Any], identity: VersionIdentity, promoted: Sequence[RetrievedItem]
 ) -> str:
     """The version's Markdown status note: identity, derived status, decisions in order, latest
-    validation, untrusted claims and the ``promoted`` items citing it that need revalidation."""
+    validation, untrusted claims, the ``promoted`` items citing it that need revalidation and
+    the later notes on its admitted facts' sources."""
     version_id = identity.version_id
     status = version_status(cursor, version_id)
     with cursor.connection.cursor(row_factory=dict_row) as own:
         decisions = own.execute(_DECISIONS, (version_id,)).fetchall()
+        notes = own.execute(_SOURCE_NOTES, {"version": version_id}).fetchall()
     check = store.latest_validation(cursor, version_id)
     validation, untrusted = [_NONE], [_NONE]
     if check is not None:
@@ -120,6 +148,7 @@ def status_note(
         validation,
         untrusted,
         flags,
+        [_NOTE.format(**row) for row in notes] or [_NONE],
     )
     parts = [
         _TITLE.format(**identity.model_dump()),

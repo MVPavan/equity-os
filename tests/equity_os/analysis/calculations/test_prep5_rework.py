@@ -40,7 +40,7 @@ from equity_os.contracts.publication.ledger import (
     SubjectKind,
     VersionStatus,
 )
-from equity_os.interface.entry import cli
+from equity_os.interface.entry import cli, draft_admission
 from equity_os.interface.entry.cli import main
 from equity_os.normalisation.derivation.formula import CalculationTrace, TraceOperand
 from equity_os.publication.approval import lifecycle
@@ -412,6 +412,7 @@ CONDUCTOR = "ledger.conductor_ebitda_per_mt.medium_term.consolidated"
 PBT = "fact.profit_before_tax"
 Calls = dict[str, list[Any]]
 PROBE, PROBE_CALLS, PROBE_PUTS = "probe.", "probe", "probe_put"
+OP = "operand"
 
 
 @pytest.fixture
@@ -443,10 +444,13 @@ def calls(monkeypatch: pytest.MonkeyPatch) -> Calls:
         return PROBE_PUTS if probe else "put_calculation_trace"
 
     spy(_Binder, "operand", lambda _, _self, _name, _source, key, *__: key.digest())
+    spy(  # an admitted role's operand
+        _Binder, "admitted", lambda _, _self, _name, _fact, key, *__: key.digest(), lambda *_: OP
+    )
     spy(run_traces, "conclude", lambda _, _kind, output, *__: output.digest(), computed)
     spy(EvidenceRepository, "put_calculation_trace", lambda trace_id, *_: trace_id, stored)
-    spy(cli, "admit_run", lambda outcome, *_: outcome.created)
-    spy(cli, "select_admitted", lambda revision, *_: revision.fact.revision_family)
+    spy(draft_admission, "admit_run", lambda outcome, *_: outcome.created)
+    spy(draft_admission, "select_admitted", lambda revision, *_: revision.fact.revision_family)
     return found
 
 
@@ -554,7 +558,7 @@ def test_a_guidance_rework_binds_and_writes_nothing(
     facts = _counts(pilot)[:FACTS]
     assert _rerun(pilot).draft_version_id is not None
     for name in ("operand", "conclude", "put_calculation_trace", "select_admitted"):
-        assert calls[name] == [], name
+        assert not any(calls[name]), name  # an admission may run, creating nothing
     assert calls["admit_run"] == [0] and _counts(pilot)[:FACTS] == facts
 
 
@@ -606,7 +610,7 @@ def test_a_rework_refuses_movement_outside_its_rerun_lines_before_writing(
     with pytest.raises(RunDraftError, match=named):
         _rerun(pilot, edit=edit)
     for name in WRITES:
-        assert calls[name] == [], name
+        assert not any(calls[name]), name  # an admission may run, creating nothing
     assert _counts(pilot) == before
 
 
@@ -760,5 +764,5 @@ def test_a_rework_refuses_a_head_that_moved(
         assert after[-2:] == before[-2:]  # report_versions, numeric_claims
     else:
         for name in WRITES:
-            assert calls[name] == [], name
+            assert not any(calls[name]), name  # an admission may run, creating nothing
         assert after == before

@@ -21,6 +21,7 @@ from equity_os.contracts.publication.ledger import (
     RangeForm,
     ReportSection,
 )
+from equity_os.contracts.verification.vendor_first import LABEL_TEXT, AdmissionLabel
 
 PLACEHOLDER = re.compile(r"\{\{c:([^|}]+)\|([^}]*)\}\}")
 PERCENT = "%"
@@ -92,6 +93,9 @@ def render_claim(claim: NumericClaim, style: DisplayStyle) -> str:
                 _SUFFIX_QUALIFIERS.get(qualifier, ""),
             )
             text = f"{prefix}{text}{suffix}"
+    for qualifier in claim.qualifiers:  # an admitted fact's label (VENDOR-1 §6.10)
+        if qualifier in AdmissionLabel:
+            text += f" ({LABEL_TEXT[AdmissionLabel(qualifier)]})"
     return text + FILED_SUFFIX if FILED in claim.qualifiers else text
 
 

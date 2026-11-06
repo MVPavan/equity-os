@@ -10,12 +10,13 @@ from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from equity_os.contracts.measurement.canonical import ValueKind
 from equity_os.contracts.measurement.evidence import RunMode
 from equity_os.contracts.measurement.guidance_claim import EpistemicClass
 from equity_os.contracts.measurement.measurement_key import MeasurementKey
+from equity_os.contracts.verification.vendor_first import AdmissionLabel
 
 
 class ReportKind(StrEnum):
@@ -317,6 +318,9 @@ class ResolvedCitation(BaseModel):
     quote_text: str | None = None
     guidance: GuidanceContract | None = None
     trusted: bool | None = None
+    # An admitted fact's (or a calculation's weakest input's) label; omitted when there is none,
+    # so an unlabelled citation's pinned digest is unchanged.
+    admission_label: AdmissionLabel | None = Field(default=None, exclude_if=lambda v: v is None)
 
 
 class ReviewOutput(BaseModel):

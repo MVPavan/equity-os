@@ -17,9 +17,8 @@ import hashlib
 import json
 import subprocess
 import sys
-from collections import Counter
 from contextlib import ExitStack
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any, LiteralString
@@ -37,13 +36,9 @@ from equity_os.analysis.calculations.run_traces import (
 from equity_os.analysis.lenses.credibility.credibility import Built, bind_credibility, prepare
 from equity_os.analysis.lenses.credibility.guidance_targets import check_pins, load_targets
 from equity_os.analysis.lenses.risk.risk_probe import Probe, bind_probe
-from equity_os.contracts.measurement.canonical import Basis, Representation, ValueIdentity
-from equity_os.contracts.measurement.evidence import KnowledgeTimeStatus, RunMode
 from equity_os.contracts.measurement.guidance_claim import GuidanceClaim
 from equity_os.contracts.measurement.role import FactRole
 from equity_os.contracts.sourcing.source_registration import SourceRegistrationError, SourceRole
-from equity_os.contracts.verification.config_versions import ConfigVersions
-from equity_os.contracts.verification.versioning import VersionContentDriftError
 from equity_os.interface.commands.companies.entity_map_cli import (
     ENTITY_MAP_COMMAND,
     dispatch_entity_map_command,
@@ -103,15 +98,23 @@ from equity_os.interface.commands.verification.validate_cli import dispatch_vali
 from equity_os.interface.entry.cli_parser import REGISTER_SOURCES_COMMAND
 from equity_os.interface.entry.cli_parser import build_parser as _build_parser
 from equity_os.interface.entry.config import FundamentalsConfig, XbrlMode, load_config
+from equity_os.interface.entry.draft_admission import (
+    PILOT_VERSIONS as PILOT_VERSIONS,
+)
+from equity_os.interface.entry.draft_admission import (
+    admit_roles,
+    carried_labels,
+    check_sources,
+    run_versions,
+    select_roles,
+)
 from equity_os.interface.entry.env_credentials import (
     _screener_credentials_from_env,
     _tijori_credentials_from_env,
     _upstox_credentials_from_env,
 )
 from equity_os.interface.workflows.pipeline import PipelineResult, XbrlInput, run_pipeline
-from equity_os.normalisation.dictionary.role_translation import LEGACY_CONCEPTS
 from equity_os.publication.drafting.earnings_update import (
-    REQUIRED_ROLES,
     EarningsUpdate,
     render_earnings_update,
 )
@@ -129,35 +132,17 @@ from equity_os.publication.drafting.run_draft import (
     stated_claims,
     write_run_draft,
 )
-from equity_os.publication.revision.import_mapping import measurement_key
 from equity_os.publication.revision.importer import load_import_config
 from equity_os.publication.revision.rework import Rework
 from equity_os.sourcing.exchange.xbrl_source import NseXbrlSource
 from equity_os.storage.database.pool import open_pool
 from equity_os.storage.database.settings import PgRole, PgSettings
 from equity_os.storage.facts.cutover import open_fact_store
-from equity_os.storage.facts.fact_store import FactRef
 from equity_os.storage.facts.pg_fact_store import PgFactStore
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records import store as ledger_store
 from equity_os.storage.records.repository import EvidenceRepository
-from equity_os.verification.admission.admission import admit_run, key_identity, select_admitted
-from equity_os.verification.comparison.run_config import (
-    ComparisonSemanticsError,
-    load_run_config,
-    require_pins,
-)
-from equity_os.verification.comparison.run_models import (
-    RunInputDisposition,
-    RunInputKind,
-    RunStatus,
-    row_id,
-)
-from equity_os.verification.comparison.run_store import RunReadError, RunStore
 
-# The pins a pilot run's comparison run must name, by content (PILOT-GAP admission Decision 8).
-PILOT_VERSIONS = ConfigVersions(dictionary="v2", mapping_set="v9", alignment_rules="v2")
-_CONFIG_DIR = "config"  # as ``compare run``'s default config root
 TEMPORAL_SOURCES_KEY = "temporal_sources"
 _ADMITTED_IN: LiteralString = (
     "SELECT 1 FROM eqos.fact_admissions WHERE store_id = %s AND fact_origin = %s"
@@ -376,13 +361,19 @@ def run_command(
             check_pins(targets, prior.same_period_record.pins)
             memory = recall(pool, prior.entity_id)
             repository = EvidenceRepository(pool)
-            versions, members = _comparison(
-                pool, repository, args.compare_run, prior.entity_id, config, xbrl, pdfs
-            )
+            run_id, entity_id = args.compare_run, prior.entity_id
+            manifest, versions = run_versions(pool, run_id, entity_id, config)
+            carried = prior.rework.carried if prior.rework is not None else frozenset()
+            with pool.connection() as conn, conn.cursor() as cursor:
+                check_head(cursor, prior, period)  # before the run's first write
+                if prior.rework is not None:
+                    _check_carried(cursor, prior.rework, store_id)
+            chosen = admit_roles(pool, store_id, run_id, config, entity_id, carried)
+            check_sources(pool, manifest, chosen, config, xbrl, pdfs, versions)
+            admitted = select_roles(pool, store_id, run_id, chosen)
             bound: list[tuple[Line, ...]] = []
             probes: list[Probe] = []
             credibility: list[Built] = []
-            facts: dict[str, FactRef] = {}
 
             def admit(update: EarningsUpdate, blobs: frozenset[str]) -> None:
                 assert update.source_cutoff is not None
@@ -400,7 +391,6 @@ def run_command(
                 gate = None
                 month = _fiscal_month(repository, prior.entity_id, update)
                 with pool.connection() as conn, conn.cursor() as cursor:
-                    check_head(cursor, prior, period)  # before the run's first write
                     ready = prepare(
                         stated_claims(cursor, guidance, update, prior, catalog),
                         prior.record,
@@ -415,7 +405,6 @@ def run_command(
                     if prior.rework is not None:
                         gate = prior.rework.gate(section_body, partial(admit, update))
                         gate_lines(cursor, gate, update, guidance, prior, catalog)
-                        _check_carried(cursor, prior.rework, store_id)
                 admit(update, ready.blobs)
                 lines = bind_computed(
                     repository,
@@ -424,6 +413,7 @@ def run_command(
                     versions=versions,
                     carry=gate,
                     check=partial(predecessor, prior),  # before any trace persists
+                    carried=carried_labels(prior.rework),
                 )
                 bound.append(lines)
                 probes.append(
@@ -446,23 +436,12 @@ def run_command(
                         declared=xbrl[1:],
                     )
                 )
-                facts.update(
-                    _admit(
-                        pool,
-                        store_id,
-                        args.compare_run,
-                        update,
-                        prior.entity_id,
-                        members,
-                        carried,
-                    )
-                )
 
-            carried = prior.rework.carried if prior.rework is not None else frozenset()
             result = run(
                 comparators_acquired_at=prior.first_seen,
                 before_commit=before_commit,
                 skip_roles=frozenset(FactRole),  # facts come only from admission
+                admitted=admitted,
             )
             # The store stamps the run's writes, so its derivation cutoff is the store's clock.
             update = result.update.model_copy(
@@ -475,82 +454,19 @@ def run_command(
                 period=period,
                 update=result.update,
                 guidance=result.guidance_claims,
-                facts=facts,
+                facts={role.value: fact.ref for role, fact in admitted.items()},
                 lines=bound[0],
                 probe=probes[0],
                 credibility=credibility[0],
                 xbrl=xbrl,
                 pdfs=pdfs,
                 memory=memory,
-                run_id=args.compare_run,
+                run_id=run_id,
                 retrospective=retrospective,
             )
             version_id = write_run_draft(pool, prior, draft, catalog=catalog, snapshots=snapshots)
             structlog.get_logger("fundamentals.cli").info("run_draft_written", version=version_id)
             return result.model_copy(update={"draft_version_id": version_id})
-
-
-def _comparison(
-    pool: ConnectionPool,
-    repository: EvidenceRepository,
-    run_id: int,
-    entity_id: int,
-    config: FundamentalsConfig,
-    xbrl: tuple[str, ...],
-    pdfs: tuple[str, ...],
-) -> tuple[ConfigVersions, frozenset[tuple[str, str]]]:
-    """Comparison run ``run_id``'s pins and its quarter package's member captures, once the run
-    is a complete ``AS_KNOWN`` run of this entity and quarter under ``PILOT_VERSIONS`` whose one
-    selected package holds the run's own XBRL and results PDF, published by the cutoff."""
-    try:
-        manifest = RunStore(pool).read_manifest(run_id)
-    except (LookupError, RunReadError) as error:
-        raise RunDraftError(f"comparison run {run_id}: {error}") from error
-    period_end, cutoff = config.quarter.period_end, config.quarter.knowledge_cutoff
-    if (
-        manifest.status is not RunStatus.COMPLETE
-        or manifest.mode is not RunMode.AS_KNOWN
-        or manifest.scope.entity_ids != (entity_id,)
-        or period_end not in manifest.scope.period_ends
-    ):
-        raise RunDraftError(
-            f"comparison run {run_id} is not a complete AS_KNOWN run of {period_end}"
-        )
-    try:
-        current = load_run_config(Path(_CONFIG_DIR), PILOT_VERSIONS, vendors=manifest.scope.vendors)
-        require_pins(current, manifest.pinned)
-    except (VersionContentDriftError, ComparisonSemanticsError) as error:
-        raise RunDraftError(f"comparison run {run_id}: {error}") from error
-    selected = [
-        item.ref_id
-        for item in manifest.inputs
-        if item.kind is RunInputKind.PACKAGE and item.disposition is RunInputDisposition.SELECTED
-    ]
-    packages = [
-        package
-        for package in repository.get_packages(selected)
-        if (package.entity_id, package.reporting_period_end, package.basis)
-        == (entity_id, period_end, Basis.CONSOLIDATED)
-    ]
-    if len(packages) != 1 or packages[0].knowledge_time > cutoff:
-        raise RunDraftError(f"comparison run {run_id} has no single package published by {cutoff}")
-    expected = {
-        Representation.XBRL: (config.xbrl.source_id, xbrl[0]),
-        Representation.PDF: (config.results_pdf.source_id, pdfs[0]),
-    }
-    for representation, capture in expected.items():
-        member = packages[0].members.get(representation)
-        if (
-            member is None
-            or (member.capture.source_id, member.capture.blob_sha256) != capture
-            or member.knowledge_time_status is not KnowledgeTimeStatus.KNOWN
-            or member.knowledge_time > cutoff
-        ):
-            raise RunDraftError(
-                f"comparison run {run_id}'s {representation.value} member is not the run's own "
-                f"{capture[1]} published by {cutoff}"
-            )
-    return ConfigVersions.of(manifest.pinned), frozenset(expected.values())
 
 
 def _check_carried(cursor: Cursor[Any], rework: Rework, store_id: str) -> None:
@@ -567,62 +483,6 @@ def _check_carried(cursor: Cursor[Any], rework: Rework, store_id: str) -> None:
             raise RunDraftError(
                 f"version {rework.head} predates fact admission; rerun with --full-successor"
             )
-
-
-def _admit(
-    pool: ConnectionPool,
-    store_id: str,
-    run_id: int,
-    update: EarningsUpdate,
-    entity_id: int,
-    members: frozenset[tuple[str, str]],
-    carried: frozenset[str],
-) -> dict[str, FactRef]:
-    """Admit comparison run ``run_id``, then select each non-carried required role's admitted
-    fact; a refused role or an admission outside the package refuses before any selection."""
-    outcome = admit_run(run_id, pool=pool, store_id=store_id)
-    others = Counter(refusal.value for _, refusal in outcome.refusals)
-    structlog.get_logger("fundamentals.cli").info("admission_refusals", run_id=run_id, **others)
-    refusals = dict(outcome.refusals)
-    start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
-    by_role = {fact.role: fact for fact in update.facts}
-    chosen = {}
-    for role in REQUIRED_ROLES:
-        if f"fact.{role.value}" in carried:
-            continue
-        fact = by_role[role]
-        key = measurement_key(LEGACY_CONCEPTS[fact.concept_qname], fact.unit, entity_id, start, end)
-        found = [record for record in outcome.records if record.key_digest == key.digest()]
-        if len(found) != 1:
-            refusal = refusals.get(row_id(key, ValueIdentity.REPORTED), "not in run")
-            raise RunDraftError(
-                f"{role.value} not admitted from comparison run {run_id}: {refusal}"
-            )
-        chosen[role.value] = (key, found[0])
-    occurrences = {
-        item.occurrence_id: item
-        for item in EvidenceRepository(pool).get_occurrences(
-            [record.occurrence_id for _, record in chosen.values()]
-        )
-    }
-    for name, (_, record) in chosen.items():
-        capture = occurrences[record.occurrence_id].capture
-        if (capture.source_id, capture.blob_sha256) not in members:
-            raise RunDraftError(f"{name} was admitted from {capture.blob_sha256}, not the package")
-    store = PgFactStore(pool, store_id)
-    reason = f"admitted from comparison run {run_id}"
-    for key, record in chosen.values():
-        history = store.get_selection_history(key_identity(key))
-        if not history or history[-1].row_id != record.handle:
-            head = history[-1].selection_id if history else 0
-            select_admitted(
-                pool,
-                store_id=store_id,
-                admission_id=record.admission_id,
-                reason=reason,
-                expected_selection_id=head,
-            )
-    return {name: record.ref for name, (_, record) in chosen.items()}
 
 
 def _retrospective(

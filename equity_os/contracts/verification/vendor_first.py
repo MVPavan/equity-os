@@ -3,7 +3,7 @@ outcomes (VENDOR-1 spec §6.5, §6.8)."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from enum import StrEnum
 from types import MappingProxyType
 
@@ -21,6 +21,12 @@ LABEL_TEXT: Mapping[AdmissionLabel, str] = MappingProxyType(
         AdmissionLabel.VENDORS_AGREE_NOT_CHECKED: "vendors agree, not checked against filing",
     }
 )
+
+
+def weakest(labels: Iterable[str]) -> AdmissionLabel:
+    """The weakest of the labels: not checked against a filing is weaker than checked."""
+    checked = AdmissionLabel.CHECKED_AGAINST_FILING
+    return min(map(AdmissionLabel, labels), key=lambda label: label is checked)
 
 
 class VendorOutcome(StrEnum):

@@ -32,6 +32,7 @@ from test_risk_probe_binding import trace_closure
 
 import equity_os.interface.commands.publication.ledger_cli as ledger_cli
 import equity_os.interface.entry.cli as cli
+import equity_os.interface.entry.draft_admission as draft_admission
 from equity_os.analysis.calculations.run_traces import RunDraftError
 from equity_os.contracts.measurement.canonical import Representation
 from equity_os.contracts.publication.ledger import (
@@ -303,13 +304,14 @@ def run_resumes(
     baseline: tuple[dict[str, int], list[tuple[Any, ...]]],
     boundary: tuple[object, str, bool, int],
 ) -> None:
-    """The FY26_Q2 run interrupted at ``boundary``, then retried: persistence runs traces →
-    admission → selections → draft, so the interruption leaves no version; an interruption
-    inside ``admit_run``'s transaction commits no fact, admission or selection, one after it
-    only admitted candidates; the retry's draft cites every committed trace and its comparison
-    run admits every committed fact row; the attempt plus retry add exactly the baseline's rows
-    (the retry only the remainder), the same claims, all MATCH, six admitted and selected
-    facts, and one DRAFT head, which makes a further run refuse."""
+    """The FY26_Q2 run interrupted at ``boundary``, then retried: persistence runs admission →
+    selections → traces → draft (VENDOR-1 Task 9), so the interruption leaves no version; an
+    interruption inside ``admit_run``'s transaction commits nothing, one after it only admitted
+    candidates, and no trace is written before every selection; the retry's draft cites every
+    committed trace and its comparison run admits every committed fact row; the attempt plus
+    retry add exactly the baseline's rows (the retry only the remainder), the same claims, all
+    MATCH, six admitted and selected facts, and one DRAFT head, which makes a further run
+    refuse."""
     owner, name, after, nth = boundary
     argv = pilot.registered(Q2)[1]
     run_id = int(argv[argv.index("--compare-run") + 1])
@@ -317,15 +319,13 @@ def run_resumes(
     interrupted(lambda: pilot.run(Q2), owner, name, after=after, nth=nth)
     committed = added(ingest, RUN_TABLES, initial)
     assert not committed["report_versions"]
-    traces = len(committed["calculation_traces"])
-    if name == "put_calculation_trace":
-        assert traces == 1
-    else:
-        assert traces == baseline[0]["calculation_traces"]
-    if name in ("put_calculation_trace", "insert_revision"):
+    traces = {"put_calculation_trace": 1, "check_version": baseline[0]["calculation_traces"]}
+    assert len(committed["calculation_traces"]) == traces.get(name, 0)
+    if name == "insert_revision":
         assert not any(committed[table] for table in FACT_TABLES)
-    if name == "admit_run":
-        assert committed["fact_admissions"] and not committed["fact_selections"]
+    if name in ("admit_run", "select_admitted"):
+        assert committed["fact_admissions"]
+        assert len(committed["fact_selections"]) == (name == "select_admitted")
     result = pilot.run(Q2)
     assert result.draft_version_id is not None
     version = pilot.version(result.draft_version_id)
@@ -358,8 +358,8 @@ def head(pilot: Pilot) -> int:
     "boundary",
     [
         pytest.param((admission, "insert_revision", True, 1), id="inner-rollback"),
-        pytest.param((cli, "admit_run", True, 1), id="admission"),
-        pytest.param((cli, "select_admitted", True, 1), id="selection"),
+        pytest.param((draft_admission, "admit_run", True, 1), id="admission"),
+        pytest.param((draft_admission, "select_admitted", True, 1), id="selection"),
     ],
 )
 def test_run_resumes_after_interrupted_fact_writes(

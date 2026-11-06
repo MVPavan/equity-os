@@ -1,11 +1,12 @@
 """A run's retained computed values as stored, interpretation-backed traces (PREP-2b Task 4).
 
 Every operand is the one ``MAPPED`` interpretation of its key on the run's own (or the
-comparator's) XBRL capture under the run's pins (its comparison run's dictionary, mapping set
-and normalisation policy, and the XBRL extractor; other versions' interpretations may sit beside
-it), and must equal the run's value. Each result is computed exactly from those operands and
-packaged by ``conclude``; it must equal the run's value at the trace's stored scale. Nothing is
-stored unless every value holds. Formulas
+comparator's) XBRL capture under the run's pins (its comparison run's dictionary, mapping set and
+normalisation policy, and the XBRL extractor; other versions' interpretations may sit beside
+it), or a required role's admitted interpretation (VENDOR-1 Task 9: a trace over one carries
+the weakest admission label), and must equal the run's value. Each result is computed exactly
+from those operands and packaged by ``conclude``; it must equal the run's value at the trace's
+stored scale. Nothing is stored unless every value holds. Formulas
 (version ``1``, operands ``DURATION`` under their own keys): ``run.difference`` a − b,
 ``run.sum`` a + b, ``run.change_pct`` (a − b) / b × 100, ``run.ratio_pct`` a / b × 100 (the PBT
 margin, PBT before associates over revenue) and the registered ``effective_tax_rate_pct``
@@ -19,7 +20,7 @@ before any is bound.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import date
 from decimal import ROUND_HALF_EVEN, Decimal
 from fractions import Fraction
@@ -53,6 +54,7 @@ from equity_os.contracts.verification.comparison import (
     SourceState,
 )
 from equity_os.contracts.verification.config_versions import ConfigVersions
+from equity_os.contracts.verification.vendor_first import AdmissionLabel, weakest
 from equity_os.extraction.packages.capture_intake import SURFACE_OF
 from equity_os.extraction.xbrl.xbrl_adapter import XBRL_EXTRACTOR_VERSION
 from equity_os.normalisation.derivation.formula import (
@@ -73,7 +75,12 @@ from equity_os.normalisation.derivation.interval import (
 from equity_os.normalisation.dictionary.role_translation import LEGACY_CONCEPTS
 from equity_os.publication.checking.claim_check import CRORE, PERCENT, UNITS
 from equity_os.publication.drafting.display import FILED
-from equity_os.publication.drafting.earnings_update import _ROLE_LABELS, EarningsUpdate
+from equity_os.publication.drafting.earnings_update import (
+    _ROLE_LABELS,
+    AdmittedFact,
+    EarningsUpdate,
+    RenderedFact,
+)
 from equity_os.publication.drafting.pnl_lines import (
     ETR_LABEL,
     GAP_LABEL,
@@ -174,6 +181,7 @@ class _Binder:
         self.pending: dict[str, CalculationTrace] = {}
         self.binds: dict[str, Callable[[], NumericClaim]] = {}
         self.blobs: set[str] = set()
+        self.labels: dict[_Lookup, AdmissionLabel] = {}
 
     def key(self, canonical_id: str, unit: str | ValueKind) -> MeasurementKey:
         """A key of this run's quarter."""
@@ -193,11 +201,46 @@ class _Binder:
         where = f"{key.canonical_id} in {source.file_sha256[:12]}"
         if found is None:
             raise RunDraftError(f"no single mapped interpretation of {where}")
-        if found[1].value != run_value * _scale(key):
-            raise RunDraftError(
-                f"interpretation of {where} is {found[1].value}, the run's {run_value}"
-            )
-        return name, found[1]
+        return name, self.checked(found[1], where, run_value)
+
+    def checked(self, held: OperandValue, where: str, run_value: Decimal) -> OperandValue:
+        """``held``, which must equal the run's value."""
+        if held.value != run_value * _scale(held.key):
+            raise RunDraftError(f"interpretation of {where} is {held.value}, the run's {run_value}")
+        return held
+
+    def admitted(
+        self, name: str, fact: AdmittedFact, key: MeasurementKey, run_value: Decimal
+    ) -> _Lookup:
+        """An admitted role's operand from its own interpretation, looked up once when needed;
+        no capture is read and no blob added."""
+
+        def lookup() -> _Operand:
+            (item,) = self.repo.get_interpretations([fact.interpretation_id])
+            where = f"{key.canonical_id} admitted from interpretation {fact.interpretation_id}"
+            if item.key is None or item.key.digest() != key.digest():
+                raise RunDraftError(f"{where} is not of the key")
+            held = _operand_value(key, item, SelectionSource.PACKAGE_AS_REPORTED, where)
+            return name, self.checked(held, where, run_value)
+
+        cached = cache(lookup)
+        self.labels[cached] = fact.label
+        return cached
+
+    def role(
+        self,
+        name: str,
+        fact: RenderedFact,
+        key: MeasurementKey,
+        carried: Mapping[FactRole, AdmissionLabel],
+    ) -> _Lookup:
+        """A required role's operand: admitted, or filed (under its carried label, if any)."""
+        if fact.admitted is not None:
+            return self.admitted(name, fact.admitted, key, fact.value)
+        found = self.lazy(name, fact.sources[0], key, fact.value)
+        if fact.role in carried:
+            self.labels[found] = carried[fact.role]
+        return found
 
     def filed(
         self, source: Provenance, key: MeasurementKey, selection: SelectionSource
@@ -214,27 +257,7 @@ class _Binder:
             return None
         if len(found) > 1:
             raise RunDraftError(f"no single mapped interpretation of {where}")
-        (item,) = found
-        if item.value is None or item.interval is None:
-            raise RunDraftError(f"interpretation of {where} has no value with precision")
-        return key.canonical_id, OperandValue(
-            key=key,
-            state=SourceState.VALUE,
-            exact=Fraction(item.value),
-            value=item.value,
-            interval=item.interval,
-            interpretation_id=item.interpretation_id,
-            package_id=None,
-            calculation_trace_id=None,
-            child_trace=None,
-            alignment_proof_id=None,
-            mapping_entry_id=item.mapping_entry_id,
-            qualification_ref=item.qualification_ref,
-            scoped_tier=EvidenceTier.EQUIVALENCE_UNPROVEN,
-            selection_source=selection,
-            precision_supported=True,
-            reasons=(),
-        )
+        return key.canonical_id, _operand_value(key, found[0], selection, where)
 
     def mapped(self, source: Provenance) -> list[Interpretation]:
         """Every keyed ``MAPPED`` interpretation of ``source``'s capture under the run's pins."""
@@ -301,9 +324,12 @@ class _Binder:
         unit: str,
         **options: Any,
     ) -> NumericClaim:
-        """A computed value's claim; bound, its trace is computed and checked against the run's
-        value, and the claim is cited once every trace holds and is stored."""
+        """A computed value's claim, labelled with its admitted operands' weakest label; bound,
+        its trace is computed and checked against the run's value, and the claim is cited once
+        every trace holds and is stored."""
         claim = _valued(name, section, run_value, unit, output, **options)
+        if labels := [self.labels[item] for item in operands if item in self.labels]:
+            claim = claim.model_copy(update={"qualifiers": (weakest(labels).value,)})
 
         def bind() -> NumericClaim:
             self._compute(name, formula, output, (operands[0](), operands[1]()), run_value)
@@ -402,13 +428,15 @@ def bind_computed(
     versions: ConfigVersions,
     carry: Carry | None = None,
     check: Callable[[tuple[NumericClaim, ...]], object] | None = None,
+    carried: Mapping[FactRole, AdmissionLabel] | None = None,
 ) -> tuple[Line, ...]:
     """The run's changes and calculations lines: a stored trace per retained computed value and
     the interpretation of each comparator figure and the filed tax expense, all bound before
     any trace is stored; any missing interpretation or mismatch raises. Operands are read under
     ``versions`` (the comparison run's pins). ``carry`` keeps the
     lines it carries unbound and is closed before any trace is stored; ``check`` refuses the
-    unbound claims before any lookup."""
+    unbound claims before any lookup. A ``carried`` role (a rework's, not admitted again) is
+    looked up filed under its predecessor fact's label."""
     start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
     binder = _Binder(repo, entity_id, start, end, versions)
     facts = {fact.role: fact for fact in update.facts}
@@ -417,7 +445,7 @@ def bind_computed(
     for comparative in update.comparatives:
         fact = by_concept[comparative.concept_qname]
         key, unit = binder.key(LEGACY_CONCEPTS[fact.concept_qname], fact.unit), fact.unit
-        current = binder.lazy("current", fact.sources[0], key, fact.value)
+        current = binder.role("current", fact, key, carried or {})
         for change in (comparative.qoq, comparative.yoy):
             label = f"{_ROLE_LABELS[fact.role]} {change.kind.value} vs "
             label += f"{change.period_start}..{change.period_end}"
@@ -471,8 +499,8 @@ def bind_computed(
 
     def reported(name: str, role: FactRole) -> _Lookup:
         fact = facts[role]
-        canonical_id = LEGACY_CONCEPTS[fact.concept_qname]
-        return binder.lazy(name, fact.sources[0], binder.key(canonical_id, CRORE), fact.value)
+        key = binder.key(LEGACY_CONCEPTS[fact.concept_qname], CRORE)
+        return binder.role(name, fact, key, carried or {})
 
     pbt = facts[FactRole.PROFIT_BEFORE_TAX].value
     tax: _Lookup | None = None
@@ -544,6 +572,32 @@ def bind_computed(
 
     return tuple(
         line.model_copy(update={"claims": tuple(map(stored, line.claims))}) for line in bound
+    )
+
+
+def _operand_value(
+    key: MeasurementKey, item: Interpretation, selection: SelectionSource, where: str
+) -> OperandValue:
+    """An interpretation as a ``key`` operand with its value and precision."""
+    if item.value is None or item.interval is None:
+        raise RunDraftError(f"interpretation of {where} has no value with precision")
+    return OperandValue(
+        key=key,
+        state=SourceState.VALUE,
+        exact=Fraction(item.value),
+        value=item.value,
+        interval=item.interval,
+        interpretation_id=item.interpretation_id,
+        package_id=None,
+        calculation_trace_id=None,
+        child_trace=None,
+        alignment_proof_id=None,
+        mapping_entry_id=item.mapping_entry_id,
+        qualification_ref=item.qualification_ref,
+        scoped_tier=EvidenceTier.EQUIVALENCE_UNPROVEN,
+        selection_source=selection,
+        precision_supported=True,
+        reasons=(),
     )
 
 

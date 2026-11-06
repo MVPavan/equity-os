@@ -46,6 +46,7 @@ from equity_os.contracts.publication.ledger import (
     NumericClaim,
     SubjectKind,
 )
+from equity_os.contracts.verification.vendor_first import AdmissionLabel
 from equity_os.publication.drafting.display import FILED, PLACEHOLDER, DisplayError, render_section
 from equity_os.storage.records import store
 from equity_os.storage.records.repository import EvidenceRepository
@@ -55,6 +56,7 @@ Atom = tuple[str, str]
 FactOrigin = tuple[str, int]
 # A run binds these, so a carried claim takes the version's (a quote's text and anchor included).
 _BINDING = {"citation", "unresolved"}
+_BOUND = {FILED, *AdmissionLabel}  # qualifiers binding gives a claim, not the run
 _FACT_FILES: LiteralString = """SELECT origin, origin_id, file_sha256 FROM eqos.fact_rows
 WHERE (origin, origin_id) IN (SELECT * FROM unnest(%s::text[], %s::bigint[]))"""
 
@@ -141,11 +143,12 @@ class Gate:
 
 def _same(claim: NumericClaim, own: NumericClaim) -> bool:
     """Whether a run's unbound claim states what the version's resolved claim does; outside
-    guidance the ``FILED`` label is binding (a QoQ prior loses it to its predecessor fact)."""
+    guidance the ``FILED`` label is binding (a QoQ prior loses it to its predecessor fact), as
+    is an admission label (a carried fact is not admitted again)."""
     stated, held = claim.model_dump(exclude=_BINDING), own.model_dump(exclude=_BINDING)
     if own.citation.kind is not CitationKind.SOURCE_QUOTE:
         for dumped in (stated, held):
-            dumped["qualifiers"] = tuple(q for q in dumped["qualifiers"] if q != FILED)
+            dumped["qualifiers"] = tuple(q for q in dumped["qualifiers"] if q not in _BOUND)
     return not own.unresolved and stated == held
 
 

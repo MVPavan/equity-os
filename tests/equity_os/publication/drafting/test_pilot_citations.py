@@ -205,8 +205,8 @@ def test_a_predecessor_fact_that_is_not_the_prior_refuses_before_any_write(
     approved_q2: Pilot, monkeypatch: pytest.MonkeyPatch, field: str
 ) -> None:
     """The prior head's revenue fact under another fact's key or value refuses the public run
-    before any trace, operand, fact row, admission, selection, report, version or claim is
-    written (baseline after source registration and the comparison run)."""
+    before any trace, operand, report, version or claim is written (baseline after source
+    registration and the comparison run; its facts persist once admitted, VENDOR-1 Task 9)."""
     edit = _other_fact(field)
 
     def mismatched(*args: Any, **kwargs: Any) -> Prior:
@@ -218,10 +218,10 @@ def test_a_predecessor_fact_that_is_not_the_prior_refuses_before_any_write(
     monkeypatch.setattr(cli, "preflight", mismatched)
     pilot = approved_q2
     pilot.registered(Q3)
-    before = _rows(pilot)
+    before = _rows(pilot)[3:]  # past fact rows, admissions and selections
     with pytest.raises(RunDraftError, match=f"{REVENUE_QOQ} is not version"):
         pilot.run(Q3)
-    assert _rows(pilot) == before
+    assert _rows(pilot)[3:] == before
 
 
 def test_a_missing_or_false_filed_label_is_unresolved(approved_q2: Pilot) -> None:

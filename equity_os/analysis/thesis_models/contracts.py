@@ -19,6 +19,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict
 
+from equity_os.contracts.verification.vendor_first import AdmissionLabel
+
 
 class EpistemicClass(StrEnum):
     """Epistemic class of a claim (roadmap invariant 8: output labelled by class)."""
@@ -95,7 +97,8 @@ class ValidatedFact(BaseModel):
 
     The value is ground truth; a model supplies judgment about it, never a new
     number. ``single_sourced`` marks a fact confirmed by only one first-party
-    source (still admissible, but weaker — surfaced for the human's attention).
+    source (still admissible, but weaker — surfaced for the human's attention);
+    ``admission_label`` is an admitted fact's label, when its evidence carries one.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -109,6 +112,7 @@ class ValidatedFact(BaseModel):
     corroborating_sources: tuple[str, ...]
     first_party_source_count: int
     single_sourced: bool
+    admission_label: AdmissionLabel | None = None
     period_start: str | None
     period_end: str | None
     scope: str

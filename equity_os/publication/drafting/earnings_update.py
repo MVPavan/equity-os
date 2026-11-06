@@ -32,7 +32,9 @@ from equity_os.contracts.verification.comparative import (
     ComparativeChange,
     ConceptComparative,
 )
+from equity_os.contracts.verification.vendor_first import LABEL_TEXT, AdmissionLabel
 from equity_os.publication.drafting.management_ledger import LedgerStatus, ManagementLedger
+from equity_os.storage.facts.fact_store import FactRef
 
 _CRORE_UNIT = "INR crore"
 _PER_SHARE_UNIT = "INR per share"
@@ -130,8 +132,24 @@ class VerificationOutcome(BaseModel):
         return VerificationState.FAIL
 
 
+class AdmittedFact(BaseModel):
+    """A role's admitted and selected fact: its ref, base-unit value and precision, provenance,
+    label, chosen interpretation and, for a vendor value, the other witness's."""
+
+    model_config = ConfigDict(frozen=True)
+
+    ref: FactRef
+    value: Decimal
+    decimals: int
+    provenance: Provenance
+    label: AdmissionLabel
+    interpretation_id: int
+    witness_interpretation_id: int | None
+
+
 class RenderedFact(BaseModel):
-    """One P&L fact ready to render, with every backing source anchor."""
+    """One P&L fact ready to render, with every filed source anchor and, when admitted, the
+    admitted fact its value is."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -141,6 +159,7 @@ class RenderedFact(BaseModel):
     unit: str
     reconciliation_status: ReconciliationStatus
     sources: tuple[Provenance, ...]
+    admitted: AdmittedFact | None = None
 
 
 class RenderedGuidance(BaseModel):
@@ -439,6 +458,8 @@ def render_earnings_update(update: EarningsUpdate) -> str:
         fact = by_role[role]
         value = _format_value(fact.value, fact.unit)
         markers = notes.markers(fact.sources)
+        if (admitted := fact.admitted) is not None:
+            markers = f"{notes.marker(admitted.provenance)} ({LABEL_TEXT[admitted.label]})"
         lines.append(
             f"| {_ROLE_LABELS[role]} | {value} | `{fact.concept_qname}` | "
             f"{fact.reconciliation_status} | {markers} |"

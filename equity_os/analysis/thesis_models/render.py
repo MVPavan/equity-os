@@ -27,6 +27,7 @@ from equity_os.analysis.thesis_models.contracts import (
     ThesisDraft,
     ValidatedFactSet,
 )
+from equity_os.contracts.verification.vendor_first import LABEL_TEXT
 
 _SECTION_TITLES: dict[JudgmentSection, str] = {
     JudgmentSection.DRIVERS: "Drivers",
@@ -115,6 +116,8 @@ def _facts_table(fact_set: ValidatedFactSet) -> list[str]:
     ]
     for fact in fact_set.facts:
         flag = " ⚠ single-source" if fact.single_sourced else ""
+        if fact.admission_label is not None:
+            flag += f" ({LABEL_TEXT[fact.admission_label]})"
         corroborated = ", ".join(fact.corroborating_sources) or "—"
         lines.append(
             f"| {markdown_table_cell(fact.label)} | {markdown_table_cell(fact.value)} | "

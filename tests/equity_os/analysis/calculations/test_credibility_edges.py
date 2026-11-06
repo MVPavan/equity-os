@@ -40,7 +40,7 @@ from test_credibility_binding import (
     _edited,
     _score,
     _use,
-    all_counts,
+    beyond_facts,
     seed,
 )
 from test_prep2b_run_draft import dictionary, mapping_set, pilot
@@ -158,14 +158,14 @@ def test_a_correction_the_scanner_would_refuse_is_refused_in_prepare(tmp_path: P
 def test_a_scanner_invalid_mapping_refuses_with_every_table_unchanged(
     pilot: Pilot, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """P12: an id the section scanner refuses is found before traces, probes or facts persist; only
+    """P12: an id the section scanner refuses is found before traces or probes persist; only
     the version would have rolled back at ``AS_KNOWN``."""
     pilot.registered("FY26_Q2")
-    before = all_counts(pilot)
+    before = beyond_facts(pilot)
     _use(monkeypatch, pilot, _edited("cables-growth-FY26_Q2", id="growth-v2"))
     with pytest.raises(RunDraftError, match="UNREGISTERED_NUMBER"):
         pilot.run("FY26_Q2")
-    assert all_counts(pilot) == before
+    assert beyond_facts(pilot) == before
 
 
 @pytest.mark.pg
@@ -312,7 +312,8 @@ def test_an_effective_fiscal_setting_change_refuses_the_next_run_with_every_tabl
     pilot: Pilot,
 ) -> None:
     """P7, P12, r5 (C3): a setting valid from the next quarter must not reread what the sealed head
-    promised. It refuses before the first write, under the month the real resolver supplies."""
+    promised. It refuses before any write past its admitted facts, under the month the real resolver
+    supplies."""
     result = pilot.run("FY26_Q2")
     pilot.approve(result.draft_version_id)
     pilot.registered("FY26_Q3")
@@ -325,10 +326,10 @@ def test_an_effective_fiscal_setting_change_refuses_the_next_run_with_every_tabl
             (date(2025, 10, 1), pilot.entity_id),
         )
         assert inserted.rowcount == 1
-    before = all_counts(pilot)
+    before = beyond_facts(pilot)
     with pytest.raises(RunDraftError, match="stated FY26_Q2: .*month 3, this run's 12"):
         pilot.run("FY26_Q3")
-    assert all_counts(pilot) == before
+    assert beyond_facts(pilot) == before
 
 
 def test_a_label_its_calendar_cannot_give_is_refused_before_it_can_be_sealed(

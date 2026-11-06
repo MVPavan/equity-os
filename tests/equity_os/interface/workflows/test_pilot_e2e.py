@@ -71,6 +71,7 @@ from test_prep6_review_flow import ANSWER, R1, _review_set, _seeds, _shadow, _so
 from test_risk_probe_binding import check_probe, probe_keys, trace_closure
 
 import equity_os.interface.entry.cli as fundamentals_cli
+import equity_os.interface.entry.draft_admission as draft_admission
 import equity_os.storage.facts.cutover as cutover
 from equity_os.analysis.calculations.run_traces import MARGIN_KEY
 from equity_os.analysis.lenses.thesis_tests.falsifier_status import FALSIFIER_STATUS, THESIS_IMPACT
@@ -506,7 +507,7 @@ def _pilot11_resume(pilot: Pilot, ingest: Ingest) -> PipelineResult:
     keeps what committed, cites every trace and leaves one PQ1 draft."""
     run_id, tables = compare_run(Q1, pilot), (*RUN_TABLES, "runs")
     initial = ids(ingest, tables)
-    interrupted(lambda: pilot.run(Q1), fundamentals_cli, "admit_run", after=True)
+    interrupted(lambda: pilot.run(Q1), draft_admission, "admit_run", after=True)
     committed = added(ingest, tables, initial)
     assert committed["fact_admissions"] and not committed["fact_selections"], "PILOT-11: (i)"
     assert not committed["report_versions"], "PILOT-11: the interrupted attempt left a version"

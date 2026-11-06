@@ -592,15 +592,20 @@ class _Body:
 def _results(
     update: EarningsUpdate, facts: Mapping[str, FactRef], entity_id: int
 ) -> Iterator[tuple[str, NumericClaim]]:
-    """Each required role's line and reported value, cited to the run's selected fact (uncited
-    for a role with none)."""
+    """Each required role's line and reported value (an admitted one on its fact's file, with its
+    label), cited to the run's selected fact (uncited for a role with none)."""
     start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
     by_role = {fact.role: fact for fact in update.facts}
     for role in REQUIRED_ROLES:
         fact, ref = by_role[role], facts.get(role.value)
         key = measurement_key(LEGACY_CONCEPTS[fact.concept_qname], fact.unit, entity_id, start, end)
         name = f"fact.{role.value}"
-        claim = _valued(name, RESULTS, fact.value, fact.unit, key, fact.sources[0])
+        admitted = fact.admitted
+        if admitted is None:
+            claim = _valued(name, RESULTS, fact.value, fact.unit, key, fact.sources[0])
+        else:
+            claim = _valued(name, RESULTS, fact.value, fact.unit, key, admitted.provenance)
+            claim = claim.model_copy(update={"qualifiers": (admitted.label.value,)})
         if ref is not None:
             claim = cite(claim, fact_origin=ref.origin, fact_origin_id=ref.origin_id)
         yield f"- {_ROLE_LABELS[role]}: {_slot(name, CRORE_UNIT)} {refs([name])}", claim
@@ -704,6 +709,8 @@ def _check_sources(
     assert cutoff is not None
     blobs = {c.citation.source_sha256 for c in claims if c.citation.source_sha256 is not None}
     blobs |= _operand_blobs(cursor, claims)
+    held = (f.admitted for f in run.update.facts)  # vendor witnesses: check_sources holds them
+    blobs -= {a.provenance.file_sha256 for a in held if a and a.witness_interpretation_id}
     check_blobs(
         cursor,
         blobs,

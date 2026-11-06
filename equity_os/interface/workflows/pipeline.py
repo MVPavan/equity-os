@@ -84,6 +84,7 @@ from equity_os.publication.checking.quote_anchor import (
     verify_quote_anchor,
 )
 from equity_os.publication.drafting.earnings_update import (
+    AdmittedFact,
     EarningsUpdate,
     FactRole,
     RenderedFact,
@@ -186,11 +187,13 @@ def run_pipeline(
     comparators_acquired_at: Mapping[str, datetime] | None = None,
     before_commit: BeforeCommit | None = None,
     skip_roles: frozenset[FactRole] = frozenset(),
+    admitted: Mapping[FactRole, AdmittedFact] | None = None,
 ) -> PipelineResult:
     """Run the full Q1 FY25 increment end to end, failing closed on any gap;
     ``comparators_acquired_at`` is each registered comparator XBRL's acquisition time;
     ``before_commit`` sees the rendered update and guidance claims before any fact is stored
-    and may refuse; ``skip_roles`` are rendered but not stored or selected."""
+    and may refuse; ``skip_roles`` are rendered but not stored or selected; an ``admitted``
+    role renders and computes from its admitted value once the filed values pass the gates."""
     if (
         xbrl_input.source_id != config.xbrl.source_id
         or results_pdf_sha256 != config.results_pdf.sha256
@@ -219,6 +222,7 @@ def run_pipeline(
             comparators_acquired_at=comparators_acquired_at,
             before_commit=before_commit,
             skip_roles=skip_roles,
+            admitted=admitted or {},
         )
     tick = clock or actual_clock
     with prepare_pipeline_sources(
@@ -245,6 +249,7 @@ def run_pipeline(
             comparators_acquired_at=comparators_acquired_at,
             before_commit=before_commit,
             skip_roles=skip_roles,
+            admitted=admitted or {},
         )
 
 
@@ -257,6 +262,7 @@ def _run_admitted(
     comparators_acquired_at: Mapping[str, datetime] | None,
     before_commit: BeforeCommit | None,
     skip_roles: frozenset[FactRole],
+    admitted: Mapping[FactRole, AdmittedFact],
 ) -> PipelineResult:
     completed = monotonic_clock(prepared)
 
@@ -433,6 +439,10 @@ def _run_admitted(
     #    the store yet: canonical promotion happens only after every gate AND the
     #    render succeed, so a later failure never leaves partial canonical facts.
     reconciled_at = completed()
+    for role, fact in admitted.items():  # base units to the observation's (per share: unchanged)
+        obs = role_obs[role]
+        admitted_value = {"normalized_value": fact.value / obs.scale, "decimals": fact.decimals}
+        role_obs[role] = obs.model_copy(update=admitted_value)
     planned_writes: list[_PlannedWrite] = []
     rendered_facts: list[RenderedFact] = []
     for role_concept in config.concepts.roles:
@@ -489,6 +499,7 @@ def _run_admitted(
                 unit=xbrl_fact_obs.normalized_unit,
                 reconciliation_status=status,
                 sources=tuple(sources),
+                admitted=admitted.get(role),
             )
         )
 

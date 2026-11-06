@@ -151,7 +151,7 @@ def test_a_corrected_filing_reaching_a_carried_claim_refuses_before_writing(
     with pytest.raises(RunDraftError, match=QOQ[0]):
         rerun()
     for name in WRITES:
-        assert calls[name] == [], name
+        assert not any(calls[name]), name  # an admission may run, creating nothing
     assert _counts(pilot) == before
 
 
@@ -189,7 +189,7 @@ def test_a_rework_source_outside_its_package_refuses_before_writing(
     with pytest.raises(RunDraftError, match=named):
         rerun()
     for name in WRITES:
-        assert calls[name] == [], name
+        assert not any(calls[name]), name  # an admission may run, creating nothing
     assert _counts(pilot) == before
 
 
@@ -222,7 +222,8 @@ def test_a_head_citing_run_written_facts_reworks_only_in_full(
             return real_write(pool, prior, run.model_copy(update={"facts": facts}), **kw)
 
         patch.setattr(cli, "run_pipeline", pipeline)
-        patch.setattr(cli, "_admit", lambda *_: {})
+        patch.setattr(cli, "admit_roles", lambda *_: {})
+        patch.setattr(cli, "select_roles", lambda *_: {})
         patch.setattr(cli, "write_run_draft", write)
         patch.setattr(
             store,

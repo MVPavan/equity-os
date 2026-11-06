@@ -299,6 +299,15 @@ def all_counts(pilot: Pilot) -> dict[str, int]:
     return {name: int(pilot.query(f"SELECT count(*) FROM eqos.{name}")[0][0]) for (name,) in tables}
 
 
+FACT_TABLES = ("fact_rows", "fact_admissions", "fact_selections")
+
+
+def beyond_facts(pilot: Pilot) -> dict[str, int]:
+    """``all_counts`` but the admitted facts, which persist once the report path admits and
+    selects them, before it drafts (VENDOR-1 Task 9)."""
+    return {name: n for name, n in all_counts(pilot).items() if name not in FACT_TABLES}
+
+
 def operand_ids(pilot: Pilot, held: NumericClaim) -> set[int]:
     rows = pilot.query(
         "SELECT interpretation_id FROM eqos.calculation_trace_operands "
@@ -472,13 +481,14 @@ def test_a_carried_actual_keeps_its_citation_and_captures(
 def test_a_mapping_fault_refuses_before_any_write(
     pilot: Pilot, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """F1, A10, on one chain. A run is refused before its first write: the same run on a valid file
-    then adds traces and facts, which proves the refused run had writes to make and made none. Next
+    """F1, A10, on one chain. A run is refused before any write past its admitted facts: the same
+    run on a valid file then adds traces and facts, which proves the refused run had writes to
+    make and made none. Next
     quarter, editing or deleting a used entry would rewrite sealed history, so it refuses naming the
     entry. A carried statement's transcript published after the cutoff fails ``check_blobs`` on the
     real manifest route; nothing here touches the call order."""
     pilot.registered("FY26_Q2")
-    before = all_counts(pilot)
+    before, facts = beyond_facts(pilot), all_counts(pilot)
     quote = next(e["quote"] for e in _apar() if e["id"] == SCORED)
     later = next(e for e in _apar() if e["id"] == "conductor-ebitda-FY26_Q4")
     absent = {k: v for k, v in later.items() if k != "same_as"} | {
@@ -493,20 +503,20 @@ def test_a_mapping_fault_refuses_before_any_write(
         _use(monkeypatch, pilot, entries)
         with pytest.raises(RunDraftError, match=named):
             pilot.run("FY26_Q2")
-        assert all_counts(pilot) == before
+        assert beyond_facts(pilot) == before
     _use(monkeypatch, pilot, _apar())
     _run_approved(pilot, "FY26_Q2")
     after = all_counts(pilot)
-    assert after["calculation_traces"] > before["calculation_traces"]
-    assert after["fact_admissions"] > before["fact_admissions"]
+    assert after["calculation_traces"] > facts["calculation_traces"]
+    assert after["fact_admissions"] > facts["fact_admissions"]
 
     context, argv = pilot.registered("FY26_Q3")
-    before = all_counts(pilot)
+    before = beyond_facts(pilot)
     for entries in (_edited(SCORED, definition="edited"), _deleted(SCORED)):
         _use(monkeypatch, pilot, entries)
         with pytest.raises(RunDraftError, match=SCORED):
             pilot.run("FY26_Q3")
-        assert all_counts(pilot) == before
+        assert beyond_facts(pilot) == before
 
     _use(monkeypatch, pilot, _apar())
     manifest = json.loads(APAR_MANIFEST.read_text("utf-8"))
@@ -526,7 +536,7 @@ def test_a_mapping_fault_refuses_before_any_write(
     args = _build_parser().parse_args([*argv, "--retrospective", str(copy)])
     with pytest.raises(RunDraftError, match="captures past the source cutoff"):
         run_command(args, intake_context=context)
-    assert all_counts(pilot) == before
+    assert beyond_facts(pilot) == before
     pin.write_text(original)
     pilot.run("FY26_Q3")
     assert all_counts(pilot)["calculation_traces"] > before["calculation_traces"]
