@@ -20,6 +20,7 @@ from run_support import Runner, row
 from equity_os.companies.identity import identity_layers
 from equity_os.companies.onboarding import discovery_gate
 from equity_os.contracts.measurement.evidence import PinnedVersions
+from equity_os.contracts.verification.config_versions import ConfigVersions
 from equity_os.normalisation.dictionary.dictionary import CanonicalDictionary
 from equity_os.normalisation.mapping.mapping import MappingSet, NormalisationPolicy
 from equity_os.storage.database.migrations import apply_migrations
@@ -172,7 +173,8 @@ def test_0005_retained_run_keeps_manifest_and_results_after_0006(
         runner = Runner(ingest, pool)
         with monkeypatch.context() as old_producer:
             legacy_publication(old_producer)
-            record = runner.run()
+            # A pre-0047 schema has no vendor-first policy pin.
+            record = runner.run(versions=ConfigVersions(vendor_first_policy=None))
             before = runner.results(record.run_id)
             manifest = run_store.RunStore(pool).read_manifest(record.run_id)
         assert {
