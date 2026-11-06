@@ -102,6 +102,13 @@ STORED = (
     "SELECT period_end, basis, outcome, cells FROM eqos.vendor_fallback_outcomes",
     "SELECT source_id, surface, request_key, blob_sha256 FROM eqos.capture_refs ORDER BY 1, 2, 3",
     PACKAGES,
+    # each package's binding, period, basis and evidence hash, with its members' captures
+    "SELECT p.entity_id, p.family, p.reporting_period_end, p.basis, p.framework, "
+    "p.reporting_kind, p.knowledge_time, p.evidence_sha256, m.representation, m.knowledge_time, "
+    "m.knowledge_time_raw, m.knowledge_time_status, c.source_id, c.surface, c.request_key, "
+    "c.capture_id, c.blob_sha256 FROM eqos.filing_packages p "
+    "JOIN eqos.package_members m ON m.package_id = p.id "
+    "JOIN eqos.capture_refs c ON c.id = m.capture_ref_id ORDER BY 3, 4, 9, 13, 14, 15, 16",
 )
 
 
@@ -305,7 +312,8 @@ def test_fallback_replays_its_generation_on_a_fresh_database(
 ) -> None:
     """FIVE-1 Task 2: the fallback's fetches are kept as an entity generation under
     ``--raw-root``; ``--generation`` replays it on a fresh database with no transport (one
-    serving nothing) and stores the same outcome, captures and packages, writing nothing new."""
+    serving nothing) and stores the same outcome, captures and packages (each package's binding,
+    period, basis, evidence hash and member captures), writing nothing new."""
     served = _served()
     issuer = _associates_omitted(served, tmp_path)
     stored = []
@@ -318,7 +326,7 @@ def test_fallback_replays_its_generation_on_a_fresh_database(
                 assert run.main(served if db is not None else {}, issuer, *raw, *extra) == 0
                 stored.append([run.read(query) for query in STORED])
         assert sorted(path.name for path in (tmp_path / "0" / "raw").iterdir()) == ["gen-1"]
-    assert stored[0] == stored[1]
+    assert stored[0][3] and stored[0] == stored[1]
 
 
 def test_fallback_refuses_a_run_triggering_two_groups(
@@ -368,8 +376,9 @@ def test_evidence_acquire_ingests_one_named_period(
     """FIVE-1 Task 3: ``evidence acquire`` fetches and ingests the named period's filing as the
     fallback does, writing no run, admission or outcome. It prints the stored package id, or
     why none, and exits INCOMPLETE without one. An ingested generation replays on a fresh
-    database with no transport into equal captures and packages; the new package's knowledge
-    time is the acquisition's, so an ``AS_KNOWN`` run at the earlier cutoff does not select it."""
+    database with no transport into equal captures and package and member metadata; the new
+    package's knowledge time is the acquisition's, so an ``AS_KNOWN`` run at the earlier cutoff
+    does not select it."""
     served = _served()
     issuer = edit(served, tmp_path)
     counts = "SELECT (SELECT count(*) FROM eqos.runs), (SELECT count(*) FROM eqos.fact_admissions)"
@@ -390,7 +399,7 @@ def test_evidence_acquire_ingests_one_named_period(
             assert _first_party(run.pool, again) == _first_party(run.pool, run.run_id)
     assert line.split("\t")[:2] == [str(Q2), printed]
     assert code == (0 if printed == "package" else 4)
-    assert stored[2] == [(packages,)]
+    assert stored[2] == [(packages,)] and bool(stored[3]) == bool(packages)
     if printed != "package":
         return
     work = tmp_path / "replay"

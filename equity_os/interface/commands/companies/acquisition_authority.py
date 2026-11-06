@@ -99,8 +99,9 @@ def entity_fetch(
 
 def sanctioned(path: Path, config_root: Path, symbol: str) -> dict[str, Any]:
     """The sanction's checks: committed unchanged at ``HEAD`` in the running checkout's sanctions
-    directory, with its own ``config``; exactly the schema's fields; the payload digest (D1.1
-    rule) matching; plan and review commits ancestors of ``HEAD``; an ``APPROVE``; ``symbol``
+    directory, with its own ``config``; exactly the schema's fields and types (``symbols`` a
+    nonempty list of nonempty strings, every other field a nonempty string); the payload digest
+    (D1.1 rule) matching; plan and review commits ancestors of ``HEAD``; an ``APPROVE``; ``symbol``
     listed. Returns what the acquisition records of it."""
 
     def need(ok: bool, why: str) -> None:
@@ -125,13 +126,21 @@ def sanctioned(path: Path, config_root: Path, symbol: str) -> dict[str, Any]:
     need(isinstance(sanction, dict) and set(sanction) == _SANCTION_KEYS, "sanction fields")
     review = sanction["review"]
     need(isinstance(review, dict) and set(review) == _SANCTION_REVIEW_KEYS, "review fields")
+    symbols = sanction["symbols"]
+    texts = [sanction["purpose"], sanction["plan"], sanction["plan_commit"], *review.values()]
+    need(
+        isinstance(symbols, list)
+        and bool(symbols)
+        and all(isinstance(item, str) and item for item in [*symbols, *texts]),
+        "field types",
+    )
     payload = {key: value for key, value in sanction.items() if key != "review"}
     digest = _sha256(yaml.safe_dump(payload, sort_keys=True).encode())
     need(review["payload_sha256"] == digest, "payload digest")
     for commit in (sanction["plan_commit"], review["review_commit"]):
         _git(repo, "merge-base", "--is-ancestor", str(commit), head)
     need(review["verdict"] == _APPROVE, "review is not APPROVE")
-    need(symbol in sanction["symbols"], "symbol not listed")
+    need(symbol in symbols, "symbol not listed")
     return {
         "sanction": relative,
         "sanction_sha256": _sha256(committed),

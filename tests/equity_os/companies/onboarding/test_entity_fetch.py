@@ -119,6 +119,21 @@ def test_onboarding_replay_keeps_its_master_rule(
         replay_fetch(tmp_path / "gen", entity=entity)
 
 
+@pytest.mark.parametrize(
+    ("requests", "entity"),
+    [((), False), ((MASTER, MASTER), False), ((MASTER,), True)],
+    ids=["no-master", "two-masters", "master-in-entity-mode"],
+)
+def test_a_generation_breaking_its_master_rule_is_never_written(
+    tmp_path: Path, requests: tuple[Request, ...], entity: bool
+) -> None:
+    """The replay rule binds the write: onboarding's generation holds exactly one master, an
+    entity one none; any other log refuses before the folder exists."""
+    with pytest.raises(ValueError, match="NSE master captures"):
+        _generation(tmp_path / "gen", *LISTINGS, *requests, entity=entity)
+    assert not (tmp_path / "gen").exists()
+
+
 def test_entity_generation_replays_only_in_entity_mode(tmp_path: Path) -> None:
     """An entity generation (no master, ``as_of: null``) is not an onboarding generation."""
     _generation(tmp_path / "gen", *LISTINGS, entity=True)

@@ -147,6 +147,7 @@ _TIED = "two filings tie on the latest broadcast"
 _ABORT_HTTP = "{surface} returned {outcome}"
 _ABORT_AUTH = "{surface} is not authorised"
 _BAD_REPLAY = "replay generation {folder}: {why}"
+_BAD_MASTERS = "generation {folder} would hold {count} NSE master captures"
 XBRL_SOURCES = {Basis.CONSOLIDATED: NSE_XBRL_INSTANCE, Basis.STANDALONE: NSE_XBRL_STANDALONE}
 
 
@@ -333,6 +334,9 @@ def write_generation(
     entity: bool = False,
 ) -> None:
     """Write a generation's bodies and manifest (``as_of`` from the master, none if ``entity``)."""
+    master = [c.response for c in log if (c.request.source_id, c.request.surface) == NSE_MASTER]
+    if len(master) != (0 if entity else 1):
+        raise ValueError(_BAD_MASTERS.format(folder=folder, count=len(master)))
     folder.mkdir(parents=True)
     entries = []
     for index, item in enumerate(log):
@@ -354,7 +358,6 @@ def write_generation(
                 outcome=item.response.outcome,
             )
         )
-    master = [e for e in entries if (e.source_id, e.surface) == NSE_MASTER]
     manifest = DiscoveryManifest(
         issuer=issuer,
         authorization=authorization,
