@@ -40,15 +40,14 @@ applied live** (Phase 1 Task 13 pending). The one entity is APARINDS (entity 1, 
 | Issuer config with `pdf_parse` | yes (`config/runs/aparinds-*.yaml`) | none | none | none | none |
 | Onboarding test fixtures (`tests/fundamentals/fixtures/onboarding/fixtures.yaml`) | yes | no | no | listings only | no (HDFCBANK, BAJFINANCE, HDFCLIFE refusal fixtures only) |
 | Basis the listings indicate | consolidated + standalone | consolidated + standalone (7 + 7 rows) | consolidated + standalone (6 + 6) | **standalone only** (8 Financials rows, 0 consolidated, dev listing and probe) | not retained; inferred both, analysis basis standalone (owner decision 2) |
-| NSE series in retained `EQUITY_L` (2026-10-16/17) | `EQ` | `EQ` | **`BE`** | `EQ` | not retained |
+| NSE series in retained `EQUITY_L` (2026-10-16/17) | `EQ` | `EQ` | `BE` then; **`EQ`** on the master the orchestrator checked 2026-11-06 | `EQ` | `EQ` (2026-11-06 check) |
 
 ### Blockers and gaps found
 
-1. **MTARTECH cannot onboard as the code stands.** `verification.master_rows` accepts only `EQ`
-   rows of the NSE master; MTARTECH was `BE` (trade-to-trade) on 2026-10-17, and its live-smoke
-   generation stops after `EQUITY_L` (inferred: refused at the exchange unit). Learnings
-   2026-09-04 recorded the same series. Unless its series is `EQ` on the test day, the expected
-   outcome is a refusal, not onboarding.
+1. **MTARTECH series (resolved).** `verification.master_rows` accepts only `EQ` rows; MTARTECH
+   was `BE` on 2026-10-17 (its live-smoke generation stops after `EQUITY_L`), but the retained
+   master metadata the orchestrator checked on 2026-11-06 lists all five as `EQ`. No code change
+   (FIVE-1 Task 5). A different series on the acquisition day is an observed refusal, reviewed.
 2. **Live acquisition is gated by the Stage 4 freeze.** `eqos onboard --acquire` requires
    `--freeze-descriptor`, which checks the held-out attempt, an `APPROVE`d descriptor and no
    implementation commit since the freeze (`onboard_cli._frozen`, `_check_entry`). VENDOR-1 is
@@ -95,7 +94,7 @@ applied live** (Phase 1 Task 13 pending). The one entity is APARINDS (entity 1, 
 | Vendor text readers, numeral rule | Phase 2 | not planned |
 | Bank framework, issuer class `BANK`, dictionary v4, bank mappings | Phase 3 | not planned |
 | A sanctioned live acquisition route outside the Stage 4 freeze | owner/orchestrator decision (§8 Q1) | open |
-| MTARTECH series `BE` | owner/orchestrator decision (§8 Q2) | open |
+| MTARTECH series | `EQ` on the 2026-11-06 master (§8 Q2) | resolved |
 | Vendor ingest for periods other than the onboarded one | decision (§8 Q3) | open |
 
 ## 4. Order and why
@@ -105,8 +104,8 @@ applied live** (Phase 1 Task 13 pending). The one entity is APARINDS (entity 1, 
    (gap 4).
 2. **LAURUSLABS.** The ordinary consolidated non-financial path, with complete prior generations:
    the first new onboarding, least likely to fail for reasons outside the test.
-3. **MTARTECH.** Same path, but likely refused at the exchange unit (blocker 1). Run after Laurus
-   so a refusal is not confused with a path defect.
+3. **MTARTECH.** Same path (`EQ`, blocker 1 resolved). Run after Laurus so any refusal is not
+   confused with a path defect.
 4. **NETWEB.** The new standalone-only path (§6.2): new code on live, after the ordinary path is
    proven.
 5. **ICICIBANK.** Depends on Phase 3, the least evidenced route; last, so its failures cannot
@@ -146,7 +145,7 @@ only if the freeze is satisfied.)
 |---|---|---|---|
 | APARINDS | not re-run live (record exists); replay of gen-3 on the rehearsal copy only | outcome vs live record | same outcome, units and basis as the live record |
 | LAURUSLABS | `ONBOARDED` or `PARTIAL`; basis consolidated | stdout units; `onboarding_records`; `entity_basis_status = CONSOLIDATED_AND_STANDALONE`; settings `REPORTING_FRAMEWORK = IND_AS` cited `DISCOVERY`; one package, XBRL source `nse-indas-xbrl-consolidated`; Screener and Tijori occurrences for `<PE>` | all hold; no unit `NOT_AUTHORISED` without a stated reason; the printed `compare run` command names the consolidated basis |
-| MTARTECH | refusal at the exchange unit if series is `BE`; otherwise as LAURUSLABS | stdout reason; one `onboarding_records` row, no entity | outcome and reason recorded; a `BE` refusal is a **pass of the refusal** and stops MTARTECH at 5.1 |
+| MTARTECH | as LAURUSLABS | as LAURUSLABS | as LAURUSLABS; a non-`EQ` master on the day is a recorded refusal, reviewed, not a pass |
 | NETWEB | `ONBOARDED`/`PARTIAL`; basis status `STANDALONE_ONLY` | `entity_basis_status = STANDALONE_ONLY`; package basis standalone, XBRL source the standalone NSE entry; Screener page fetched on the standalone path; no consolidated vendor occurrence pairs with the package | all hold (acceptance 4 on live) |
 | ICICIBANK | Phase 3 route: grounding record first (§8 step 1), then `ONBOARDED`/`PARTIAL` as issuer class `BANK`, analysis basis standalone stored apart from reported bases | grounding record capture ids precede every onboarding check; framework the filing evidences; issuer class `BANK` | all hold; an NBFC/insurer is still `UNSUPPORTED` (fixture, not live) |
 
@@ -256,7 +255,7 @@ change what later APARINDS reports select (§8 Q6).
 
 A mapping reaches `EQUIVALENCE_DEMONSTRATED` only with ≥5 distinct companies inside its own scope
 (surface, schema, basis, period kind, conditions) plus a discriminating case. Here: consolidated
-non-financial scope has at most APARINDS, LAURUSLABS, MTARTECH (3, or 2 if MTARTECH refuses);
+non-financial scope has at most APARINDS, LAURUSLABS, MTARTECH (3);
 standalone vendor tables are fetched only for `STANDALONE_ONLY` entities, so standalone scope has
 NETWEB (1); ICICIBANK is in bank scope alone (1). **Expected promotions: zero.** Pass criterion:
 the test report claims no promotion and lists, per mapping, the companies and discriminating cases
@@ -267,8 +266,8 @@ it contributed.
 1. **Live acquisition route.** `--acquire` is bound to the Stage 4 freeze. Re-freeze (and what it
    does to the held-out attempt), a non-Stage-4 acquisition flag, or scratch-acquired generations
    replayed through the CLI?
-2. **MTARTECH `BE` series.** Accept the refusal as the result, admit `BE` in `master_rows` (a code
-   change with its own review), or swap the company (owner's call: the five were named)?
+2. **MTARTECH series.** Resolved: `EQ` on the 2026-11-06 master; no `BE` widening, no swap
+   (FIVE-1 Task 5).
 3. **More than one period per new company.** Add a route that ingests a retained vendor capture
    for a named period, or accept one three-way period per new company (weak evidence for
    `measure`)?
