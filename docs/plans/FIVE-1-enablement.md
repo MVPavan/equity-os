@@ -470,6 +470,19 @@ recording PASS/FAIL only.
 
 Verification: gate exit 0; both Stage 4 suites PASS. A FAIL stops as the leak check rule says.
 
+**Amendment (orchestrator ruling, 2026-11-06; Sol phase-end review 1, F5).** This amendment
+replaces "gate exit 0" above.
+- **Red proof not applicable.** Under the 2026-10-11 testing policy (tests are written with the
+  code; `.claude/rules/python/testing.md`), the gate's red-proof line does not apply to FIVE-1.
+  Its `ROUTE: CONTRACT` result is expected and recorded as such; no retrospective red evidence is
+  made.
+- **Pass condition.** Task 7 passes when the gate's pytest, ruff, format, mypy, skips and rails
+  lines are all OK on one revision R. The only pytest exceptions are the Stage 4 tests that need
+  protected inputs absent from the gate worktree, which are never copied there.
+- **Stage 4 on R.** The orchestrator runs those Stage 4 tests (the leak check and
+  `test_data_stage4_e2e.py`) on the main checkout while main's `HEAD` equals R. It records R, each
+  exit status and an opaque PASS or FAIL only.
+
 Dependencies: Tasks 1–3, 6.
 
 **Then: Sol phase-end review** of the FIVE-1 diff, the gate log, the call graph of the new

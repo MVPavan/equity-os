@@ -126,7 +126,7 @@ read-only queries and written into `commands.txt` before rehearsal (§6). Every 
 versions uses `--dictionary v5 --mapping-set v12`, the Phase 3 sets, for all five (§8 Q5).
 `eqos onboard` takes no version flags: it keeps its own pins, and §5.2 re-ingests under `v5`/`v12`.
 
-Standard checks run after **every** command (§6 step 3); the per-step checks below are additional.
+Standard checks run after **every** command (§6 step 6); the per-step checks below are additional.
 
 ### Periods and roles (Q5, F09)
 
@@ -157,8 +157,8 @@ committed.
 ### 5.1 Onboard
 
 ```
-eqos onboard <KEY> --raw-root <ROOT> --snapshot-root <SNAP> --acquire --sanction <SAN>   # rehearsal
-eqos onboard <KEY> --raw-root <ROOT> --snapshot-root <SNAP> --generation <G>             # live replay
+eqos onboard <KEY> --raw-root <ROOT> --snapshot-root <SNAP> --acquire --sanction <SAN>   # acquisition (§6 step 2)
+eqos onboard <KEY> --raw-root <ROOT> --snapshot-root <SNAP> --generation <G>             # rehearsal and live
 ```
 (the sanction route of §8 Q1; each acquisition runs on a recorded gated tip. It never uses the
 Stage 4 freeze, the holdout record or the manifest.)
@@ -186,7 +186,8 @@ eqos evidence acquire --entity <KEY> --basis <b> --period-end <PE> --mapping-set
 eqos vendor reingest --entity <KEY> --period-end <PE> --basis <b> --mapping-set v12 --dictionary v5 \
   --captures-of <PE0>
 ```
-One period per `evidence acquire` command and generation. It prints `<PE> package <id>`,
+Without `--generation`, `evidence acquire` runs only as the acquisition (§6 step 2); rehearsal and
+live pass `--generation <G>`. One period per `evidence acquire` command and generation. It prints `<PE> package <id>`,
 `FILING_UNAVAILABLE` or `FILING_UNRESOLVED` and exits `INCOMPLETE` unless ingested. Role (b)
 periods run only the `vendor reingest --captures-of` line. **Checked:** interpretations under `v12` per (representation,
 status); Tijori `INVALID`/`UNIT_MISMATCH` in sections with a display rule; NETWEB vendor
@@ -228,7 +229,8 @@ counterexample; no FY `finance_costs` cell under row 3; every row with T1 `VENDO
 eqos compare fallback --run <RUN> --store-id <STORE> --snapshot-root <SNAP> --raw-root <ROOT> \
   [--issuer-config <yaml>] [--generation <G>]
 ```
-Rehearsal acquires into its raw root; live replays with `--generation` (§8 Q4). A run's trigger
+Without `--generation` only as the acquisition (§6 step 2); rehearsal and live replay its
+generation with `--generation <G>` (§8 Q4). A run's trigger
 groups are its stored `CHECK_REQUIRED`, `VENDOR_UNMAPPED`, `VENDORS_DISAGREE` and
 `VENDORS_IMPRECISE` refusals, so a filing-present run may still trigger; expectations are derived
 from those stored refusals, not from filing presence. Fallback refuses before fetching if one run
@@ -259,8 +261,8 @@ Sol reviews and the orchestrator commits the measured draft as a new eligibility
 `v1`, never backdated, no mapping promoted, BANK classes excluded as Phase 3 specifies).
 **Artifact boundary:** `commands.txt` then names a new gated revision that contains that artifact
 (the loaded config tree, `run_config.py`), and the remaining commands are re-inventoried on it
-before this segment's rehearsal; the equal-revision rule (§6) applies to that revision, and nothing
-runs the artifact from the older tree. Immediately before the positive run, a read-only query saved
+before this segment's rehearsal; the equal-revision rule (§6 step 5) applies to that revision,
+and nothing runs the artifact from the older tree. Immediately before the positive run, a read-only query saved
 beside `commands.txt` shows the role-(d) cell still has no admissible filed value. Fresh `compare
 run` commands at a cutoff at or after the artifact's `available_from`, over the role-(d) periods,
 then admit. **Pass:** the role-(d) cell admits as `VENDORS_AGREE_NOT_CHECKED` with both witnesses
@@ -281,30 +283,62 @@ Others: out of scope (no run config, no `pdf_parse`).
 
 ## 6. Live protocol
 
-Writes live: 5.1 (onboarding records, entities, securities, settings, captures, packages,
-occurrences, interpretations, attempts; snapshot-store files), 5.2 (interpretations, occurrences,
-attempts, version pins), 5.3 (runs and their result tables, queue items, version pins), 5.4/5.5
-(fact rows, admissions, selections, counterexamples, fallback outcomes; for APARINDS also captures
-and packages). 5.0 and 5.6 are read-only (5.6 writes one scratch file).
+**Normative.** `docs/plans/FIVE-1-enablement.md` "Live protocol" governs every command here: its
+gated tip, windows and fixed allowlist table, over `VENDOR-1-P1.md` "Live protocol" steps 1–6 and
+`VENDOR-1-P3.md` "Live protocol" (acquisition boundary, allowlists, windows). Where this section
+and that one differ, FIVE-1's wins.
 
-As `docs/plans/VENDOR-1-P1.md` "Live protocol", per company:
+Writes live, as a summary only (the allowlist rows of step 1 bind each command): 5.1 (onboarding
+records, entities, securities, settings, captures, packages, occurrences, interpretations,
+attempts; snapshot-store files; the raw-root generation); 5.2 (interpretations, occurrences,
+attempts, version pins; and each role (a) `evidence acquire`'s named-period writes: captures,
+document intake, packages and their extraction rows, raw-root generation and snapshot-store files);
+5.3 (runs and their result tables, queue items, version pins); 5.4/5.5 (fact rows, admissions,
+selections, counterexamples, fallback outcomes; and, for **every** company with a role (b) period,
+the fallback's captures, document intake, packages and extraction rows, raw-root generation and
+snapshot-store files). 5.0 and 5.6 are read-only (5.6 writes one scratch file).
 
-1. **Inventory.** `scratchpad/five-company/<KEY>/commands.txt`, every argument explicit, inputs
-   from saved read-only queries; record its sha256. Rehearsal and live run that file unchanged.
-2. **Baseline.** `eqos db backup` of live, restored into a fresh `eqos_test_*`; counts and
+Per company, in this order:
+
+1. **Inventory.** `scratchpad/five-company/<KEY>/commands.txt`: the gated tip the commands run on;
+   every argument explicit, inputs from saved read-only queries; for each command its row of
+   FIVE-1's allowlist table, fixed now and never widened from rehearsal or acquisition output (an
+   unexpected table is a reviewed amendment). Record its sha256.
+2. **Acquisition.** Each fetching command (`onboard --acquire --sanction`, `evidence acquire`,
+   `compare fallback` without `--generation`) runs **once**, before any rehearsal, against a
+   throwaway `eqos_test_*` restored from the baseline backup, with scratch copies of the raw and
+   snapshot roots (`VENDOR-1-P3.md` acquisition boundary). A command that reads earlier commands'
+   writes (`compare fallback --run <RUN>`) runs after those commands' replay lines on the same
+   throwaway copy. Its generation folder is the retained response manifest; its number `<G>` and
+   manifest sha256 go into `commands.txt`, after which the file is final and its sha256 recorded.
+   Acquisition output never widens an allowlist row.
+3. **Baseline.** `eqos db backup` of live, restored into a fresh `eqos_test_*`; counts and
    fingerprints equal live's, or stop.
-3. **Checks after each command:** `eqos db check-live`; counts of every `eqos` table; business-key
+4. **Rehearsal, then live, replay the same generation.** Both run the final `commands.txt`
+   unchanged: every fetching command in replay mode (`--generation <G>`), so inputs are identical by
+   construction. Rehearsal runs on the fresh restore with fresh copies of both roots; live follows.
+   No acquisition happens in rehearsal or live.
+5. **Equal-revision rule.** Acquisition, rehearsal and live each record, before every command,
+   `git rev-parse HEAD` and the `config/` tree id (`git rev-parse HEAD:config`); both must equal the
+   gated tip `commands.txt` names, and each acquisition's recorded `acquisition_head`
+   (`acquisition.json`) must equal it. A new gated revision (§5.6.1) re-applies the rule on that
+   revision with a re-inventoried `commands.txt`. Any difference stops before the next command.
+6. **Checks after each command:** `eqos db check-live`; counts of every `eqos` table; business-key
    summaries (as Phase 1, plus admissions by label, counterexamples by class, fallback outcomes);
-   fingerprints of pre-existing rows of touched tables, unchanged.
-4. **Allowed changes** per step as listed above; a rehearsal delta outside them stops before live;
-   each live delta must equal the rehearsal's.
-5. **Before live:** live equals the baseline (counts, fingerprints, ledger, check-live, sequences);
-   before each later command, baseline plus rehearsed deltas. Any drift restarts from step 2.
-6. **Network steps.** Onboarding and fallback fetch. Rehearsal acquires into a rehearsal raw root
-   and snapshot root; live **replays** the rehearsal's retained generation (`--generation`) so its
-   writes equal the rehearsal's. Fallback and `evidence acquire` replay the same way
-   (`--generation`, §8 Q4).
-7. Drop the rehearsal database and rehearsal snapshot root at the end.
+   fingerprints of pre-existing rows of touched tables, unchanged. Each command's delta stays within
+   its fixed allowlist row, with only those tables' own sequences advancing; coverage decisions and
+   watchlist membership are unchanged.
+7. **Root files.** After each command, the new files under the raw and snapshot roots (path,
+   sha256) are listed; the replayed generation's manifest sha256 equals `commands.txt`'s. A
+   rehearsal delta or file outside the allowlist stops before live; each live delta and file list
+   must equal the rehearsal's.
+8. **Before live:** live equals the baseline (counts, fingerprints, ledger, check-live, sequences);
+   before each later command, baseline plus rehearsed deltas. Any drift restarts from step 3 and
+   replays the same generations; nothing is re-acquired.
+9. **Windows.** Live write windows are mutually exclusive across FIVE-COMPANY-TEST, VENDOR-1 phases
+   and anything else (`VENDOR-1-P3.md` "Windows"); no live command runs while another window is
+   open.
+10. Drop the acquisition and rehearsal databases and the scratch and rehearsal roots at the end.
 
 Live writes are permanent. Admissions in 5.4/5.5 are the first on live (Phase 1 admitted none) and
 change what later APARINDS reports select (§8 Q6).
