@@ -20,16 +20,20 @@ from psycopg import Cursor
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
-from equity_os.contracts.measurement.evidence import (
-    Interpretation,
-    InterpretationOrigin,
-    InterpretationStatus,
-    RunMode,
+from equity_os.contracts.measurement.canonical import Basis
+from equity_os.contracts.measurement.evidence import Interpretation, Occurrence, RunMode
+from equity_os.contracts.measurement.measurement_key import (
+    DimensionSet,
+    MeasurementKey,
+    PeriodInterval,
 )
-from equity_os.contracts.measurement.measurement_key import MeasurementKey
+from equity_os.contracts.measurement.observation import AccountingFramework
 from equity_os.contracts.sourcing.source_catalog import SCREENER_PAGE, TIJORI_PAGE
 from equity_os.contracts.verification.comparison import SourceState
 from equity_os.contracts.verification.vendor_first import FilingFailure, FilingState, VendorOutcome
+from equity_os.normalisation.mapping.interpret import _key_period
+from equity_os.normalisation.mapping.mapping import CONTEXT_BASIS, CONTEXT_SCHEMA_IDENTITY
+from equity_os.storage.records.repository import EvidenceRepository
 from equity_os.verification.admission.vendor_first import (
     check_class,
     filing_admissible,
@@ -42,10 +46,12 @@ from equity_os.verification.comparison.engine_vendor_context import _DIMENSIONED
 from equity_os.verification.comparison.resolve_models import ResolvedInputs
 from equity_os.verification.comparison.run import load_results, replay_inputs
 from equity_os.verification.comparison.run_config import LoadedConfig
+from equity_os.verification.comparison.run_family import RUN_FAMILIES
 from equity_os.verification.comparison.run_models import ResultRow, RunRequest
 from equity_os.verification.comparison.selection import period_end
 
 _Page = tuple[str | None, str]
+_FullKey = tuple[int, str, PeriodInterval, Basis, AccountingFramework, DimensionSet]
 _PAGES = (SCREENER_PAGE, TIJORI_PAGE)
 _FIRST_PARTY = (None, None)  # a first-party side names no vendor source or surface
 _COUNTED = (FilingState.FILING_AGREES, FilingState.FILING_DIFFERS)
@@ -151,39 +157,55 @@ def measure(
 
 
 def coverage(pool: ConnectionPool, run_id: int, *, config_root: Path) -> Coverage:
-    """§6.11 #3: every full key both vendors' entries map in the run's scope, against the run's
-    rows. A dimensioned key with no row refuses with Task 5's reason; any other gap is missing.
+    """§6.11 #3: every full key both vendors' pinned entries map onto the columns their stored
+    occurrences evidence in the run's scope, against the run's rows. Built from the store, not
+    from interpretations, so a lost or invalid interpretation leaves its key expected. A
+    dimensioned key with no row refuses with Task 5's reason; any other gap is missing.
     """
     inputs, request, config = replay_inputs(run_id, pool=pool, config_root=config_root)
-    scope, mapping = request.scope, config.mapping_set
-    pins = request.pinned.vendor_extractors
-    extractors: dict[_Page, str] = {(pin.source_id, pin.surface): pin.version for pin in pins}
-    mapped: dict[_Page, dict[str, MeasurementKey]] = {page: {} for page in _PAGES}
-    for item in inputs.interpretations:
-        if (
-            item.status is InterpretationStatus.MAPPED
-            and item.origin is InterpretationOrigin.DIRECT
-            and item.key is not None
-            and item.mapping_entry_id is not None
-            and item.mapping_set_version == mapping.version
-            and item.key.basis in scope.bases
-            and period_end(item.key.period) in scope.period_ends
-        ):
-            entry = mapping.entry(item.mapping_entry_id)
-            page = (entry.source, entry.surface)
-            if page in mapped and item.extractor_version == extractors.get(page):
-                mapped[page][item.key.digest()] = item.key
-    screener, tijori = (mapped[page] for page in _PAGES)
-    expected = screener.keys() & tijori.keys()
+    scope = request.scope
+    (entity_id,) = scope.entity_ids
+    month = fiscal_year_end(inputs.settings, entity_id, request.cutoff, max(scope.period_ends))
+    pins = {(pin.source_id, pin.surface): pin.version for pin in request.pinned.vendor_extractors}
+    framework = RUN_FAMILIES[scope.family].framework
+    repository = EvidenceRepository(pool)
+    mapped: dict[_Page, set[_FullKey]] = {page: set() for page in _PAGES}
+    for capture in inputs.capture_refs:
+        page = (capture.source_id, capture.surface)
+        if page not in mapped or page not in pins:
+            continue
+        assert capture.capture_ref_id is not None
+        columns: dict[tuple[object, object, PeriodInterval], Occurrence] = {}
+        for item in repository.list_capture_occurrences(capture.capture_ref_id, pins[page]):
+            context = item.native_context
+            if item.period is not None:
+                schema, basis = context.get(CONTEXT_SCHEMA_IDENTITY), context.get(CONTEXT_BASIS)
+                columns.setdefault((schema, basis, item.period), item)
+        for (schema, basis, period), witness in columns.items():
+            for entry in config.mapping_set.entries:
+                if (
+                    (entry.source, entry.surface) == page
+                    and entry.schema_identity == schema
+                    and basis in {member.value for member in entry.basis.intersection(scope.bases)}
+                    and period.kind(month) in entry.period_kinds
+                    and (key_period := _key_period(witness, entry, month, {})) is not None
+                    and period_end(key_period) in scope.period_ends
+                ):
+                    dimensions = DimensionSet.of(entry.dimension_members)
+                    key = (entity_id, entry.canonical_id, key_period, Basis(basis), framework)
+                    mapped[page].add((*key, dimensions))
+    expected = mapped[SCREENER_PAGE] & mapped[TIJORI_PAGE]
     rows = load_results(run_id, pool=pool)
-    present = {row.key.digest() for row in rows}
-    three_way = expected & {row.key.digest() for row in rows if _three_way(row)}
+    present = {_full_key(row.key) for row in rows}
+    three_way = expected & {_full_key(row.key) for row in rows if _three_way(row)}
     refused = {
-        digest: _DIMENSIONED.format(
-            entity_id=key.entity_id, period_end=period_end(key.period), rows=[key.canonical_id]
+        f"{canonical_id}|{period_end(period)}|{basis}|{dimensions.pairs}": _DIMENSIONED.format(
+            entity_id=entity, period_end=period_end(period), rows=[canonical_id]
         )
-        for digest in sorted(expected - present)
-        if (key := screener[digest]).dimensions.pairs
+        for entity, canonical_id, period, basis, _, dimensions in sorted(
+            expected - present, key=str
+        )
+        if dimensions.pairs
     }
     return Coverage(
         expected=len(expected),
@@ -274,6 +296,11 @@ def row_class(
         issuer_class=issuer,
         period_kind=row.key.period.kind(month),
     )
+
+
+def _full_key(key: MeasurementKey) -> _FullKey:
+    """The spec's full key: entity, canonical id, period, basis, framework, dimensions."""
+    return (key.entity_id, key.canonical_id, key.period, key.basis, key.framework, key.dimensions)
 
 
 def _three_way(row: ResultRow) -> bool:
