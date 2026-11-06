@@ -397,7 +397,7 @@ Every renderer reading `read_selected` prints the label text beside the number (
     for a new report; the sealed report keeps its value with the note (the status note of §6.9); a backup restore does not
     revive it; a hash-matched re-fetch does.
 
-    **Scope amendment (2026-11-06, P1 phase-review finding 8; approval: Sol re-review, pending).**
+    **Scope amendment (2026-11-06, P1 phase-review finding 8; approval: Sol phase re-review 2, APPROVE 2026-11-06).**
     Phase 1 delivers the fail-closed part: expiry, and separately licence end, of either witness
     withdraws the admission, and a backup restore does not revive it. Hash-verified vendor re-fetch
     revival (§6.9, last bullet) is out of Phase 1 scope and tracked by `eqos-g5eh`. Reason: no

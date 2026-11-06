@@ -591,7 +591,8 @@ Approach: §6.7, §6.9, §6.10.
   `bind_computed`, each `reported` operand and each comparative's `current` operand of an
   admitted role is the `OperandValue` that `filed` would build, from the admitted fact's own
   interpretation (`interpretation_id`), with no capture lookup and no blob added; a carried role
-  keeps today's filed lookup. `_compute` (`run_traces.py:315`) then checks traces against run
+  reads its admitted fact back from the head's admission (amended 2026-11-06, phase-review
+  finding 3). `_compute` (`run_traces.py:315`) then checks traces against run
   values computed from the same admitted values, so a vendor value passes and a real mismatch
   still refuses. Comparator and filed-tax figures stay filed, labelled as today. Without
   `admitted` (the non-PostgreSQL path) nothing changes.
@@ -625,8 +626,8 @@ validation, is admitted by the command (row 3), passes source validation, select
 every number shows its label (acceptance 9 as amended, 13); (c) a run whose pinned vendor
 extractor differs from the current code refuses at static validation with no admission written. Citation test: acceptance 9 (fact and calculation resolve with the label;
 `row_captures` returns both witnesses' captures) and 10 (expiry, and separately licence end, of
-either witness withdraws the admission for a new report; a backup restore does not revive it; a
-hash-matched re-fetch does); a contradicted class withdraws the row-3 fact and keeps the row-1
+either witness withdraws the admission for a new report; a backup restore does not revive it; re-fetch
+revival is deferred by the scope amendment below); a contradicted class withdraws the row-3 fact and keeps the row-1
 fact of the same class; after each, `export_version` bytes and the stored content hash are
 unchanged and `status_note` shows the note. A quote and a policy citation resolve with no label.
 
@@ -637,10 +638,10 @@ it at phase end. Moving admission and selection before the pipeline is the one o
 characterization first: today's Stage 2 end-to-end on a first-party run gives the same admitted
 keys, selections and values. Case (b) exercises the row-3 path through the only report path that
 exists, which reads the quarter's filing for its other sections; a report for a quarter with no
-filing is outside Phase 1 (acceptance 9 as amended). The restore and re-fetch behaviour comes from migrations 0028–0031; the test uses
-their existing commands.
+filing is outside Phase 1 (acceptance 9 as amended). The restore behaviour comes from migrations 0028–0031; the test uses their existing
+commands (vendor re-fetch revival: scope amendment below).
 
-**Scope amendment (2026-11-06, phase-review finding 8; approval: Sol re-review, pending).** The
+**Scope amendment (2026-11-06, phase-review finding 8; approval: Sol phase re-review 2, APPROVE 2026-11-06).** The
 citation test's acceptance 10 case covers the fail-closed part only: expiry, and separately licence
 end, of either witness withdraws the admission for a new report, and a backup restore does not
 revive it. Hash-verified vendor re-fetch revival is out of Phase 1 scope and tracked by `eqos-g5eh`
