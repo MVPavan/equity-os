@@ -47,6 +47,7 @@ _BAD_TOKEN = "style token {token!r} is unknown, repeated or conflicting in {styl
 _NO_QUOTE = "claim {key!r} is not a SOURCE_QUOTE, so it has no quote to show"
 _NO_CLAIM = "placeholder names no claim of this version: {key!r}"
 _NO_VALUE = "claim {key!r} has neither a value nor bounds"
+_LABELS = "claim {key!r} states more than one admission label"
 
 
 class DisplayError(ValueError):
@@ -93,9 +94,10 @@ def render_claim(claim: NumericClaim, style: DisplayStyle) -> str:
                 _SUFFIX_QUALIFIERS.get(qualifier, ""),
             )
             text = f"{prefix}{text}{suffix}"
-    for qualifier in claim.qualifiers:  # an admitted fact's label (VENDOR-1 §6.10)
-        if qualifier in AdmissionLabel:
-            text += f" ({LABEL_TEXT[AdmissionLabel(qualifier)]})"
+    labels = [AdmissionLabel(q) for q in claim.qualifiers if q in AdmissionLabel]
+    if len(labels) > 1:  # an admitted value's one label (VENDOR-1 §6.10)
+        raise DisplayError(_LABELS.format(key=claim.claim_key))
+    text += "".join(f" ({LABEL_TEXT[label]})" for label in labels)
     return text + FILED_SUFFIX if FILED in claim.qualifiers else text
 
 

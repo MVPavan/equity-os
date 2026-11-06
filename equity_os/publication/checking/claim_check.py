@@ -23,6 +23,7 @@ from equity_os.contracts.publication.ledger import (
     NumericClaim,
     ResolvedCitation,
 )
+from equity_os.contracts.verification.vendor_first import AdmissionLabel
 from equity_os.publication.checking.quote_anchor import guidance_quote_holds
 from equity_os.publication.drafting.display import rounded
 
@@ -51,6 +52,8 @@ UNITLESS = frozenset({ValueKind.COUNT, ValueKind.RATIO, ValueKind.DAYS})
 NO_CONTRACT = GuidanceContract(
     metric=None, scope=None, horizon=None, unit=None, constant_currency=None
 )
+# A required role's reported-value claim, which must state its admitted fact's label.
+REQUIRED_FACT = "fact."
 # The closed qualifier lexicon: each qualifier and the whole word that states it.
 QUALIFIER_WORDS = {"plus": re.compile(r"\bplus\b"), "about": re.compile(r"\babout\b")}
 
@@ -85,12 +88,13 @@ def check_claim(
 ) -> ClaimState:
     """The claim's state: the first spec row (1-9) whose condition holds.
 
-    A self-cited ``POLICY`` claim resolves only on an import, from its own version's record. A
-    drafted quote claim no sealed import binds a unique contract to fails row 7 (plan D4, M9).
+    A self-cited ``POLICY`` claim resolves only on an import, from its own version's record, and
+    a claim whose admission label is not its citation's (``_labelled``) not at all. A drafted
+    quote claim no sealed import binds a unique contract to fails row 7 (plan D4, M9).
     """
     citation = claim.citation
     self_cited = citation.kind is CitationKind.POLICY and citation.policy_decision_id is None
-    if resolved is None or (self_cited and not imported):
+    if resolved is None or (self_cited and not imported) or not _labelled(claim, resolved):
         return ClaimState.UNRESOLVED
     if any(
         at is None or at > cutoff
@@ -122,6 +126,21 @@ def check_claim(
     if resolved.trusted is False:
         return ClaimState.MATCH_UNTRUSTED
     return ClaimState.MATCH
+
+
+def _labelled(claim: NumericClaim, resolved: ResolvedCitation) -> bool:
+    """Whether the claim states its citation's admission label exactly (VENDOR-1 §6.10): at most
+    one label qualifier, the resolved one, and an unlabelled citation takes none. A required
+    fact must state its label, and a calculation an unchecked one; a calculation over filed
+    operands (``CHECKED_AGAINST_FILING`` when also admitted) may leave it unstated."""
+    stated = [qualifier for qualifier in claim.qualifiers if qualifier in AdmissionLabel]
+    label = resolved.admission_label
+    if stated or label is None:
+        return stated == ([] if label is None else [label])
+    if claim.claim_key.startswith(REQUIRED_FACT):
+        return False
+    calculation = claim.citation.kind is CitationKind.CALCULATION
+    return not calculation or label is AdmissionLabel.CHECKED_AGAINST_FILING
 
 
 def _differs(claimed: tuple[object, ...], cited: tuple[object, ...]) -> bool:
