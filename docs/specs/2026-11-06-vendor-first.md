@@ -315,17 +315,28 @@ citation resolution changes.
      `ANNOUNCEMENTS`, then `_documents`) is extracted into a function over one issuer and one span,
      called for this entity over the period end to seven days after the XBRL broadcast; the
      `RESULTS_CATEGORIES` row (`first_party_documents.py`) gives the PDF.
-2. **Ingest.** Write the package manifest with `onboard_cli.package_manifest` and call
-   `ingest_first_party` with the requested basis, as onboarding's `_ingest` does. The PDF joins the
-   package when the issuer has a `pdf_parse` config, as `eqos evidence ingest` requires; otherwise
-   the package is XBRL-only and the PDF stays retained.
-3. **Compare.** A fresh `eqos compare run` for the period (vendor sides included by default).
-4. **Admit.** `admit_run` on that run.
+2. **Ingest.** Write the package manifest with `onboard_cli.package_manifest` and call `ingest_first_party` with the requested basis, as onboarding's `_ingest` does. The PDF joins the package when the issuer has a `pdf_parse` config, as `eqos evidence ingest` requires; otherwise the package is XBRL-only and the PDF stays retained. A failed or unavailable configured PDF must not silently become an XBRL-only success: when XBRL is acquired but the configured PDF cannot be acquired or ingested, end `FILING_UNRESOLVED` and retain the failure reason.
 
-Terminal outcome per company-period, printed and stored with the run id: `ADMITTED` (every trigger
-cell admitted), `FILING_UNAVAILABLE` (no filing acquirable; cells stay refused), `FILING_UNRESOLVED`
-(extraction failed or review opened; review queue owns it), `STILL_REFUSED` (listing the cells and
-reasons). No retries beyond those the acquisition layer already has.
+3. **Compare.** Make a fresh comparison run for the period, including Screener and Tijori by default. Preserve the triggering run's pins for unchanged artifacts and already-present source extractors through ingestion and comparison; explicitly pin any newly added default vendor side. Refuse unsupported pin drift before acquisition rather than silently repinning. Use the fresh store-clock cutoff and record the rerun id.
+
+4. **Admit.** Run `admit_run` on the rerun, unchanged under §6.5. Preserve its rows, admissions, refusals and filing-failure details.
+
+5. **Resolve original triggers.** Account for every original trigger cell against an actual corresponding rerun row of the same measurement identity. A cell is admitted only when the rerun has a matching admission record. A missing or incompatible rerun row remains refused with an explicit workflow reason; absence from the refusal list is never proof of admission.
+
+   After successful processing of the applicable filing members, an original trigger whose rerun row is explicitly `NOT_APPLICABLE` is settled as `NOT_APPLICABLE`, with its applicability rule recorded. This is neither admission nor evidence of non-disclosure; no numeric source values were assessed for that row. These cells still trigger in the first run, because the filing can establish that a previously inapplicable row is applicable.
+
+   An applicable original trigger is settled as `NOT_DISCLOSED` only when the rerun row was evaluated, its filing state is `FILING_ABSENT` under §6.4, neither vendor side carries a numeric value, and the applicable source processing establishes absence without acquisition, extraction or interpretation failure. Every materialized vendor side must be `NO_VALUE`; a missing vendor side is usable only when successful processing and the reviewed mapping establish that no side exists for the key. `UNAVAILABLE`, `INVALID`, missing or unprocessed evidence, and a refused or constructed numeric value do not establish non-disclosure. A rerun refusal `REVIEW_OPEN` or `FILING_UNRESOLVED` cannot be replaced by `NOT_DISCLOSED`.
+
+   `NOT_DISCLOSED` is bounded to the retained inputs under the rerun's pins. Record it and `NOT_APPLICABLE` in fallback `cells`; neither creates a fact, an admission record, an admission label, or clean eligibility evidence. Record all remaining refused original triggers with their reasons. Applicable cells absent on all sides still trigger in the first run, because the filing may carry them.
+
+Terminal outcome per company-period, printed and stored with the triggering run id and, when made, the rerun id:
+
+- `FILING_UNAVAILABLE`: no filing is acquirable; original trigger cells remain refused.
+- `FILING_UNRESOLVED`: intake or extraction failed, a configured filing member could not be acquired, or any original trigger still refuses `REVIEW_OPEN` or `FILING_UNRESOLVED`. This takes precedence over ordinary remaining refusals; preserve the stage failure or refused-cell reasons for review.
+- `STILL_REFUSED`: a successful rerun leaves any original trigger refused for another reason, including a missing or incompatible rerun row; list the cells and reasons.
+- `ADMITTED`: every original trigger has either a matching actual admission, a guarded `NOT_DISCLOSED` disposition, or an explicit rerun `NOT_APPLICABLE` disposition. This is a fallback-workflow outcome, not admission of a missing number or approval of every cell in the period.
+
+`admission.py` exports the single immutable set of row-4/row-6 trigger refusals; fallback imports it. No retries beyond those the acquisition layer already has.
 
 ### 6.9 Retention
 
@@ -385,10 +396,7 @@ Every renderer reading `read_selected` prints the label text beside the number (
 10. **Retention.** Expiry, and separately licence end, of either witness withdraws the admission
     for a new report; the sealed report keeps its value with the note (the status note of §6.9); a backup restore does not
     revive it; a hash-matched re-fetch does.
-11. **Fallback.** On an Apar period whose filing is withheld from the first run, the command
-    acquires the XBRL and results PDF for that period only, ingests, reruns with vendor sides and
-    ends `ADMITTED`; an unavailable filing ends `FILING_UNAVAILABLE` with cells still refused; no
-    other issuer is fetched and coverage is unchanged.
+11. **Fallback.** On retained Apar Q2 FY26 with its filing withheld from the first run, the command acquires the XBRL and results PDF for that period only, ingests, reruns with vendor sides, and records the fallback's terminal outcome. The retained case ends `FILING_UNRESOLVED`, with its genuine refused trigger cells and reasons listed; absence on every successfully processed side is recorded separately as `NOT_DISCLOSED`, and rerun-proven inapplicability as `NOT_APPLICABLE`. A separately labelled synthetic fixture made from edited copies of retained captures, whose filed trigger cells all pass the unchanged first-party rule and whose other original triggers are either guarded `NOT_DISCLOSED` or explicitly `NOT_APPLICABLE`, ends `ADMITTED`. That fixture includes at least one originally refused numeric cell that becomes an actual admission and at least one applicable cell settled `NOT_DISCLOSED`; missing cells create no facts. The command ends `ADMITTED` exactly when every original trigger is accounted for by one of those three dispositions. An unavailable filing ends `FILING_UNAVAILABLE` with cells still refused; an acquisition/intake/extraction or remaining review failure ends `FILING_UNRESOLVED`; an ordinary remaining refusal ends `STILL_REFUSED`. Assert the stored cell dispositions and rerun/admission links, failure precedence, no request for another issuer or period, and unchanged coverage.
 12. **Known difference.** No FY `finance_costs` cell is admitted under row 3.
 13. **Labels.** The rendered output carries a label for every number.
 14. **Gate.** `scripts/verify.sh gate` passes; mypy strict and ruff clean.

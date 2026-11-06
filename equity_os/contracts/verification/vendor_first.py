@@ -58,3 +58,21 @@ class FallbackOutcome(StrEnum):
     FILING_UNAVAILABLE = "FILING_UNAVAILABLE"
     FILING_UNRESOLVED = "FILING_UNRESOLVED"
     STILL_REFUSED = "STILL_REFUSED"
+
+
+class FallbackDisposition(StrEnum):
+    """A fallback-only disposition of an original trigger cell (§6.8 step 5); a cell the rerun
+    still refuses carries its ``AdmissionRefusal`` instead. None of them creates a fact."""
+
+    ADMITTED = "ADMITTED"
+    NOT_DISCLOSED = "NOT_DISCLOSED"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    RERUN_ROW_MISSING = "RERUN_ROW_MISSING"
+
+
+class FallbackFailure(StrEnum):
+    """Why a fallback stage failed before a rerun: the detail of its ``FILING_UNRESOLVED``."""
+
+    PDF_UNACQUIRED = "PDF_UNACQUIRED"
+    INTAKE_REFUSED = "INTAKE_REFUSED"
+    EXTRACTION_FAILED = "EXTRACTION_FAILED"

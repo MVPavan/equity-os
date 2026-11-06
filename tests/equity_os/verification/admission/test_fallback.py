@@ -2,9 +2,12 @@
 
 A Screener and Tijori run of the quarter with its filing withheld refuses trigger cells; the
 command then requests that period's filing through a transport replaying the retained NSE
-listings, XBRL instance and results PDF. SYNTHETIC, made here in memory: the announcements
-listing (one row naming the retained results PDF; no retained listing covers that span), and
-each case's edit of what is served or of the issuer config. No socket is opened.
+listings, XBRL instance and results PDF. The unedited retained filing ends FILING_UNRESOLVED.
+SYNTHETIC, made here in memory: the announcements listing (one row naming the retained results
+PDF; no retained listing covers that span), and each other case's edit of what is served, of the
+issuer config or of the run's pins. The ADMITTED case is such an edit (the instance without its
+share of associates, XBRL-only); it proves the workflow can end ADMITTED, not that retained Apar
+is admitted. No socket is opened.
 """
 
 from __future__ import annotations
@@ -26,14 +29,22 @@ from stage1_e2e_support import CONFIG, RUNS, Stage
 
 from equity_os.companies.identity.identity_seed import EvidenceInputKind, SettingKey
 from equity_os.companies.onboarding.discovery import Request
-from equity_os.contracts.measurement.canonical import Basis
+from equity_os.contracts.measurement.canonical import Basis, Representation
 from equity_os.interface.commands.verification import compare_cli
 from equity_os.interface.entry.cli import main
 from equity_os.sourcing.documents.first_party_documents import ANNOUNCEMENTS, nse_listing_url
 from equity_os.sourcing.exchange.nse_filings import INTEGRATED_LISTING, LEGACY_LISTING, listing_url
 from equity_os.storage.facts.pg_fact_store import create_native_store
+from equity_os.verification.admission.admission import admit_run
+from equity_os.verification.comparison import run_config
 from equity_os.verification.comparison.run import DatabaseIdentity, execute_run, request_for
-from equity_os.verification.comparison.run_config import ConfigVersions, load_run_config
+from equity_os.verification.comparison.run_config import (
+    ConfigVersions,
+    extractor_pin,
+    load_run_config,
+)
+from equity_os.verification.comparison.run_models import ResultRow
+from equity_os.verification.comparison.run_store import RunStore
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
@@ -54,16 +65,30 @@ _ASSOCIATES = (
     rb"[^>]*>[^<]*</in-capmkt:ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsing"
     rb"EquityMethod>"
 )
-TRIGGER_REASONS = {"CHECK_REQUIRED", "VENDOR_UNMAPPED", "VENDORS_DISAGREE", "VENDORS_IMPRECISE"}
-REASONS = {
-    "FILING_UNAVAILABLE": TRIGGER_REASONS,
-    "STILL_REFUSED": TRIGGER_REASONS,
-    "FILING_UNRESOLVED": TRIGGER_REASONS | {"REVIEW_OPEN", "FILING_UNRESOLVED"},
+TRIGGERS = {"CHECK_REQUIRED", "VENDOR_UNMAPPED", "VENDORS_DISAGREE", "VENDORS_IMPRECISE"}
+SETTLED = {"ADMITTED", "NOT_DISCLOSED", "NOT_APPLICABLE"}
+ORIGINAL = {"CHECK_REQUIRED", "VENDOR_UNMAPPED", "VENDORS_IMPRECISE"}  # the run's trigger reasons
+H1, Q = date(2025, 4, 1), date(2025, 7, 1)  # a cell is named by its concept and period start
+ANNUAL_ONLY = "results.annual_disclosure"
+# Representative cells of the unedited retained filing: its genuine refusals, and what settles.
+RETAINED = {
+    ("cfo", H1): ["REVIEW_OPEN", None],
+    ("ppe", Q2): ["FILING_UNRESOLVED", "EXTRACTION_NOT_AGREE"],
+    ("sales", Q): ["FILING_UNRESOLVED", "EXTRACTION_NOT_AGREE"],
+    ("biological_assets", Q2): ["NOT_DISCLOSED", None],
+    ("excise_duty", Q): ["NOT_APPLICABLE", ANNUAL_ONLY],
+}
+SYNTHETIC = {
+    ("biological_assets", Q2): ["NOT_DISCLOSED", None],
+    ("excise_duty", Q): ["NOT_APPLICABLE", ANNUAL_ONLY],
 }
 _NATURE = rb'(NatureOfReportStandaloneConsolidated contextRef="[^"]+">)Consolidated'
 OUTCOMES = (
-    "SELECT run_id, period_end, basis, outcome, rerun_id IS NOT NULL, cells "
-    "FROM eqos.vendor_fallback_outcomes"
+    "SELECT run_id, period_end, basis, outcome, rerun_id, cells FROM eqos.vendor_fallback_outcomes"
+)
+ADMISSIONS = (
+    "SELECT a.id, r.key_digest FROM eqos.fact_admissions a "
+    "JOIN eqos.results r ON r.id = a.result_id WHERE a.run_id = %s"
 )
 PACKAGES = "SELECT count(*) FROM eqos.filing_packages"
 COVERAGE = "SELECT count(*) FROM eqos.decisions"
@@ -128,6 +153,12 @@ def _standalone(served: dict[str, bytes], tmp_path: Path) -> Path | None:
     return None
 
 
+def _pdf_missing(served: dict[str, bytes], tmp_path: Path) -> Path | None:
+    """SYNTHETIC: the results PDF the issuer config wants cannot be fetched."""
+    del served[PDF_URL]
+    return _withheld(served, tmp_path)
+
+
 def _repinned(served: dict[str, bytes], tmp_path: Path) -> Path | None:
     """SYNTHETIC: the issuer config pins another PDF than the one acquired."""
     del served
@@ -139,26 +170,52 @@ def _repinned(served: dict[str, bytes], tmp_path: Path) -> Path | None:
 
 
 FULL = (LEGACY_URL, INTEGRATED_URL, XBRL_URL, ANNOUNCEMENTS_URL, PDF_URL)
+STANDALONE = (*FULL[:2], STANDALONE_URL, *FULL[3:])
+STAGE_FAILURES = {
+    _unlisted: None,
+    _truncated: "EXTRACTION_FAILED",
+    _repinned: "INTAKE_REFUSED",
+    _pdf_missing: "PDF_UNACQUIRED",
+}
 
 
 @pytest.mark.parametrize(
-    ("edit", "basis", "outcome", "packages", "rerun", "fetched"),
+    ("edit", "basis", "outcome", "packages", "fetched", "dispositions", "cells"),
     [
-        (_withheld, Basis.CONSOLIDATED, "FILING_UNRESOLVED", 1, True, FULL),
-        (_associates_omitted, Basis.CONSOLIDATED, "STILL_REFUSED", 1, True, FULL),
-        (_unlisted, Basis.CONSOLIDATED, "FILING_UNAVAILABLE", 0, False, FULL[:2]),
-        (_truncated, Basis.CONSOLIDATED, "FILING_UNRESOLVED", 1, False, FULL),
+        (
+            _withheld,
+            Basis.CONSOLIDATED,
+            "FILING_UNRESOLVED",
+            1,
+            FULL,
+            SETTLED | {"REVIEW_OPEN", "FILING_UNRESOLVED"},
+            RETAINED,
+        ),
+        (_associates_omitted, Basis.CONSOLIDATED, "ADMITTED", 1, FULL, SETTLED, SYNTHETIC),
+        (_unlisted, Basis.CONSOLIDATED, "FILING_UNAVAILABLE", 0, FULL[:2], ORIGINAL, {}),
+        (_truncated, Basis.CONSOLIDATED, "FILING_UNRESOLVED", 1, FULL, ORIGINAL, {}),
+        # Screener has no standalone capture, so absence is never established on this basis.
         (
             _standalone,
             Basis.STANDALONE,
             "STILL_REFUSED",
             1,
-            True,
-            (*FULL[:2], STANDALONE_URL, *FULL[3:]),
+            STANDALONE,
+            {"ADMITTED", "NOT_APPLICABLE", "VENDOR_UNMAPPED"},
+            {("biological_assets", Q2): ["VENDOR_UNMAPPED", None]},
         ),
-        (_repinned, Basis.CONSOLIDATED, "FILING_UNRESOLVED", 0, False, FULL),
+        (_repinned, Basis.CONSOLIDATED, "FILING_UNRESOLVED", 0, FULL, ORIGINAL, {}),
+        (_pdf_missing, Basis.CONSOLIDATED, "FILING_UNRESOLVED", 0, FULL, ORIGINAL, {}),
     ],
-    ids=["withheld", "still-refused", "unavailable", "unresolved", "standalone", "pdf-pin"],
+    ids=[
+        "retained",
+        "admitted",
+        "unavailable",
+        "unresolved",
+        "standalone",
+        "pdf-pin",
+        "pdf-missing",
+    ],
 )
 def test_fallback_acquires_only_the_triggering_period(
     pg_db: Any,
@@ -169,50 +226,135 @@ def test_fallback_acquires_only_the_triggering_period(
     basis: Basis,
     outcome: str,
     packages: int,
-    rerun: bool,
     fetched: tuple[str, ...],
+    dispositions: set[str],
+    cells: dict[tuple[str, date], list[Any]],
 ) -> None:
-    """One stored terminal outcome per case; only Apar's Q2 FY26 filing is requested, and
-    coverage is unchanged (acceptance 11). The retained filing itself ends FILING_UNRESOLVED:
-    its XBRL and PDF disagree on lines one of them lacks, and concepts no source reports stay
-    refused, so no Apar period can end ADMITTED under §6.5's triggers."""
+    """One stored terminal outcome per case, with every original trigger's disposition; only
+    Apar's Q2 FY26 filing is requested, and coverage is unchanged (acceptance 11). An admitted
+    cell names its rerun admission; a NOT_DISCLOSED or NOT_APPLICABLE cell has no admission. A
+    stage failure before the rerun leaves the original refusals, with the stage's reason."""
     served = _served()
     issuer = edit(served, tmp_path)
-    monkeypatch.setattr(compare_cli, "live_transport", lambda: _transport(served))
-    monkeypatch.setattr(time, "sleep", lambda _: None)
-    for name, value in pg_db.cli_env().items():
-        monkeypatch.setenv(name, value)
-    with pg_db.runtime_pool() as pool:
-        stage = Stage(pg_db, pool, tmp_path, RUNS["APARINDS-Q2FY26"])
-        stage.config, stage.versions = load_run_config(CONFIG, V9), V9
-        run_id = _vendor_run(stage, basis, monkeypatch)
-        store_id = create_native_store(pool, "fallback")
-        with pool.connection() as conn:
-            coverage = conn.execute(COVERAGE).fetchone()
-        for root in ("snapshots", "raw"):
-            (tmp_path / root).mkdir(mode=0o700)
-        argv = [
-            *("compare", "fallback", "--run", str(run_id), "--store-id", store_id),
-            *("--snapshot-root", str(tmp_path / "snapshots"), "--raw-root", str(tmp_path / "raw")),
-            *(("--issuer-config", str(issuer)) if issuer else ()),
-        ]
-        code = main(argv)
-        with pool.connection() as conn:
-            ((stored_run, period, stored_basis, stored, reran, cells),) = conn.execute(
-                OUTCOMES
-            ).fetchall()
-            assert conn.execute(COVERAGE).fetchone() == coverage
-            assert conn.execute(PACKAGES).fetchone() == (packages,)
-            sources = {source for (source,) in conn.execute(XBRL_SOURCE).fetchall()}
+    with _Fallback(pg_db, tmp_path, monkeypatch, basis) as run:
+        code = run.main(served, issuer)
+        ((stored_run, period, stored_basis, stored, rerun, stored_cells),) = run.read(OUTCOMES)
+        assert run.read(COVERAGE) == [run.coverage]
+        assert run.read(PACKAGES) == [(packages,)]
+        sources = {source for (source,) in run.read(XBRL_SOURCE)}
+        admissions = dict(run.read(ADMISSIONS, rerun))
     lines = capsys.readouterr().out.splitlines()
     assert [line.split("\t")[2] for line in lines if line.startswith("fetch\t")] == list(fetched)
-    assert lines[-1] == f"fallback\t{stage.entity_id}\t{Q2}\t{basis.value}\t{outcome}"
-    assert code == 4
-    assert (stored_run, period, stored_basis, stored) == (run_id, Q2, basis.value, outcome)
-    assert reran is rerun
-    assert cells and set(cells.values()) <= REASONS[outcome]
+    assert lines[-1] == f"fallback\t{run.entity_id}\t{Q2}\t{basis.value}\t{outcome}"
+    assert code == (0 if outcome == "ADMITTED" else 4)
+    assert (stored_run, period, stored_basis, stored) == (run.run_id, Q2, basis.value, outcome)
+    assert stored_cells.keys() == run.triggers.keys()
+    assert {disposition for disposition, _ in stored_cells.values()} == dispositions
+    named = {(row.key.canonical_id, _start(row)): row.row_id for row in run.rows.values()}
+    assert {cell: stored_cells[named[cell]] for cell in cells} == cells
+    assert (rerun is None) is (edit in STAGE_FAILURES)
+    if rerun is None:  # the original refusals stand, each with the stage's failure
+        failure = STAGE_FAILURES[edit]
+        assert stored_cells == {i: [r, failure] for i, r in run.triggers.items()}
+    for row_id, (disposition, detail) in stored_cells.items():
+        digest = run.rows[row_id].key.digest()
+        assert (disposition == "ADMITTED") is (digest in admissions.values())
+        if disposition == "ADMITTED":
+            assert admissions[detail] == digest
     if fetched[2:]:
         assert sources == {f"nse-indas-xbrl-{basis.value.lower()}"}
+
+
+def test_fallback_keeps_the_run_extractor(
+    pg_db: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A run under a non-default XBRL extractor is ingested and rerun under that extractor (the
+    rerun admits values only extracted under it); a vendor extractor that drifted since the run
+    is refused before anything is fetched (§6.8 step 3)."""
+    pin = extractor_pin(Representation.XBRL, version="xbrl-fallback-test")
+    served = _served()
+    issuer = _associates_omitted(served, tmp_path)
+    with _Fallback(pg_db, tmp_path, monkeypatch, Basis.CONSOLIDATED, xbrl=pin) as run:
+        with monkeypatch.context() as drift:
+            current, sources = run_config.VENDOR_EXTRACTORS["tijori"]
+            drift.setitem(run_config.VENDOR_EXTRACTORS, "tijori", (f"{current}-drift", sources))
+            assert run.main(served, issuer) == 5
+            assert not run.read(OUTCOMES)
+        assert "fetch\t" not in capsys.readouterr().out
+        assert run.main(served, issuer) == 0
+        ((rerun,),) = run.read("SELECT rerun_id FROM eqos.vendor_fallback_outcomes")
+        assert RunStore(run.pool).read_manifest(rerun).pinned.extractor_xbrl == pin
+        assert run.read(ADMISSIONS, rerun)
+
+
+class _Fallback:
+    """A Screener and Tijori run of Q2 FY26 on ``basis`` with its filing withheld, then the
+    command over a transport of the case's bodies."""
+
+    def __init__(
+        self,
+        pg_db: Any,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        basis: Basis,
+        xbrl: Any = None,
+    ) -> None:
+        self.pg_db, self.tmp_path, self.monkeypatch = pg_db, tmp_path, monkeypatch
+        self.basis, self.xbrl = basis, xbrl
+
+    def __enter__(self) -> _Fallback:
+        """Set up the run, its triggers and the coverage it must leave unchanged."""
+        self.monkeypatch.setattr(time, "sleep", lambda _: None)
+        for name, value in self.pg_db.cli_env().items():
+            self.monkeypatch.setenv(name, value)
+        self._pool = self.pg_db.runtime_pool()
+        self.pool = self._pool.__enter__()
+        stage = Stage(self.pg_db, self.pool, self.tmp_path, RUNS["APARINDS-Q2FY26"])
+        stage.config, stage.versions = load_run_config(CONFIG, V9), V9
+        self.entity_id = stage.entity_id
+        self.run_id = _vendor_run(stage, self.basis, self.monkeypatch, self.xbrl)
+        self.store_id = create_native_store(self.pool, "fallback")
+        self.rows = {row.row_id: row for row in RunStore(self.pool).read_results(self.run_id)}
+        ((self.coverage),) = self.read(COVERAGE)
+        for root in ("snapshots", "raw"):
+            (self.tmp_path / root).mkdir(mode=0o700)
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        """Close the pool."""
+        self._pool.__exit__(*exc)
+
+    def main(self, served: dict[str, bytes], issuer: Path | None) -> int:
+        """``eqos compare fallback`` over a transport of ``served``; the run's triggers as
+        admission reads them."""
+        self.monkeypatch.setattr(compare_cli, "live_transport", lambda: _transport(served))
+        self.triggers = {
+            row_id: refusal.value
+            for row_id, refusal in admit_run(
+                self.run_id, pool=self.pool, store_id=self.store_id, config_root=CONFIG
+            ).refusals
+            if refusal.value in TRIGGERS
+        }
+        argv = [
+            *("compare", "fallback", "--run", str(self.run_id), "--store-id", self.store_id),
+            *("--snapshot-root", str(self.tmp_path / "snapshots")),
+            *("--raw-root", str(self.tmp_path / "raw")),
+            *(("--issuer-config", str(issuer)) if issuer else ()),
+        ]
+        return main(argv)
+
+    def read(self, query: str, *params: Any) -> list[Any]:
+        """One query's rows."""
+        with self.pool.connection() as conn:
+            return conn.execute(query, params).fetchall()
+
+
+def _start(row: ResultRow) -> date:
+    """A cell's period start, or its instant."""
+    return row.key.period.start or row.key.period.instant or Q2
 
 
 def _transport(served: dict[str, bytes]) -> Callable[[Request], tuple[int, bytes]]:
@@ -225,9 +367,9 @@ def _transport(served: dict[str, bytes]) -> Callable[[Request], tuple[int, bytes
     return send
 
 
-def _vendor_run(stage: Stage, basis: Basis, monkeypatch: pytest.MonkeyPatch) -> int:
+def _vendor_run(stage: Stage, basis: Basis, monkeypatch: pytest.MonkeyPatch, xbrl: Any) -> int:
     """A Screener and Tijori run of Q2 FY26 on ``basis`` with no filing ingested, after the Ind AS
-    setting onboarding records."""
+    setting onboarding records; ``xbrl``, if given, is its XBRL extractor pin."""
     discovery = stage.repository.put_evidence_input(EvidenceInputKind.DISCOVERY, SYMBOL, "d" * 64)
     stage.repository.put_settings_record(
         stage.entity_id, SettingKey.REPORTING_FRAMEWORK, "IND_AS", discovery
@@ -243,6 +385,7 @@ def _vendor_run(stage: Stage, basis: Basis, monkeypatch: pytest.MonkeyPatch) -> 
         stage.vendor("/".join(TIJORI), "A-TIJ", basis=basis)
         vendors = (TIJORI,)
     settings = stage.pg_db.settings
+    pins = None if xbrl is None else {Representation.XBRL: xbrl}
     request = request_for(
         stage.entity_id,
         Q2,
@@ -255,5 +398,6 @@ def _vendor_run(stage: Stage, basis: Basis, monkeypatch: pytest.MonkeyPatch) -> 
         ),
         vendors=vendors,
         versions=V9,
+        extractor_pins=pins,
     )
-    return execute_run(request, pool=stage.pool, config_root=CONFIG).run_id
+    return execute_run(request, pool=stage.pool, config_root=CONFIG, extractor_pins=pins).run_id

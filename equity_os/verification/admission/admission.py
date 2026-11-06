@@ -123,9 +123,6 @@ FROM eqos.fact_admissions a
 WHERE a.store_id = %s AND a.row_handle = %s AND a.overlay_position <= %s
 ORDER BY a.overlay_position DESC, a.id DESC LIMIT 1
 """
-_TRIGGERS = frozenset(
-    {"CHECK_REQUIRED", "VENDOR_UNMAPPED", "VENDORS_DISAGREE", "VENDORS_IMPRECISE"}
-)
 
 
 class BridgeError(ValueError):
@@ -142,6 +139,17 @@ class AdmissionRefusal(StrEnum):
     VENDOR_UNMAPPED = "VENDOR_UNMAPPED"
     VENDORS_DISAGREE = "VENDORS_DISAGREE"
     VENDORS_IMPRECISE = "VENDORS_IMPRECISE"
+
+
+# Rows 4 and 6 of §6.5: the fallback workflow's triggers (§6.8).
+TRIGGERS = frozenset(
+    {
+        AdmissionRefusal.CHECK_REQUIRED,
+        AdmissionRefusal.VENDOR_UNMAPPED,
+        AdmissionRefusal.VENDORS_DISAGREE,
+        AdmissionRefusal.VENDORS_IMPRECISE,
+    }
+)
 
 
 class AdmissionRecord(BaseModel):
@@ -283,7 +291,7 @@ def admit_run(
                 refusal = AdmissionRefusal.CHECK_REQUIRED
             if refusal is not None:
                 refusals.append((row.row_id, refusal))
-                if refusal in _TRIGGERS:
+                if refusal in TRIGGERS:
                     triggers.add((row.key.entity_id, period_end(row.key.period), row.key.basis))
                 continue
             witness = None

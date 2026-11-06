@@ -1,11 +1,13 @@
 """The fallback workflow (spec 2026-11-06-vendor-first §6.8): for each company-period a run's
 admission triggers, acquire that period's results filing, ingest it, rerun with the default
-vendor sides under the run's pins, admit, and store one terminal outcome. Entity, symbol, ISIN,
-period end and basis come from the triggering run, so no other issuer is requested."""
+vendor sides under the run's pins, admit, settle each original trigger cell against its rerun row
+and store one terminal outcome. Entity, symbol, ISIN, period end and basis come from the
+triggering run, so no other issuer is requested."""
 
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Iterable
 from datetime import date
 from pathlib import Path
 
@@ -17,14 +19,22 @@ from psycopg_pool import ConnectionPool
 from equity_os.companies.identity.identity_layers import latest_slice
 from equity_os.companies.onboarding.discovery import Fetch
 from equity_os.contracts.companies.entity_identity import IdentifierNamespace
-from equity_os.contracts.measurement.canonical import Basis, Representation
-from equity_os.contracts.measurement.evidence import FilingFamily
+from equity_os.contracts.measurement.canonical import (
+    ApplicabilityStatus,
+    Basis,
+    Representation,
+)
+from equity_os.contracts.measurement.evidence import FilingFamily, VersionPin
 from equity_os.contracts.measurement.observation import AccountingFramework
 from equity_os.contracts.sourcing.acquisition_outcome import outcome_source_state
 from equity_os.contracts.sourcing.source_catalog import BUILTIN_SOURCES
-from equity_os.contracts.verification.comparison import SourceState
+from equity_os.contracts.verification.comparison import SourceRole, SourceState
 from equity_os.contracts.verification.config_versions import ConfigVersions
-from equity_os.contracts.verification.vendor_first import FallbackOutcome
+from equity_os.contracts.verification.vendor_first import (
+    FallbackDisposition,
+    FallbackFailure,
+    FallbackOutcome,
+)
 from equity_os.extraction.packages.capture_intake import (
     PDF_INPUT_DIR,
     XBRL_INPUT_DIR,
@@ -43,24 +53,36 @@ from equity_os.interface.entry.watchlist_config import with_issuer_pdfs
 from equity_os.sourcing.exchange.results_filing import ResultsFiling, acquire_results
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records.repository import EvidenceRepository
-from equity_os.verification.admission.admission import AdmissionRefusal, admit_run
+from equity_os.verification.admission.admission import (
+    TRIGGERS,
+    AdmissionOutcome,
+    AdmissionRefusal,
+    admit_run,
+)
 from equity_os.verification.comparison.run import execute_run, request_for
-from equity_os.verification.comparison.run_config import LoadedConfig, load_run_config
-from equity_os.verification.comparison.run_models import RunManifest
+from equity_os.verification.comparison.run_config import (
+    LoadedConfig,
+    extractor_pin,
+    load_run_config,
+    require_pins,
+)
+from equity_os.verification.comparison.run_models import ResultRow, RunManifest
 from equity_os.verification.comparison.run_store import RunStore
-from equity_os.verification.comparison.selection import period_end
+from equity_os.verification.comparison.selection import NO_ELIGIBLE_PACKAGE, period_end
 
 Group = tuple[int, date, Basis]
-# Rows 4 and 6 of §6.5 refuse with these; REVIEW_OPEN and FILING_UNRESOLVED belong to the queue.
-TRIGGERS = frozenset(
+# A cell's disposition (an ``AdmissionRefusal`` or ``FallbackDisposition``) and its detail: the
+# admission id, the applicability rule, or the filing or stage failure.
+Cell = tuple[str, int | str | None]
+# REVIEW_OPEN and FILING_UNRESOLVED belong to the queue: a trigger left with one is unresolved.
+UNRESOLVED = frozenset({AdmissionRefusal.REVIEW_OPEN, AdmissionRefusal.FILING_UNRESOLVED})
+SETTLED = frozenset(
     {
-        AdmissionRefusal.CHECK_REQUIRED,
-        AdmissionRefusal.VENDOR_UNMAPPED,
-        AdmissionRefusal.VENDORS_DISAGREE,
-        AdmissionRefusal.VENDORS_IMPRECISE,
+        FallbackDisposition.ADMITTED,
+        FallbackDisposition.NOT_DISCLOSED,
+        FallbackDisposition.NOT_APPLICABLE,
     }
 )
-UNRESOLVED = frozenset({AdmissionRefusal.REVIEW_OPEN, AdmissionRefusal.FILING_UNRESOLVED})
 RESULTS_KIND = "results"
 PDF_PARSE = "pdf_parse"
 AUTHORIZATION = "vendor-first fallback of run {run_id}"
@@ -87,40 +109,66 @@ def run_fallback(
     code_version: str,
 ) -> list[tuple[int, date, Basis, FallbackOutcome]]:
     """Each triggered company-period of ``run_id`` through acquire, ingest, a rerun with
-    ``vendors`` and admit; its terminal outcome is stored with the run, the rerun and the trigger
-    cells still refused."""
+    ``vendors`` and admit; its terminal outcome is stored with the run, the rerun and every
+    original trigger cell's disposition."""
     manifest = RunStore(pool).read_manifest(run_id)
+    extractors = {
+        Representation.XBRL: manifest.pinned.extractor_xbrl,
+        Representation.PDF: manifest.pinned.extractor_pdf,
+    }
+    # Unsupported pin drift is refused here, before any acquisition (§6.8 step 3).
+    config = load_run_config(
+        config_root,
+        ConfigVersions.of(manifest.pinned),
+        extractor_pins={r: extractor_pin(r, version=p.version) for r, p in extractors.items()},
+        vendors=manifest.scope.vendors,
+    )
+    require_pins(config, manifest.pinned)
     groups = {
         row.row_id: (row.key.entity_id, period_end(row.key.period), row.key.basis)
         for row in RunStore(pool).read_results(run_id)
     }
-    triggered: dict[Group, dict[str, str]] = {}
+    triggered: dict[Group, dict[str, AdmissionRefusal]] = {}
     for row_id, refusal in admit_run(
         run_id, pool=pool, store_id=store_id, config_root=config_root
     ).refusals:
         if refusal in TRIGGERS:
-            triggered.setdefault(groups[row_id], {})[row_id] = refusal.value
-    config = load_run_config(config_root, ConfigVersions.of(manifest.pinned))
+            triggered.setdefault(groups[row_id], {})[row_id] = refusal
+    wants_pdf = issuer_config is not None and PDF_PARSE in yaml.safe_load(
+        issuer_config.read_bytes()
+    )
     authorization, roots = AUTHORIZATION.format(run_id=run_id), (snapshot_root, raw_root)
     outcomes = []
-    for group, cells in sorted(triggered.items()):
-        outcome, rerun, left = FallbackOutcome.FILING_UNAVAILABLE, None, cells
+    for group, refused in sorted(triggered.items()):
+        rerun, failure = None, None
         filing, symbol = _acquire(pool, SnapshotStore(snapshot_root), fetch, group)
-        if filing is not None and not _ingest(
-            pool, filing, group, symbol, authorization, roots, config, issuer_config
-        ):
-            outcome = FallbackOutcome.FILING_UNRESOLVED
+        if filing is not None and filing.pdf is None and wants_pdf:
+            failure = FallbackFailure.PDF_UNACQUIRED
         elif filing is not None:
-            rerun = _rerun(pool, manifest, group, config_root, vendors, code_version)
-            admitted = admit_run(rerun, pool=pool, store_id=store_id, config_root=config_root)
-            refusals = dict(admitted.refusals)
-            left = {row_id: refusals[row_id].value for row_id in cells if row_id in refusals}
-            outcome = FallbackOutcome.STILL_REFUSED if left else FallbackOutcome.ADMITTED
-            if UNRESOLVED.intersection(refusals[row_id] for row_id in left):
+            pdf_config = issuer_config if wants_pdf else None
+            failure = _ingest(
+                pool, filing, group, symbol, authorization, roots, config, pdf_config, extractors
+            )
+        if filing is None or failure is not None:
+            outcome = FallbackOutcome.FILING_UNAVAILABLE
+            if filing is not None:
                 outcome = FallbackOutcome.FILING_UNRESOLVED
+            cells: dict[str, Cell] = {i: (r.value, failure) for i, r in refused.items()}
+        else:
+            rerun = _rerun(pool, manifest, group, config_root, vendors, code_version, extractors)
+            admitted = admit_run(rerun, pool=pool, store_id=store_id, config_root=config_root)
+            rows = {row.row_id: row for row in RunStore(pool).read_results(rerun)}
+            read = all(_read(rows.values(), page) for page in vendors)
+            cells = {i: settle(rows.get(i), admitted, read) for i in refused}
+            dispositions = {disposition for disposition, _ in cells.values()}
+            outcome = FallbackOutcome.ADMITTED
+            if UNRESOLVED & dispositions:
+                outcome = FallbackOutcome.FILING_UNRESOLVED
+            elif dispositions - SETTLED:
+                outcome = FallbackOutcome.STILL_REFUSED
         entity_id, end, basis = group
         with pool.connection() as conn:
-            params = (run_id, entity_id, end, basis.value, outcome.value, rerun, Jsonb(left))
+            params = (run_id, entity_id, end, basis.value, outcome.value, rerun, Jsonb(cells))
             conn.execute(_INSERT, params)
         _LOG.info(
             _EVENT,
@@ -130,7 +178,7 @@ def run_fallback(
             basis=basis.value,
             outcome=outcome.value,
             rerun_id=rerun,
-            cells=left,
+            cells=cells,
         )
         outcomes.append((*group, outcome))
     return outcomes
@@ -173,21 +221,20 @@ def _ingest(
     authorization: str,
     roots: tuple[Path, Path],
     config: LoadedConfig,
-    issuer_config: Path | None,
-) -> bool:
-    """Ingest the filing as onboarding does: XBRL-only, plus the results PDF when the issuer
-    config has a ``pdf_parse`` block (its declared ``sha256`` must be the acquired PDF's).
-    ``False`` when the intake is refused or any extraction fails."""
+    pdf_config: Path | None,
+    extractors: dict[Representation, VersionPin],
+) -> FallbackFailure | None:
+    """Ingest the filing as onboarding does, under the triggering run's extractors: XBRL-only,
+    plus the results PDF when ``pdf_config`` (an issuer config with a ``pdf_parse`` block, whose
+    declared ``sha256`` must be the acquired PDF's) is given. The failure, if any."""
     (entity_id, end, basis), (snapshot_root, raw_root) = group, roots
     xbrl_kind = XBRL_KIND.format(basis=basis.value.lower())
     members = [(Representation.XBRL, xbrl_kind, XBRL_INPUT_DIR, filing.xbrl)]
-    catalog, specs, pdf_config = BUILTIN_SOURCES, None, None
-    if filing.pdf is not None and issuer_config is not None:
-        if PDF_PARSE in yaml.safe_load(issuer_config.read_bytes()):
-            loaded = load_config(issuer_config)
-            catalog, specs = with_issuer_pdfs(catalog, loaded), specs_from_config(loaded.pdf_parse)
-            members.append((Representation.PDF, RESULTS_KIND, PDF_INPUT_DIR, filing.pdf))
-            pdf_config = issuer_config
+    catalog, specs = BUILTIN_SOURCES, None
+    if pdf_config is not None and filing.pdf is not None:
+        loaded = load_config(pdf_config)
+        catalog, specs = with_issuer_pdfs(catalog, loaded), specs_from_config(loaded.pdf_parse)
+        members.append((Representation.PDF, RESULTS_KIND, PDF_INPUT_DIR, filing.pdf))
     files = [(kind, member) for _, kind, _, member in members]
     package = package_manifest(symbol, authorization, files)
     with tempfile.TemporaryDirectory(dir=raw_root) as staging:
@@ -221,13 +268,18 @@ def _ingest(
                 family=FilingFamily.FINANCIAL_RESULTS,
                 reporting_period_end=end,
                 pdf_specs=specs,
+                extractor_versions={r: pin.version for r, pin in extractors.items()},
             )
-        except (IntakeError, IngestError):
-            return False
-    return report.package_id is not None and not any(
+        except IntakeError:
+            return FallbackFailure.INTAKE_REFUSED
+        except IngestError:
+            return FallbackFailure.EXTRACTION_FAILED
+    if report.package_id is None or any(
         outcome_source_state(attempt.outcome) is SourceState.UNAVAILABLE
         for attempt in report.attempts
-    )
+    ):
+        return FallbackFailure.EXTRACTION_FAILED
+    return None
 
 
 def _rerun(
@@ -237,8 +289,10 @@ def _rerun(
     config_root: Path,
     vendors: tuple[tuple[str, str], ...],
     code: str,
+    extractors: dict[Representation, VersionPin],
 ) -> int:
-    """A fresh run of the group with the default vendor sides and the triggering run's pins."""
+    """A fresh run of the group with the default vendor sides (each new one pinned at its
+    current extractor) and the triggering run's other pins."""
     entity_id, end, basis = group
     request = request_for(
         entity_id,
@@ -251,5 +305,49 @@ def _rerun(
         mode=manifest.mode,
         vendors=vendors,
         versions=ConfigVersions.of(manifest.pinned),
+        extractor_pins=extractors,
     )
-    return execute_run(request, pool=pool, config_root=config_root).run_id
+    return execute_run(
+        request, pool=pool, config_root=config_root, extractor_pins=extractors
+    ).run_id
+
+
+def settle(row: ResultRow | None, admitted: AdmissionOutcome, vendors_read: bool) -> Cell:
+    """One original trigger cell against its rerun row of the same measurement identity: a
+    matching admission, a rerun-proven ``NOT_APPLICABLE``, a guarded ``NOT_DISCLOSED``, or the
+    rerun's refusal (with its filing failure). No row is ``RERUN_ROW_MISSING``."""
+    if row is None:
+        return FallbackDisposition.RERUN_ROW_MISSING.value, None
+    digest = row.key.digest()
+    for record in admitted.records:
+        if record.key_digest == digest:
+            return FallbackDisposition.ADMITTED.value, record.admission_id
+    refusal = dict(admitted.refusals)[row.row_id]
+    if refusal not in UNRESOLVED:
+        if row.applicability is ApplicabilityStatus.NOT_APPLICABLE:
+            return FallbackDisposition.NOT_APPLICABLE.value, row.applicability_rule_id
+        if refusal is AdmissionRefusal.VENDOR_UNMAPPED and vendors_read and _absent(row):
+            return FallbackDisposition.NOT_DISCLOSED.value, None
+    return refusal.value, dict(admitted.filing_failures).get(row.row_id)
+
+
+def _absent(row: ResultRow) -> bool:
+    """§6.4's ``FILING_ABSENT`` read from the selected package, with no value on any side: a
+    failed, invalid, constructed or zero value is not absence. A vendor with no side here has no
+    table mapping the key in the pinned mapping set."""
+    first_party = [v for v in row.source_values if v.source_role is SourceRole.FIRST_PARTY]
+    return (
+        bool(first_party)
+        and all(v.reason != NO_ELIGIBLE_PACKAGE for v in first_party)
+        and all(v.state is SourceState.NO_VALUE for v in row.source_values)
+    )
+
+
+def _read(rows: Iterable[ResultRow], page: tuple[str, str]) -> bool:
+    """Whether a vendor page's capture was read in the run: some side of it is a value or
+    an interpreted absence, so the capture was acquired and interpreted under the pins."""
+    return any(
+        (v.source_id, v.surface) == page and v.state in (SourceState.VALUE, SourceState.NO_VALUE)
+        for row in rows
+        for v in row.source_values
+    )
