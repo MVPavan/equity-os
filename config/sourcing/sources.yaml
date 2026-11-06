@@ -77,6 +77,13 @@ sources:
     ANNOUNCEMENTS_LISTING: identity
     BOARD_MEETINGS_LISTING: identity
     ANNUAL_REPORTS_LISTING: identity
+- id: nse-grounding
+  role: first-party
+  status: active
+  note: 'retention-only grounding bodies (VENDOR-1 §8 step 1): an undeclared source, never a member'
+  surfaces:
+    NSE_XBRL_INSTANCE: identity
+    NSE_RESULTS_DOCUMENT: identity
 - id: bse
   role: first-party
   status: active
