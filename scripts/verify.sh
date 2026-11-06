@@ -711,8 +711,8 @@ PYEOF
         | grep -oE '[0-9]{4,}' | sort -u >"${ids}"
       if [ -s "${ids}" ]; then
         # A bare four-digit value cannot be told from a year or a round amount, so it counts
-        # only in id-like context.
-        leaked="$({ grep -hoE '[0-9]{5,}' "${added_tests}"
+        # only in id-like context. A decimal is an amount, not an id: its digits never count.
+        leaked="$({ grep -hoE '[0-9]+(\.[0-9]+)*' "${added_tests}" | grep -xE '[0-9]{5,}'
           grep -hoEi "(company|row)[_-]?id[\"']?[[:space:]]*[:=][[:space:]]*[\"']?[0-9]{4}\b|/company/(id/)?[0-9]{4}/" \
             "${added_tests}" | grep -oE '[0-9]{4}'
         } 2>/dev/null | grep -xFf "${ids}" | sort -u | paste -sd, - || true)"

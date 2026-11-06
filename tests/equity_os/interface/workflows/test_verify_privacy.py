@@ -150,6 +150,19 @@ def test_identifier_rail_ignores_bare_four_digit_values_and_reports_every_match(
     assert "2023" not in result.stdout.split("real captured identifier")[1].split("\n")[0]
 
 
+@pytest.mark.parametrize("line", ["ratio = 0.90073", "price = 90073.25", "pe = 12.90073"])
+def test_identifier_rail_ignores_the_digits_of_a_decimal(gate, line: str) -> None:
+    """A decimal is an amount: its digits matching a captured id is coincidence, not a leak."""
+    root, _ = gate
+    (root / "tests/equity_os/test_synthetic.py").write_text(f"{line}\n")
+    _capture(root, '<tr data-row-company-id="90073">')
+
+    result = _run(gate)
+
+    assert result.returncode == 0, result.stdout
+    assert "rails            OK" in result.stdout
+
+
 @pytest.mark.parametrize(
     "line",
     [
