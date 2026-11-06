@@ -1,6 +1,6 @@
 # VENDOR-1: vendor-first sourcing with filing checks
 
-**Status:** draft. **Bead:** filed by the orchestrator. **Date:** 2026-11-06.
+**Status:** approved (gpt-6.1-sol APPROVE, review round 3, 2026-11-06). **Bead:** eqos-awnc. **Date:** 2026-11-06.
 
 Code facts were read at `77637a17`; store facts were queried read-only. **Inferred** and **not
 established** mark everything else. Measurement figures come from
@@ -119,7 +119,7 @@ Change, from listing evidence only:
   `NSE_XBRL_INSTANCE` names the consolidated source). Any consolidated row keeps today's path.
 - **Basis status.** Derived settings write `STANDALONE_ONLY` when discovery selected standalone
   filings, `CONSOLIDATED_AND_STANDALONE` otherwise; the value is never defaulted.
-- **Ingest and pairing.** Onboarding ingests with `Basis.STANDALONE`. For a `STANDALONE_ONLY`
+- **Ingest and pairing.** On this standalone-only path, onboarding ingests with `Basis.STANDALONE`. For a `STANDALONE_ONLY`
   entity, consolidated cells are `NOT_APPLICABLE` and no consolidated vendor table pairs with a
   standalone filing or vendor table.
 
