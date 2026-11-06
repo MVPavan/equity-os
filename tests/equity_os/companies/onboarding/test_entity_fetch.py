@@ -26,6 +26,7 @@ from equity_os.contracts.companies.onboarding import VerificationUnit
 from equity_os.contracts.sourcing.source_catalog import NSE_MASTER
 from equity_os.interface.commands.companies import acquisition_authority
 from equity_os.interface.commands.companies.acquisition_authority import entity_fetch
+from equity_os.interface.commands.extraction import evidence_cli
 from equity_os.interface.commands.verification import compare_cli
 from equity_os.interface.entry.cli import main
 
@@ -166,3 +167,22 @@ def test_compare_fallback_refuses_a_protected_snapshot_root(
     ]
     assert main(argv) == 5
     assert not (tmp_path / "raw").exists()
+
+
+@pytest.mark.parametrize("protected", ["snapshot", "raw"])
+def test_evidence_acquire_refuses_a_protected_root(
+    checkout: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, protected: str
+) -> None:
+    """FIVE-1 Task 3: ``evidence acquire`` refuses a protected snapshot or raw root before it
+    opens the database or builds a transport."""
+    monkeypatch.setattr(evidence_cli, "open_pool", _no_socket)
+    monkeypatch.setattr(evidence_cli, "live_transport", _no_socket)
+    roots = {"snapshot": tmp_path / "snapshots", "raw": tmp_path / "raw"}
+    roots[protected] = checkout / "data/holdout" / protected
+    argv = [
+        *("evidence", "acquire", "--entity", "ZZFAKE", "--basis", "consolidated"),
+        *("--period-end", "2025-09-30", "--mapping-set", "v9", "--dictionary", "v2"),
+        *("--snapshot-root", str(roots["snapshot"]), "--raw-root", str(roots["raw"])),
+    ]
+    assert main(argv) == 2
+    assert not any((checkout / "data").rglob("*.*"))

@@ -22,7 +22,11 @@ from equity_os.extraction.model.vendor_surface_claims import extract_text
 from equity_os.extraction.model.vendor_surface_labels import map_labels
 from equity_os.extraction.model.vendor_surface_model import ChatCompletionsModel, ModelSettings
 from equity_os.extraction.surfaces.vendor_surface_parse import register_tables
-from equity_os.interface.commands.sourcing.vendor_reingest import reingest
+from equity_os.interface.commands.extraction.evidence_cli import EXIT_INCOMPLETE
+from equity_os.interface.commands.sourcing.vendor_reingest import (
+    ReingestIncompleteError,
+    reingest,
+)
 from equity_os.interface.commands.verification.compare_cli import _aware_cutoff, _code_version
 from equity_os.interface.entry.env_credentials import (
     _screener_credentials_from_env,
@@ -106,6 +110,7 @@ def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     again.add_argument("--dictionary", required=True)
     again.add_argument("--snapshot-root", type=Path, default=Path("data/raw/snapshots/v1"))
     again.add_argument("--config-root", type=Path, default=Path("config"))
+    again.add_argument("--captures-of", type=date.fromisoformat)
 
     measured = commands.add_parser("measure")
     measured.add_argument("--available-from", required=True, type=_aware_cutoff)
@@ -183,15 +188,20 @@ def dispatch_vendor_command(
         return 0
     if args.vendor_command == "reingest":
         with pool_factory() as pool:
-            reports = reingest(
-                pool,
-                store_factory(args.snapshot_root),
-                args.config_root,
-                ConfigVersions(dictionary=args.dictionary, mapping_set=args.mapping_set),
-                entity=args.entity,
-                period_end=args.period_end,
-                basis=BASES[args.basis],
-            )
+            try:
+                reports = reingest(
+                    pool,
+                    store_factory(args.snapshot_root),
+                    args.config_root,
+                    ConfigVersions(dictionary=args.dictionary, mapping_set=args.mapping_set),
+                    entity=args.entity,
+                    period_end=args.period_end,
+                    basis=BASES[args.basis],
+                    captures_of=args.captures_of,
+                )
+            except ReingestIncompleteError as gap:
+                sys.stderr.write(f"INCOMPLETE: {gap}\n")
+                return EXIT_INCOMPLETE
         for done in reports:
             line = {"surface": done.attempt.surface, "outcome": done.attempt.outcome.value}
             sys.stdout.write(json.dumps(line | {"interpretations": len(done.interpretations)}))

@@ -4,6 +4,9 @@
         --period-end <YYYY-MM-DD> --basis consolidated --raw-root <dir> --snapshot-root <dir>
         [--member xbrl=<kind>] [--member pdf=<kind>] [--issuer-config <yaml>]
         [--config-root config]
+    evidence acquire --entity <key> --basis consolidated --period-end <YYYY-MM-DD>
+        --mapping-set <m> --dictionary <d> --snapshot-root <dir> --raw-root <dir>
+        [--issuer-config <yaml>] [--config-root config] [--generation <n>]
     evidence transcript --retrieval-manifest <json> --issuer <symbol> --quarter <FYyy_Qn>
         --raw-root <dir> --snapshot-root <dir> --issuer-config <yaml>
 
@@ -12,11 +15,18 @@ source catalog (design decision 12) are built here and nowhere else. ``--issuer-
 supplies the PDF ``pdf_parse`` block and the results-PDF declaration and is required when a
 PDF member is named. Exit 0 only when a package with occurrences is stored and no extraction
 attempt failed (``EXIT_INCOMPLETE`` otherwise; ``NOT_PUBLISHED`` is not a failure).
+
+``acquire`` (FIVE-1 Task 3) fetches and ingests one named period's results filing exactly as
+``compare fallback`` does, writing no run, admission or outcome; its fetches are kept as the next
+entity generation under ``--raw-root``, and ``--generation`` replays one with no socket. It prints
+the stored package id, ``FILING_UNAVAILABLE`` or ``FILING_UNRESOLVED`` and exits
+``EXIT_INCOMPLETE`` unless the filing was ingested.
 """
 
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 from collections.abc import Mapping
 from datetime import date
@@ -26,6 +36,7 @@ import psycopg
 import structlog
 from pydantic import ValidationError
 
+from equity_os.companies.identity.identity_seed import SettingKey
 from equity_os.contracts.measurement.canonical import Basis, Representation
 from equity_os.contracts.measurement.evidence import FilingFamily
 from equity_os.contracts.measurement.observation import AccountingFramework
@@ -33,6 +44,8 @@ from equity_os.contracts.sourcing.acquisition_outcome import outcome_source_stat
 from equity_os.contracts.sourcing.snapshot import INTAKE_RIGHTS
 from equity_os.contracts.sourcing.source_catalog import BUILTIN_SOURCES
 from equity_os.contracts.verification.comparison import SourceState
+from equity_os.contracts.verification.config_versions import ConfigVersions
+from equity_os.contracts.verification.vendor_first import FallbackOutcome
 from equity_os.extraction.packages.capture_intake import IntakeError, retained_intake_from_manifest
 from equity_os.extraction.packages.first_party_ingest import (
     IngestError,
@@ -40,6 +53,11 @@ from equity_os.extraction.packages.first_party_ingest import (
     ingest_first_party,
 )
 from equity_os.extraction.results_pdf.pdf_statement_pages import specs_from_config
+from equity_os.interface.commands.companies.acquisition_authority import (
+    entity_fetch,
+    ordinary_roots,
+)
+from equity_os.interface.commands.companies.onboard_cli import live_transport
 from equity_os.interface.commands.sourcing.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from equity_os.interface.entry.config import load_config
 from equity_os.interface.entry.watchlist_config import with_issuer_pdfs
@@ -53,9 +71,18 @@ from equity_os.storage.database.pool import DatabaseUnavailableError, open_pool
 from equity_os.storage.database.settings import PgRole, PgSettings
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records.repository import EvidenceRepository
+from equity_os.verification.admission.fallback import (
+    acquire_group,
+    ingest_group,
+    ingested,
+    pdf_issuer_config,
+)
+from equity_os.verification.comparison.run_config import extractor_pin, load_run_config
 
 EVIDENCE_COMMAND = "evidence"
 INGEST_ACTION = "ingest"
+ACQUIRE_ACTION = "acquire"
+NAMED_PERIOD = "named-period acquisition of {key} {period_end}"
 TRANSCRIPT_ACTION = "transcript"
 TRANSCRIPT_KIND = "transcript"
 TRANSCRIPT_DECLARATION = "transcript_pdf"
@@ -70,6 +97,7 @@ NORMALISATION_POLICY_DIR = "normalisation/normalisation_policy"
 # The NSE surfaces this command reads are the Ind AS filings (``nse-indas-*``).
 FRAMEWORK = AccountingFramework.IND_AS
 MEMBER_SEPARATOR = "="
+FISCAL_MONTH = SettingKey.FISCAL_YEAR_END_MONTH
 # As ``compare run``'s INCOMPLETE: the ingest ran but stored no usable package, or an
 # extraction attempt failed.
 EXIT_INCOMPLETE = 4
@@ -77,14 +105,18 @@ EXIT_INCOMPLETE = 4
 _ACTION_DEST = "evidence_action"
 _HELP = "ingest first-party filings into the evidence store"
 _INGEST_HELP = "stage, extract and interpret one results package from retained originals"
+_ACQUIRE_HELP = "fetch and ingest one named period's results filing, as the fallback does"
 _TRANSCRIPT_HELP = "register one quarter's transcript PDF as a diagnostic first-party capture"
 _MEMBER_HELP = "a package member as <representation>=<manifest kind>, e.g. xbrl=xbrl-consolidated"
 _BAD_MEMBER = "--member {value!r} is not xbrl=<kind> or pdf=<kind>"
 _NO_MEMBER = "name at least one --member"
 _PDF_NEEDS_CONFIG = "a pdf member needs --issuer-config"
+_OUTSIDE_SETTINGS = "no fiscal-year-end month governs {period_end}; onboarding's window"
 _UNKNOWN_ISSUER = "issuer {issuer!r} is not seeded"
 _REFUSED_EVENT = "evidence_command_refused"
 _CAPTURE_REF = "capture_ref\t{capture_ref_id}\n"
+_ACQUIRED = "{period_end}\tpackage\t{package_id}\n"
+_NOT_ACQUIRED = "{period_end}\t{outcome}\n"
 _SUMMARY = "package\t{package_id}\noccurrences\t{occurrences}"
 _COUNT_LINE = "interpretations\t{status}\t{count}"
 _ATTEMPT_LINE = "attempt\t{stage}\t{representation}\t{family}\t{outcome}"
@@ -96,7 +128,7 @@ class EvidenceCommandError(ValueError):
 
 
 def add_evidence_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Register ``evidence`` and its ``ingest`` and ``transcript`` actions."""
+    """Register ``evidence`` and its ``ingest``, ``acquire`` and ``transcript`` actions."""
     parser = subparsers.add_parser(EVIDENCE_COMMAND, help=_HELP)
     actions = parser.add_subparsers(dest=_ACTION_DEST, required=True)
     ingest = actions.add_parser(INGEST_ACTION, help=_INGEST_HELP)
@@ -112,6 +144,17 @@ def add_evidence_parser(subparsers: argparse._SubParsersAction[argparse.Argument
     ingest.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
     ingest.add_argument("--dictionary", default=DICTIONARY_VERSION)
     ingest.add_argument("--mapping-set", default=MAPPING_SET_VERSION)
+    acquire = actions.add_parser(ACQUIRE_ACTION, help=_ACQUIRE_HELP)
+    acquire.add_argument("--entity", required=True)
+    acquire.add_argument("--basis", required=True, choices=sorted(_BASES))
+    acquire.add_argument("--period-end", required=True, type=date.fromisoformat)
+    acquire.add_argument("--mapping-set", required=True)
+    acquire.add_argument("--dictionary", required=True)
+    acquire.add_argument("--snapshot-root", required=True, type=Path)
+    acquire.add_argument("--raw-root", required=True, type=Path)
+    acquire.add_argument("--issuer-config", type=Path)
+    acquire.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
+    acquire.add_argument("--generation", type=int)
     transcript = actions.add_parser(TRANSCRIPT_ACTION, help=_TRANSCRIPT_HELP)
     for flag in ("--retrieval-manifest", "--raw-root", "--snapshot-root", "--issuer-config"):
         transcript.add_argument(flag, required=True, type=Path)
@@ -124,6 +167,8 @@ def dispatch_evidence_command(args: argparse.Namespace) -> int | None:
     if args.command != EVIDENCE_COMMAND:
         return None
     try:
+        if args.evidence_action == ACQUIRE_ACTION:
+            return _acquire(args)
         return _transcript(args) if args.evidence_action == TRANSCRIPT_ACTION else _ingest(args)
     except (
         EvidenceCommandError,
@@ -135,6 +180,7 @@ def dispatch_evidence_command(args: argparse.Namespace) -> int | None:
         ValidationError,
         OSError,
         LookupError,
+        ValueError,
     ) as refusal:
         structlog.get_logger("fundamentals.evidence").warning(
             _REFUSED_EVENT, refusal=type(refusal).__name__, detail=str(refusal)
@@ -213,6 +259,55 @@ def _ingest(args: argparse.Namespace) -> int:
     )
     usable = report.package_id is not None and report.occurrence_count > 0
     return EXIT_OK if usable and not failed else EXIT_INCOMPLETE
+
+
+def _acquire(args: argparse.Namespace) -> int:
+    """Fetch and ingest one named period's filing as the fallback does; print the outcome."""
+    ordinary_roots(args.snapshot_root, args.raw_root)
+    pdf_config = pdf_issuer_config(args.issuer_config)
+    versions = ConfigVersions(dictionary=args.dictionary, mapping_set=args.mapping_set)
+    config = load_run_config(args.config_root, versions)
+    extractors = {r: extractor_pin(r) for r in (Representation.XBRL, Representation.PDF)}
+    roots = (args.snapshot_root, args.raw_root)
+    authorization = NAMED_PERIOD.format(key=args.entity, period_end=args.period_end)
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+        repository = EvidenceRepository(pool)
+        entity_id = repository.entity_id(args.entity)
+        if entity_id is None:
+            raise EvidenceCommandError(_UNKNOWN_ISSUER.format(issuer=args.entity))
+        clock = repository.store_clock()
+        if repository.settings_as_of(entity_id, FISCAL_MONTH, clock, args.period_end) is None:
+            raise EvidenceCommandError(_OUTSIDE_SETTINGS.format(period_end=args.period_end))
+        group = (entity_id, args.period_end, _BASES[args.basis])
+        fetch, write = entity_fetch(
+            args.raw_root, args.generation, args.entity, authorization, live_transport
+        )
+        try:
+            filing, symbol = acquire_group(pool, SnapshotStore(args.snapshot_root), fetch, group)
+        finally:
+            write()
+        report = None
+        if filing is not None and (filing.pdf is not None or pdf_config is None):
+            with contextlib.suppress(IntakeError, IngestError):
+                report = ingest_group(
+                    pool,
+                    filing,
+                    group,
+                    symbol,
+                    authorization,
+                    roots,
+                    config,
+                    pdf_config,
+                    extractors,
+                )
+    if report is not None and ingested(report):
+        sys.stdout.write(_ACQUIRED.format(period_end=args.period_end, package_id=report.package_id))
+        return EXIT_OK
+    outcome = (
+        FallbackOutcome.FILING_UNAVAILABLE if filing is None else FallbackOutcome.FILING_UNRESOLVED
+    )
+    sys.stdout.write(_NOT_ACQUIRED.format(period_end=args.period_end, outcome=outcome.value))
+    return EXIT_INCOMPLETE
 
 
 def _transcript(args: argparse.Namespace) -> int:

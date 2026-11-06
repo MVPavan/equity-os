@@ -32,11 +32,14 @@ from stage1_e2e_support import CONFIG, RUNS, Stage
 from equity_os.companies.identity.identity_seed import EvidenceInputKind, SettingKey
 from equity_os.companies.onboarding.discovery import Request
 from equity_os.contracts.measurement.canonical import Basis, Representation
+from equity_os.contracts.verification.comparison import SourceRole
+from equity_os.interface.commands.extraction import evidence_cli
 from equity_os.interface.commands.verification import compare_cli
 from equity_os.interface.entry.cli import main
 from equity_os.sourcing.documents.first_party_documents import ANNOUNCEMENTS, nse_listing_url
 from equity_os.sourcing.exchange.nse_filings import INTEGRATED_LISTING, LEGACY_LISTING, listing_url
 from equity_os.storage.facts.pg_fact_store import create_native_store
+from equity_os.storage.records.repository import EvidenceRepository
 from equity_os.verification.admission.admission import admit_run
 from equity_os.verification.comparison import run_config
 from equity_os.verification.comparison.run import DatabaseIdentity, execute_run, request_for
@@ -342,6 +345,106 @@ def test_fallback_refuses_a_run_triggering_two_groups(
     assert not list((tmp_path / "raw").iterdir())
 
 
+@pytest.mark.parametrize(
+    ("edit", "printed", "packages"),
+    [
+        (_associates_omitted, "package", 1),
+        (_unlisted, "FILING_UNAVAILABLE", 0),
+        (_truncated, "FILING_UNRESOLVED", 1),
+        (_repinned, "FILING_UNRESOLVED", 0),
+    ],
+    ids=["ingested", "unavailable", "extraction-failed", "intake-refused"],
+)
+def test_evidence_acquire_ingests_one_named_period(
+    pg_db: Any,
+    pg_template: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    edit: Callable[[dict[str, bytes], Path], Path | None],
+    printed: str,
+    packages: int,
+) -> None:
+    """FIVE-1 Task 3: ``evidence acquire`` fetches and ingests the named period's filing as the
+    fallback does, writing no run, admission or outcome. It prints the stored package id, or
+    why none, and exits INCOMPLETE without one. An ingested generation replays on a fresh
+    database with no transport into equal captures and packages; the new package's knowledge
+    time is the acquisition's, so an ``AS_KNOWN`` run at the earlier cutoff does not select it."""
+    served = _served()
+    issuer = edit(served, tmp_path)
+    counts = "SELECT (SELECT count(*) FROM eqos.runs), (SELECT count(*) FROM eqos.fact_admissions)"
+    with _Fallback(pg_db, tmp_path, monkeypatch, Basis.CONSOLIDATED) as run:
+        before = run.read(counts)
+        capsys.readouterr()
+        code = run.acquire(served, issuer)
+        (line,) = capsys.readouterr().out.splitlines()
+        stored = [run.read(query) for query in STORED]
+        assert run.read(counts) == before
+        assert not run.read(OUTCOMES)
+        if printed == "package":  # the triggering run re-executed at its own cutoff
+            manifest = RunStore(run.pool).read_manifest(run.run_id)
+            request = RunRequest.model_validate(
+                manifest.model_dump(include=set(RunRequest.model_fields))
+            )
+            again = execute_run(request, pool=run.pool, config_root=CONFIG).run_id
+            assert _first_party(run.pool, again) == _first_party(run.pool, run.run_id)
+    assert line.split("\t")[:2] == [str(Q2), printed]
+    assert code == (0 if printed == "package" else 4)
+    assert stored[2] == [(packages,)]
+    if printed != "package":
+        return
+    work = tmp_path / "replay"
+    work.mkdir()
+    with (
+        fresh_db(pg_template) as database,
+        _Fallback(database, work, monkeypatch, Basis.CONSOLIDATED) as run,
+    ):
+        raw = ("--raw-root", str(tmp_path / "raw"), "--generation", "1")
+        capsys.readouterr()
+        assert run.acquire({}, issuer, *raw) == 0
+        assert capsys.readouterr().out.splitlines() == [line]
+        assert [run.read(query) for query in STORED] == stored
+
+
+def test_evidence_acquire_refuses_before_any_request(
+    pg_db: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An unknown entity, and a period before the SYNTHETIC ZZWINDOW's onboarding settings
+    window (its fiscal-year-end month is valid from 2025-04-01), refuse with no request sent
+    and no generation written."""
+    sent: list[Request] = []
+    for name, value in pg_db.cli_env().items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(evidence_cli, "live_transport", lambda: sent.append)
+    with pg_db.runtime_pool() as pool:
+        repository = EvidenceRepository(pool)
+        evidence = repository.put_evidence_input(EvidenceInputKind.DISCOVERY, "ZZWINDOW", "e" * 64)
+        with pool.connection() as conn:
+            (entity_id,) = conn.execute(
+                "INSERT INTO eqos.reporting_entities (entity_key, market, display_name, "
+                "evidence_input_id) VALUES ('ZZWINDOW', 'IN', 'ZZWINDOW', %s) RETURNING id",
+                (evidence,),
+            ).fetchone()
+        repository.put_settings_record(
+            entity_id, SettingKey.FISCAL_YEAR_END_MONTH, "3", evidence, date(2025, 4, 1)
+        )
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    for entity, period in (("ZZUNKNOWN", "2025-06-30"), ("ZZWINDOW", "2025-03-31")):
+        argv = [
+            *("evidence", "acquire", "--entity", entity, "--basis", "consolidated"),
+            *("--period-end", period, "--mapping-set", V9.mapping_set),
+            *("--dictionary", V9.dictionary, "--config-root", str(CONFIG)),
+            *("--snapshot-root", str(tmp_path / "snapshots"), "--raw-root", str(raw)),
+        ]
+        assert main(argv) == 2
+    err = capsys.readouterr().err
+    assert "'ZZUNKNOWN' is not seeded" in err
+    assert "no fiscal-year-end month governs 2025-03-31" in err
+    assert not sent
+    assert not list(raw.iterdir())
+
+
 class _Fallback:
     """A Screener and Tijori run of Q2 FY26 on ``basis`` with its filing withheld, then the
     command over a transport of the case's bodies."""
@@ -399,10 +502,33 @@ class _Fallback:
         ]
         return main(argv)
 
+    def acquire(self, served: dict[str, bytes], issuer: Path | None, *extra: str) -> int:
+        """``eqos evidence acquire`` of Q2 FY26 over a transport of ``served``."""
+        self.monkeypatch.setattr(evidence_cli, "live_transport", lambda: _transport(served))
+        symbol = self.stage.repository.issuer_identifiers(self.entity_id).nse_symbol
+        argv = [
+            *("evidence", "acquire", "--entity", symbol, "--basis", "consolidated"),
+            *("--period-end", str(Q2), "--mapping-set", V9.mapping_set),
+            *("--dictionary", V9.dictionary, "--config-root", str(CONFIG)),
+            *("--snapshot-root", str(self.tmp_path / "snapshots")),
+            *("--raw-root", str(self.tmp_path / "raw")),
+            *(("--issuer-config", str(issuer)) if issuer else ()),
+            *extra,
+        ]
+        return main(argv)
+
     def read(self, query: str, *params: Any) -> list[Any]:
         """One query's rows."""
         with self.pool.connection() as conn:
             return conn.execute(query, params).fetchall()
+
+
+def _first_party(pool: Any, run_id: int) -> list[Any]:
+    """Each row's first-party sides of a run, by row."""
+    return [
+        [v for v in row.source_values if v.source_role is SourceRole.FIRST_PARTY]
+        for row in RunStore(pool).read_results(run_id)
+    ]
 
 
 def _start(row: ResultRow) -> date:

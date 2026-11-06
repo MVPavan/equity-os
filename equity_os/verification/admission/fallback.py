@@ -45,7 +45,11 @@ from equity_os.extraction.packages.capture_intake import (
     IntakeError,
     retained_intake_from_manifest,
 )
-from equity_os.extraction.packages.first_party_ingest import IngestError, ingest_first_party
+from equity_os.extraction.packages.first_party_ingest import (
+    IngestError,
+    IngestReport,
+    ingest_first_party,
+)
 from equity_os.extraction.results_pdf.pdf_statement_pages import specs_from_config
 from equity_os.interface.commands.companies.onboard_cli import (
     RETRIEVAL_NAME,
@@ -141,21 +145,32 @@ def run_fallback(
             triggered.setdefault(groups[row_id], {})[row_id] = refusal
     if len(triggered) > 1:
         raise ValueError(_MANY_GROUPS.format(run_id=run_id, count=len(triggered)))
-    wants_pdf = issuer_config is not None and PDF_PARSE in yaml.safe_load(
-        issuer_config.read_bytes()
-    )
+    pdf_config = pdf_issuer_config(issuer_config)
     authorization, roots = AUTHORIZATION.format(run_id=run_id), (snapshot_root, raw_root)
     outcomes = []
     for group, refused in sorted(triggered.items()):
         rerun, failure = None, None
-        filing, symbol = _acquire(pool, SnapshotStore(snapshot_root), fetch, group)
-        if filing is not None and filing.pdf is None and wants_pdf:
+        filing, symbol = acquire_group(pool, SnapshotStore(snapshot_root), fetch, group)
+        if filing is not None and filing.pdf is None and pdf_config is not None:
             failure = FallbackFailure.PDF_UNACQUIRED
         elif filing is not None:
-            pdf_config = issuer_config if wants_pdf else None
-            failure = _ingest(
-                pool, filing, group, symbol, authorization, roots, config, pdf_config, extractors
-            )
+            try:
+                report = ingest_group(
+                    pool,
+                    filing,
+                    group,
+                    symbol,
+                    authorization,
+                    roots,
+                    config,
+                    pdf_config,
+                    extractors,
+                )
+                failure = None if ingested(report) else FallbackFailure.EXTRACTION_FAILED
+            except IntakeError:
+                failure = FallbackFailure.INTAKE_REFUSED
+            except IngestError:
+                failure = FallbackFailure.EXTRACTION_FAILED
         if filing is None or failure is not None:
             outcome = FallbackOutcome.FILING_UNAVAILABLE
             if filing is not None:
@@ -191,7 +206,14 @@ def run_fallback(
     return outcomes
 
 
-def _acquire(
+def pdf_issuer_config(issuer_config: Path | None) -> Path | None:
+    """The issuer config when it has a ``pdf_parse`` block: the results PDF is then wanted."""
+    if issuer_config is None or PDF_PARSE not in yaml.safe_load(issuer_config.read_bytes()):
+        return None
+    return issuer_config
+
+
+def acquire_group(
     pool: ConnectionPool, store: SnapshotStore, fetch: Fetch, group: Group
 ) -> tuple[ResultsFiling | None, str]:
     """The group's filing, requested for the entity's one held NSE symbol and ISIN."""
@@ -220,7 +242,7 @@ def _acquire(
     return filing, symbol
 
 
-def _ingest(
+def ingest_group(
     pool: ConnectionPool,
     filing: ResultsFiling,
     group: Group,
@@ -230,10 +252,11 @@ def _ingest(
     config: LoadedConfig,
     pdf_config: Path | None,
     extractors: dict[Representation, VersionPin],
-) -> FallbackFailure | None:
-    """Ingest the filing as onboarding does, under the triggering run's extractors: XBRL-only,
-    plus the results PDF when ``pdf_config`` (an issuer config with a ``pdf_parse`` block, whose
-    declared ``sha256`` must be the acquired PDF's) is given. The failure, if any."""
+) -> IngestReport:
+    """Ingest the filing as onboarding does, under ``extractors``: XBRL-only, plus the results
+    PDF when ``pdf_config`` (an issuer config with a ``pdf_parse`` block, whose declared
+    ``sha256`` must be the acquired PDF's) is given. Intake refusal raises ``IntakeError``, an
+    extraction refusal ``IngestError``."""
     (entity_id, end, basis), (snapshot_root, raw_root) = group, roots
     xbrl_kind = XBRL_KIND.format(basis=basis.value.lower())
     members = [(Representation.XBRL, xbrl_kind, XBRL_INPUT_DIR, filing.xbrl)]
@@ -250,43 +273,40 @@ def _ingest(
             (inputs / folder).mkdir()
             (inputs / folder / member.url.rsplit("/", 1)[-1]).write_bytes(member.body)
         (inputs / RETRIEVAL_NAME).write_bytes(package)
-        try:
-            intake = retained_intake_from_manifest(
-                inputs / RETRIEVAL_NAME,
-                issuer=symbol,
-                quarter=end.isoformat(),
-                kinds={representation: kind for representation, kind, _, _ in members},
-                store_root=snapshot_root.absolute(),
-                input_root=inputs.absolute(),
-                issuer_config=pdf_config,
-                basis=basis,
-            )
-            report = ingest_first_party(
-                intake=intake,
-                catalog=catalog,
-                snapshot_store=SnapshotStore(snapshot_root),
-                repository=EvidenceRepository(pool),
-                dictionary=config.dictionary,
-                mapping_set=config.mapping_set,
-                policy=config.normalisation_policy,
-                entity_id=entity_id,
-                basis=basis,
-                framework=AccountingFramework.IND_AS,
-                family=FilingFamily.FINANCIAL_RESULTS,
-                reporting_period_end=end,
-                pdf_specs=specs,
-                extractor_versions={r: pin.version for r, pin in extractors.items()},
-            )
-        except IntakeError:
-            return FallbackFailure.INTAKE_REFUSED
-        except IngestError:
-            return FallbackFailure.EXTRACTION_FAILED
-    if report.package_id is None or any(
+        intake = retained_intake_from_manifest(
+            inputs / RETRIEVAL_NAME,
+            issuer=symbol,
+            quarter=end.isoformat(),
+            kinds={representation: kind for representation, kind, _, _ in members},
+            store_root=snapshot_root.absolute(),
+            input_root=inputs.absolute(),
+            issuer_config=pdf_config,
+            basis=basis,
+        )
+        return ingest_first_party(
+            intake=intake,
+            catalog=catalog,
+            snapshot_store=SnapshotStore(snapshot_root),
+            repository=EvidenceRepository(pool),
+            dictionary=config.dictionary,
+            mapping_set=config.mapping_set,
+            policy=config.normalisation_policy,
+            entity_id=entity_id,
+            basis=basis,
+            framework=AccountingFramework.IND_AS,
+            family=FilingFamily.FINANCIAL_RESULTS,
+            reporting_period_end=end,
+            pdf_specs=specs,
+            extractor_versions={r: pin.version for r, pin in extractors.items()},
+        )
+
+
+def ingested(report: IngestReport) -> bool:
+    """Whether the ingest stored a package and no extraction attempt failed."""
+    return report.package_id is not None and not any(
         outcome_source_state(attempt.outcome) is SourceState.UNAVAILABLE
         for attempt in report.attempts
-    ):
-        return FallbackFailure.EXTRACTION_FAILED
-    return None
+    )
 
 
 def _rerun(
