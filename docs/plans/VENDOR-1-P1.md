@@ -1,7 +1,6 @@
 # VENDOR-1 Phase 1 Implementation Plan
 
-**Status:** revised after Sol plan review 2 (REQUEST_CHANGES, gpt-6.1-sol, 2026-11-06), for
-re-review. **Bead:** `eqos-awnc`.
+**Status:** approved (gpt-6.1-sol APPROVE, plan review round 4, 2026-11-06). **Bead:** `eqos-awnc`.
 **Origin:** `docs/specs/2026-11-06-vendor-first.md` §6 (approved, gpt-6.1-sol, round 3,
 2026-11-06; amended per plan review 2 at `f137d3d7`), with the five implementation notes from
 Sol's approving review, each placed in its task. Code facts were read at `b07e668f`, the report
