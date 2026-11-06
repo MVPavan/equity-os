@@ -1,7 +1,7 @@
 """The ``onboard`` command: discover, verify and record one NSE symbol (plan D6 D4).
 
     onboard <SYMBOL> --raw-root <dir> --snapshot-root <dir> [--config-root config]
-        [--acquire --freeze-descriptor <path> | --generation <n>]
+        [--acquire (--freeze-descriptor <path> | --sanction <path>) | --generation <n>]
 
 Replay (the default) reads ``gen-<n>`` under ``--raw-root`` (``--generation``, else the highest
 complete one: its manifest present, valid and naming it) and never opens a socket.
@@ -10,8 +10,9 @@ that satisfies the freeze protocol (C5): the descriptor's current entry complete
 bound to the current held-out attempt and committed at ``HEAD``, its implementation commit an
 ancestor of the first commit holding the entry, no commit since touching an implementation path
 and none uncommitted, the descriptor in the running checkout and ``--config-root`` its
-``config``. The live transport keeps the real HTTP status, follows no redirect and bounds
-every body. An admitted issuer
+``config``; or, with ``--sanction``, under a committed, reviewed sanction listing the symbol
+and with neither root under a protected one (``acquisition_authority``). The live transport
+keeps the real HTTP status, follows no redirect and bounds every body. An admitted issuer
 (``ONBOARDED``/``PARTIAL``) then gets its derived settings, the latest verified filing as an
 XBRL-only package, each verified vendor capture, the R-PDF exclusion attempt (D5) and the
 printed ``compare run`` command under ``ONBOARDING_VERSIONS``; an ingest that does not complete
@@ -43,7 +44,6 @@ from urllib.parse import urlsplit
 
 import psycopg
 import structlog
-import yaml
 from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
@@ -100,7 +100,6 @@ from equity_os.contracts.sourcing.source_catalog import (
     VENDOR_SURFACES,
 )
 from equity_os.contracts.storage.retention import OriginalExpiredError
-from equity_os.contracts.verification.config_versions import ConfigVersions
 from equity_os.extraction.packages.capture_intake import (
     NSE_FILED_AT_FORMAT,
     XBRL_INPUT_DIR,
@@ -121,6 +120,12 @@ from equity_os.extraction.vendors.screener.vendor_screener import ScreenerIssuer
 from equity_os.extraction.vendors.tijori import vendor_tijori
 from equity_os.extraction.vendors.tijori.tijori_page import JsonScriptCollector, decode_document
 from equity_os.extraction.vendors.upstox import vendor_upstox
+from equity_os.interface.commands.companies.acquisition_authority import (
+    DEFAULT_CONFIG_ROOT,
+    frozen,
+    ordinary_roots,
+    sanctioned,
+)
 from equity_os.interface.entry.env_credentials import (
     _screener_credentials_from_env,
     _tijori_credentials_from_env,
@@ -141,20 +146,8 @@ from equity_os.verification.comparison.run_config import LoadedConfig, load_run_
 from equity_os.verification.comparison.run_models import RunExitStatus
 
 ONBOARD_COMMAND = "onboard"
-DEFAULT_CONFIG_ROOT = "config"
-SOURCE_CHECKOUT = Path(__file__).resolve().parents[4]  # the checkout this code runs from
 ACQUISITION_NAME = "acquisition.json"
 GENERATION_PREFIX = "gen-"
-IMPLEMENTATION_PATHS = (
-    "equity_os",
-    "src",
-    "config",
-    "migrations",
-    "scripts",
-    "pyproject.toml",
-    "uv.lock",
-)
-HOLDOUT_RECORD = "tests/fundamentals/fixtures/data_foundation/stage4_holdout.yaml"
 TIMEOUT_SECONDS = 30
 RETRIEVAL_NAME = "retrieval-manifest.json"
 XBRL_KIND = "xbrl-{basis}"
@@ -176,16 +169,6 @@ _ENTITY_KEY_SQL: LiteralString = "SELECT entity_key FROM eqos.reporting_entities
 # ``record`` returns no id; this single-writer CLI's record is the symbol's latest (discovery.py
 # is at its line cap).
 _RECORD_ID_SQL: LiteralString = "SELECT max(id) FROM eqos.onboarding_records WHERE identifier = %s"
-_FREEZES = "freezes"
-_IMPLEMENTATION = "implementation_commit"
-_ENTRY_KEYS = frozenset(
-    {
-        *("attempt", "implementation_commit", "inputs", "tree", "holdout_payload_sha256"),
-        *("onboarding_versions", "review"),
-    }
-)
-_REVIEW_KEYS = frozenset({"reviewer", "verdict", "date"})
-_APPROVE = "APPROVE"
 _AGENT = "Mozilla/5.0 (X11; Linux x86_64)"  # Task 0b probe UA; BSE refuses a custom one (403)
 # Task 0b (d6-capability.md §7): the exchange page's own same-origin headers; the bse library's
 # request shape is refused (§8).
@@ -196,11 +179,10 @@ _BSE_HEADERS = {
 }
 _SESSION_COOKIE = "sessionid={value}"
 _HELP = "discover, verify and record one NSE symbol (D6)"
-_NEEDS_DESCRIPTOR = "--acquire needs --freeze-descriptor"
+_ONE_AUTHORITY = "--acquire needs exactly one of --freeze-descriptor and --sanction"
 _ACQUIRE_GENERATION = "--acquire writes the next generation; --generation selects a replay"
 _WRONG_GENERATION = "gen-{n}'s manifest does not name generation {n}"
 _INGEST_FAILED = "onboarding ingest of {what} did not complete: {outcome}"
-_UNFROZEN = "the checkout does not satisfy the freeze protocol: {why}"
 _SEVERITY_HIGH = "HIGH"
 _EXIT = {
     OnboardingOutcome.ONBOARDED: RunExitStatus.SUCCESS,
@@ -319,6 +301,7 @@ def add_onboard_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     parser.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
     parser.add_argument("--acquire", action="store_true")
     parser.add_argument("--freeze-descriptor", type=Path)
+    parser.add_argument("--sanction", type=Path)
     parser.add_argument("--generation", type=int)
 
 
@@ -369,7 +352,7 @@ def onboard(args: argparse.Namespace) -> Onboarded:
     ``compare run`` command follow (D5). ``args`` is a parsed ``onboard`` command line."""
     if args.acquire and args.generation is not None:
         raise ValueError(_ACQUIRE_GENERATION)
-    acquisition = _frozen(args.freeze_descriptor, args.config_root) if args.acquire else None
+    authority = _authority(args) if args.acquire else None
     config = load_run_config(args.config_root, ONBOARDING_VERSIONS)
     root: Path = args.raw_root
     taken = sorted(
@@ -377,7 +360,8 @@ def onboard(args: argparse.Namespace) -> Onboarded:
         for path in root.glob(f"{GENERATION_PREFIX}*")
     )
     log: list[discovery.Capture] = []
-    if acquisition is None:
+    acquisition = None
+    if authority is None:
         generation = args.generation
         if generation is None:
             generation = max(n for n in taken if _complete(root, n))
@@ -388,8 +372,8 @@ def onboard(args: argparse.Namespace) -> Onboarded:
         generation = (taken[-1] if taken else 0) + 1
         folder = root / f"{GENERATION_PREFIX}{generation}"
         fetch = acquiring_fetch(live_transport(), now, log)
-        authorization = f"freeze {acquisition['descriptor_commit']}"
-        acquisition = {"generation": generation, **acquisition, "argv": _argv(args)}
+        authorization, granted = authority
+        acquisition = {"generation": generation, **granted, "argv": _argv(args)}
     derived, package = None, None
     with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
         try:
@@ -448,12 +432,26 @@ def _complete(root: Path, generation: int) -> bool:
     return True
 
 
+def _authority(args: argparse.Namespace) -> tuple[str, dict[str, Any]]:
+    """The acquisition's authorisation string and what it records of it: a freeze (C5) or a
+    sanction, whose roots must also be ordinary."""
+    if (args.sanction is None) == (args.freeze_descriptor is None):
+        raise ValueError(_ONE_AUTHORITY)
+    if args.sanction is None:
+        found = frozen(args.freeze_descriptor, args.config_root)
+        return f"freeze {found['descriptor_commit']}", found
+    ordinary_roots(args.raw_root, args.snapshot_root)
+    found = sanctioned(args.sanction, args.config_root, args.symbol)
+    return f"sanction {found['sanction']}@{found['acquisition_head']}", found
+
+
 def _argv(args: argparse.Namespace) -> list[str]:
     """The acquiring command line, as parsed."""
+    flag = "--sanction" if args.sanction else "--freeze-descriptor"
     return [
         *(ONBOARD_COMMAND, args.symbol, "--raw-root", str(args.raw_root)),
         *("--snapshot-root", str(args.snapshot_root), "--config-root", str(args.config_root)),
-        *("--acquire", "--freeze-descriptor", str(args.freeze_descriptor)),
+        *("--acquire", flag, str(args.sanction or args.freeze_descriptor)),
     ]
 
 
@@ -720,81 +718,3 @@ def _filename(filing: Filing) -> str:
 def _sha256(body: bytes) -> str:
     """Hex SHA-256."""
     return hashlib.sha256(body).hexdigest()
-
-
-def _frozen(descriptor: Path | None, config_root: Path) -> dict[str, Any]:
-    """C5: the freeze protocol's checks over ``HEAD``'s committed descriptor entry, in the
-    running checkout with its own ``config``, and what the acquisition records of them
-    (``freeze_descriptor_sha256`` hashes the entry as ``yaml.safe_dump(sort_keys=True)``, the
-    D1.1 payload rule)."""
-    if descriptor is None:
-        raise ValueError(_NEEDS_DESCRIPTOR)
-    repo = Path(_git(descriptor.resolve().parent, "rev-parse", "--show-toplevel")).resolve()
-    if repo != SOURCE_CHECKOUT.resolve():
-        raise ValueError(_UNFROZEN.format(why="the descriptor is not in the running checkout"))
-    if config_root.resolve() != (repo / DEFAULT_CONFIG_ROOT).resolve():
-        raise ValueError(_UNFROZEN.format(why="--config-root is not the checkout's config"))
-    path = str(descriptor.resolve().relative_to(repo))
-    if _git(repo, "status", "--porcelain", "--", *IMPLEMENTATION_PATHS, path, HOLDOUT_RECORD):
-        raise ValueError(_UNFROZEN.format(why="uncommitted changes"))
-    head = _git(repo, "rev-parse", "HEAD")
-    entry = _freezes(repo, head, path)[-1]
-    _check_entry(repo, head, entry)
-    commits = _git(repo, "log", "--reverse", "--format=%H", "--", path).split()
-    holding = [commit for commit in commits if entry in _freezes(repo, commit, path)]
-    implementation = str(entry[_IMPLEMENTATION])
-    _git(repo, "merge-base", "--is-ancestor", implementation, holding[0])
-    if _git(repo, "rev-list", f"{implementation}..{head}", "--", *IMPLEMENTATION_PATHS):
-        raise ValueError(_UNFROZEN.format(why="an implementation commit since the freeze"))
-    return {
-        "attempt": entry["attempt"],
-        "freeze_descriptor_sha256": _sha256(yaml.safe_dump(entry, sort_keys=True).encode()),
-        "descriptor_commit": holding[0],
-        "acquisition_head": head,
-        "implementation_commit": implementation,
-    }
-
-
-def _check_entry(repo: Path, head: str, entry: Any) -> None:
-    """D6 step 2: every descriptor field present, an ``APPROVE`` review, the inputs, tree and
-    configuration pin of the implementation commit, and the current unburned held-out attempt
-    with its payload hash (D1.1)."""
-
-    def need(ok: bool, why: str) -> None:
-        if not ok:
-            raise ValueError(_UNFROZEN.format(why=why))
-
-    need(isinstance(entry, dict) and set(entry) == _ENTRY_KEYS, "descriptor entry fields")
-    review = entry["review"]
-    need(isinstance(review, dict) and set(review) == _REVIEW_KEYS, "review fields")
-    need(review["verdict"] == _APPROVE, "review is not APPROVE")
-    need(entry["inputs"] == list(IMPLEMENTATION_PATHS), "inputs")
-    need(entry["tree"] == _tree(repo, str(entry[_IMPLEMENTATION])), "tree")
-    pinned = ConfigVersions.model_validate(entry["onboarding_versions"])
-    need(pinned == ONBOARDING_VERSIONS, "onboarding_versions")
-    record = yaml.safe_load(_git(repo, "show", f"{head}:{HOLDOUT_RECORD}"))
-    attempts, burns = record["attempts"], record["burns"] or []
-    current = attempts[-1]
-    need(len(burns) == len(attempts) - 1, "no current attempt")
-    need(entry["attempt"] == current["n"], "not the current attempt")
-    payload = {key: value for key, value in current.items() if key != "approval"}
-    digest = _sha256(yaml.safe_dump(payload, sort_keys=True).encode())
-    need(entry["holdout_payload_sha256"] == digest, "holdout payload")
-
-
-def _tree(repo: Path, commit: str) -> dict[str, str]:
-    """``{path: git object id}`` of each implementation path at ``commit``."""
-    listing = _git(repo, "ls-tree", commit, "--", *IMPLEMENTATION_PATHS).splitlines()
-    return {line.split("\t")[1]: line.split()[2] for line in listing}
-
-
-def _freezes(repo: Path, commit: str, path: str) -> list[Any]:
-    """The descriptor's entries at ``commit``."""
-    return list(yaml.safe_load(_git(repo, "show", f"{commit}:{path}"))[_FREEZES])
-
-
-def _git(repo: Path, *args: str) -> str:
-    """One git command's stdout; a non-zero exit raises."""
-    return subprocess.run(
-        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
-    ).stdout.strip()

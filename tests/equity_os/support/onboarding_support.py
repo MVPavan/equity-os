@@ -47,8 +47,11 @@ from equity_os.contracts.companies.onboarding import (
     VerificationState,
     VerificationUnit,
 )
-from equity_os.interface.commands.companies import onboard_cli
-from equity_os.interface.commands.companies.onboard_cli import HOLDOUT_RECORD, IMPLEMENTATION_PATHS
+from equity_os.interface.commands.companies import acquisition_authority, onboard_cli
+from equity_os.interface.commands.companies.acquisition_authority import (
+    HOLDOUT_RECORD,
+    IMPLEMENTATION_PATHS,
+)
 from equity_os.interface.entry.cli import main
 
 FIXTURES = Path(__file__).parents[3] / "tests/fundamentals/fixtures" / "onboarding"
@@ -330,7 +333,7 @@ def freeze_repo(
     git(repo, "config", "user.name", "t")
     (repo / "src" / "impl.py").write_text("x = 1\n")
     (repo / "config").symlink_to(REPO_ROOT / "config")
-    monkeypatch.setattr(onboard_cli, "SOURCE_CHECKOUT", repo)
+    monkeypatch.setattr(acquisition_authority, "SOURCE_CHECKOUT", repo)
     attempt: dict[str, Any] = {
         "n": 1,
         "identifier": "ZZSYNTH",

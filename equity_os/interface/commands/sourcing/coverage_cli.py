@@ -60,11 +60,8 @@ from equity_os.coverage.screens.screens import (
 )
 from equity_os.coverage.universe.registry import load_registry
 from equity_os.extraction.vendors.screener.screener_session_models import ScreenerSessionError
-from equity_os.interface.commands.companies.onboard_cli import (
-    DEFAULT_CONFIG_ROOT,
-    add_onboard_parser,
-    onboard,
-)
+from equity_os.interface.commands.companies.acquisition_authority import DEFAULT_CONFIG_ROOT
+from equity_os.interface.commands.companies.onboard_cli import add_onboard_parser, onboard
 from equity_os.interface.commands.sourcing.screener_cli_dispatch import EXIT_OK, EXIT_REFUSED
 from equity_os.interface.commands.verification.compare_cli import add_compare_parser, run_compare
 from equity_os.interface.entry.env_credentials import (
