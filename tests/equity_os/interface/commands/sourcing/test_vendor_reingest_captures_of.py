@@ -45,19 +45,13 @@ from equity_os.interface.entry.cli import main
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records.repository import EvidenceRepository
 from equity_os.verification.comparison.run_config import load_run_config
+from tests.equity_os.extraction.vendors.test_vendor_retained import SCREENER, TIJORI
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
 REPO = Path(__file__).resolve().parents[5]
 CONFIG = REPO / "config"
 RETAINED = REPO / "data/raw/snapshots/v1"
-SCREENER = (
-    "screener-subscriber",
-    "SCREENER_FINANCIALS",
-    "b881ee29efca68f7cfd2f1dac2dc53f023b4d4c18d0f6ebfd750330b6698bac7",
-    "20261029T063416.958531Z-aafca20d157e",
-)
-TIJORI = ("tijori", "financials", "apar-industries-limited", "20261014T092203.484096Z-ea59098cc0df")
 VERSIONS = ConfigVersions(dictionary="v2", mapping_set="v9")
 PE0 = date(2026, 6, 30)  # the source period whose attempts cite the captures
 YEAR_END = date(2026, 3, 31)  # every section of both vendors
