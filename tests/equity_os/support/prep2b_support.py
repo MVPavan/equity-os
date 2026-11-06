@@ -88,7 +88,7 @@ QUARTERS = {
 # Each run quarter's results-PDF parse config: PQ3 reads its -pg unit marker (eqos-4j2.33).
 PDF_CONFIGS = QUARTERS | {"FY27_Q1": "fy27-q1-pg"}
 # The pilot comparison pins (``cli.PILOT_VERSIONS``) every ingest and comparison names.
-PINS = ("--dictionary", "v2", "--mapping-set", "v6")
+PINS = ("--dictionary", "v2", "--mapping-set", "v9")
 COMPARATOR_KIND = "xbrl-consolidated-comparator"
 # Every XBRL a pilot run reads (run quarters and comparators): manifest quarter, kind, period end.
 XBRLS = (

@@ -49,6 +49,7 @@ from equity_os.normalisation.mapping.mapping_models import (
     StatementAnchor,
     UnitRule,
     UnitTransform,
+    UnmappedLabel,
     selector_matches,
 )
 
@@ -142,6 +143,8 @@ class MappingSet(BaseModel):
     constructions: tuple[ConstructionRule, ...]
     statement_anchors: tuple[StatementAnchor, ...]
     supported_schemas: frozenset[str]
+    unmapped: Mapping[str, tuple[UnmappedLabel, ...]] = Field(default_factory=dict)
+    """Reviewed unmapped vendor labels, by surface."""
 
     def entry(self, entry_id: str) -> MappingEntry:
         """The entry with this id; an unknown id raises ``KeyError``."""
@@ -283,6 +286,7 @@ class _EntryFile(BaseModel):
     schema_identity: str
     defaults: Mapping[str, Any] = Field(default_factory=dict)
     entries: tuple[Mapping[str, Any], ...]
+    unmapped: tuple[UnmappedLabel, ...] = ()
 
 
 class _ConstructionFile(BaseModel):
@@ -343,6 +347,7 @@ def load_mapping_set(root: Path, version: str, *, dictionary: CanonicalDictionar
     if index.version != version:
         raise MappingLoadError(MappingDefect.SCHEMA, [index.version], "version mismatch")
     entries: list[MappingEntry] = []
+    unmapped: dict[str, tuple[UnmappedLabel, ...]] = {}
     failures: dict[str, str] = {}
     for name in index.entry_files:
         path = root / name
@@ -352,6 +357,9 @@ def load_mapping_set(root: Path, version: str, *, dictionary: CanonicalDictionar
             "surface": entry_file.surface,
             "schema_identity": entry_file.schema_identity,
         }
+        if entry_file.unmapped:
+            known = unmapped.get(entry_file.surface, ())
+            unmapped[entry_file.surface] = known + entry_file.unmapped
         for position, raw in enumerate(entry_file.entries):
             label = str(raw.get("entry_id", f"{name}[{position}]"))
             try:
@@ -380,6 +388,7 @@ def load_mapping_set(root: Path, version: str, *, dictionary: CanonicalDictionar
         entries=tuple(entries),
         constructions=tuple(constructions),
         statement_anchors=tuple(anchors),
+        unmapped=unmapped,
         supported_schemas=frozenset(
             [
                 *(entry.schema_identity for entry in entries),

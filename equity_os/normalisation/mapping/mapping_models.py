@@ -186,6 +186,17 @@ class MappingEntry(BaseModel):
         )
 
 
+class UnmappedLabel(BaseModel):
+    """A reviewed vendor statement label that maps to nothing, with the reason (VENDOR-1 §6.1)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    label: str = Field(min_length=1)
+    section: str = Field(min_length=1)
+    basis: frozenset[Basis] = ALL_BASES
+    reason: str = Field(min_length=1)
+
+
 class ConstructionOperand(BaseModel):
     """One construction operand: a mapping entry or a selector over the capture's own rows."""
 

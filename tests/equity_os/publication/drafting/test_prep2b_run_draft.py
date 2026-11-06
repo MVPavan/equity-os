@@ -123,8 +123,8 @@ def dictionary() -> CanonicalDictionary:
 
 @pytest.fixture(scope="module")
 def mapping_set(dictionary: CanonicalDictionary) -> MappingSet:
-    """Mapping set v6, the pilot comparison pin: maps every pilot run and comparator XBRL."""
-    return load_mapping_set(CONFIG / "normalisation/mappings", "v6", dictionary=dictionary)
+    """Mapping set v9, the pilot comparison pin: maps every pilot run and comparator XBRL."""
+    return load_mapping_set(CONFIG / "normalisation/mappings", "v9", dictionary=dictionary)
 
 
 def _pilot(request: pytest.FixtureRequest, **options: Any) -> Pilot:
@@ -666,10 +666,10 @@ def test_four_quarter_sequence(pilot: Pilot) -> None:
             previous = (version_id, store.sealed_digest(cursor, version_id))
     assert carried > 0
     assert {LedgerStatus.NEW, LedgerStatus.CARRIED} <= {LedgerStatus(s) for s in seen}
-    # Every fact the runs wrote is admitted, from interpretations made only under v6.
+    # Every fact the runs wrote is admitted, from interpretations made only under v9.
     families = pilot.query(FAMILIES, pilot.store_id)
     assert families and all(family.startswith(ADMITTED_FAMILY) for (family,) in families)
-    assert pilot.query(MAPPED_VERSIONS) == [("v6",)]
+    assert pilot.query(MAPPED_VERSIONS) == [("v9",)]
     assert seen & {LedgerStatus.REAFFIRMED.value, LedgerStatus.MODIFIED.value}
 
 

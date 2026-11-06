@@ -1,0 +1,20 @@
+# Mapping set v9 (VENDOR-1 spec §6.1): v6 with screener/v4 and tijori/v5 financials in place of
+# screener/v2 and tijori/v3; every first-party file is v6's, so filings interpret as under v6.
+version: v9
+normalisation_policy_version: v1
+entry_files:
+- xbrl/v1/in_capmkt.yaml
+- xbrl/v5/in_capmkt.yaml
+- xbrl/v3/in_bse_fin.yaml
+- pdf/v2/results_layout.yaml
+- screener/v4/financials.yaml
+- tijori/v5/financials.yaml
+- upstox/v2/summary.yaml
+- upstox/v2/full_statement.yaml
+construction_files:
+- constructions/v1.yaml
+- constructions/v2.yaml
+- screener/v2/constructions.yaml
+statement_anchor_files:
+- statement_anchors/v1.yaml
+- statement_anchors/v2.yaml

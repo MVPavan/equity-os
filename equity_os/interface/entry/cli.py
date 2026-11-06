@@ -156,7 +156,7 @@ from equity_os.verification.comparison.run_models import (
 from equity_os.verification.comparison.run_store import RunReadError, RunStore
 
 # The pins a pilot run's comparison run must name, by content (PILOT-GAP admission Decision 8).
-PILOT_VERSIONS = ConfigVersions(dictionary="v2", mapping_set="v6", alignment_rules="v2")
+PILOT_VERSIONS = ConfigVersions(dictionary="v2", mapping_set="v9", alignment_rules="v2")
 _CONFIG_DIR = "config"  # as ``compare run``'s default config root
 TEMPORAL_SOURCES_KEY = "temporal_sources"
 _ADMITTED_IN: LiteralString = (
