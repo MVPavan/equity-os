@@ -74,7 +74,8 @@ dictionary v4 (v3 plus `current_tax_excl_earlier_years`; orchestrator ruling 202
 confirms these values there; any other value stops work for an amendment. Phase 1 Task 10
 (`results_filing.py`, `fallback.py`,
 `nse_filings.filing_for`, `compare fallback`) is on `main`; this plan uses its real interfaces.
-Phase 1 Task 9 is in flight; Phase 1 live Tasks 13–14 apply migrations 0047, 0048 and 0049.
+Phase 1 Task 9 is in flight; Phase 1 live Tasks 13–14 apply migrations 0047, 0048, 0049, 0051 (if
+landed) and 0052.
 **Goal:** ICICIBANK onboards as `BANK` under the framework its own filing evidences, and a
 comparison run on its retained filing period gives `VALUE` for every shared and bank key the
 frozen ledger expects, `NOT_APPLICABLE` for non-financial-only rows, the ledger's stated refusals
@@ -94,9 +95,11 @@ Interactions); the acquisition route itself (FIVE-1).
   the grounding record is a branch below, fixed at Task 3 (B9 at Task 12).
 - Standard filed statements and XBRL lines are code; nothing is derived, estimated or filled. A
   capability the filing does not carry keeps its rows and refuses with a stated reason (§8 step 5).
-- Phase 3's migration is `0050_issuer_class.sql` (0047–0049 are taken; 0049 is
-  `seal_paired_screen_runs`). Recheck at landing; if another phase took 0050, use the next free
-  number. Committed migrations, dictionary versions and mapping sets are never edited.
+- Phase 3's migration is `0053_issuer_class.sql` (0047–0049 are taken, 0051 is P2's
+  `version_source_cutoff` and 0052 is P1's `admission_witness_edges`; amended 2026-11-06, P1
+  phase-fix round 1: the runner applies in filename order, so 0050 would land below 0052 and is
+  not used). Recheck at landing; if another phase took 0053, use the next free number above the
+  highest landed. Committed migrations, dictionary versions and mapping sets are never edited.
 - Every byte change to a content-pinned source bumps its version (Version and pin inventory).
 - Live writes are permanent. Tasks 2, 11 and 13 follow the live protocol below.
 - No vendor body, vendor value or embedded mapping example in committed text, logs or reports; the
@@ -237,7 +240,7 @@ stay as evidenced. They and the ledger are not in force until an amendment relea
 
 | Branch | Arm | Evidence | Consequence |
 |---|---|---|---|
-| B1 | **B1c** (stop). Content would be **B1b `INDIAN_GAAP`** once the PDF is associated | No instance declares a framework [B1.01–B1.04]. All four PDF basis declarations agree [B1.05, B1.06, B1.09, B1.10]: "Accounting Standards prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949, the circulars, guidelines and directions issued by the Reserve Bank of India … and other accounting principles generally accepted in India". The releases call this "Indian GAAP" [B1.07, B1.11]. No `IND_AS` phrase occurs [B1.13–B1.18]. The new phrase matches all four as a token run [T3.15–T3.18]. | Step R (B1c release amendment): `AccountingFramework.INDIAN_GAAP = "INDIAN_GAAP"`. Task 4: 0050 widens the four `framework` CHECKs (0001: `filing_packages`, `acquisition_attempts`, `interpretations`, `results`); without that, no bank package, attempt, interpretation or result row can be written. Step R: `FRAMEWORK_DECLARATIONS[INDIAN_GAAP] = ("prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949",)`. The comment cites T3.15–T3.18. Task 9 applies A7's spec wording. *All of this waits for the B1c release.* |
+| B1 | **B1c** (stop). Content would be **B1b `INDIAN_GAAP`** once the PDF is associated | No instance declares a framework [B1.01–B1.04]. All four PDF basis declarations agree [B1.05, B1.06, B1.09, B1.10]: "Accounting Standards prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949, the circulars, guidelines and directions issued by the Reserve Bank of India … and other accounting principles generally accepted in India". The releases call this "Indian GAAP" [B1.07, B1.11]. No `IND_AS` phrase occurs [B1.13–B1.18]. The new phrase matches all four as a token run [T3.15–T3.18]. | Step R (B1c release amendment): `AccountingFramework.INDIAN_GAAP = "INDIAN_GAAP"`. Task 4: 0053 widens the four `framework` CHECKs (0001: `filing_packages`, `acquisition_attempts`, `interpretations`, `results`); without that, no bank package, attempt, interpretation or result row can be written. Step R: `FRAMEWORK_DECLARATIONS[INDIAN_GAAP] = ("prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949",)`. The comment cites T3.15–T3.18. Task 9 applies A7's spec wording. *All of this waits for the B1c release.* |
 | B1′ | **P** | The declaration is in the PDFs only [B1.05, B1.09; B1.01–B1.04]. The basis association is the declaration's own subject, "The standalone financial results have been prepared" [B1.05, B1.09]. Page 1, the covering letter, prints the period [B7.01, B7.09]. It sits outside the statement block, and no period heading is bound to the issuer-titled statement page [T3.51, T3.52]. | Task 5's P arm and Task 7's P paths, once released. Identity, period and basis association is revised A7, which is not met. |
 | B2 | **B2a** | Each of the four instances' namespace forms is exactly `{Banking}` [B2.01–B2.08]. | Task 5 maps `Banking` → `BANK`. |
 | B3 | **B3a** | Facts are in the registered `http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt` [B3.01, B3.06, B3.11, B3.16]. Its scope and period concepts are used at `OneD` [B3.02–B3.20]. | **Parser:** no change; no `TaxonomySpec` and no `xbrl_taxonomies.py` edit (B3b struck). |
@@ -525,7 +528,7 @@ A7's matching logic and its unit tests; the minimal B4b scheme support the Q1 id
 test); the B1b `FRAMEWORK_DECLARATIONS[INDIAN_GAAP]` phrase; and the three first-party extractor
 bumps (PDF, XBRL, SHP). It takes from Task 4 the one enum value A7 item 4 needs. Task 5 keeps the
 production callers: discovery's P-arm check, `_read_xbrl`'s ingest re-check, `filing_identity`'s
-`NameOfBank` read and `xbrl_entity_state`'s scheme mapping. Task 4 keeps 0050 and the other
+`NameOfBank` read and `xbrl_entity_state`'s scheme mapping. Task 4 keeps 0053 and the other
 contracts.
 - Step R needs no migration. A failed proof must never leave a committed migration behind.
 - Implementer: Opus.
@@ -765,7 +768,7 @@ new code is refused by version, never recomputed (historical replay needs the ol
 | `equity_os/companies/identity/identity_seed.py` | modify | 4 | two setting keys, `OWNER_DECISION` |
 | `equity_os/contracts/measurement/observation.py` | modify | R (B1b) | one `AccountingFramework` value |
 | `equity_os/extraction/results_pdf/{pdf_statement_pages,pdf_figure_columns,pdf_adapter}.py`, `equity_os/extraction/xbrl/xbrl_identity.py` | modify | R | R1, R2, `locate_on_page`, `unheaded_column_count`, `header_months`; PDF extractor bump; `SEBI_SYMBOL_ENTITY_SCHEME` (B4b) |
-| `migrations/0050_issuer_class.sql` | create | 4 | settings-key and evidence-kind CHECKs |
+| `migrations/0053_issuer_class.sql` | create | 4 | settings-key and evidence-kind CHECKs |
 | `equity_os/companies/onboarding/{verification,discovery,derived_settings}.py`, `nse_filings.py` | modify | 5 | form, framework, identity, bank PDF acquisition, analysis-basis selection, basis status, B6b, B10b; `derived_settings.framework_evidence` reader (R2-01); `screener_topology(..., configured)` and `discover`'s configured topology (R2-04) |
 | `equity_os/interface/commands/sourcing/screener_page_cli.py` | modify | 5 | `watchlist_topology(config_root, symbol)` (R2-04) |
 | `equity_os/extraction/vendors/screener/screener_session_models.py`, `vendor_screener.py`, `extraction/surfaces/vendor_shareholding.py` | modify | 5 | `BasisTopology.consolidated_published` (R2-04); the two Screener extractor bumps; the Tijori and Upstox shareholding bumps (R4-02) |
@@ -859,7 +862,7 @@ from rehearsal output; each listed table's own sequence may advance, no other.
 
 | Command | Tables allowed to change |
 |---|---|
-| `db migrate` (0050) | migration ledger; the `settings_records` and `evidence_inputs` CHECKs; the `framework` CHECKs of `filing_packages`, `acquisition_attempts`, `interpretations` and `results` (B1b) |
+| `db migrate` (0053) | migration ledger; the `settings_records` and `evidence_inputs` CHECKs; the `framework` CHECKs of `filing_packages`, `acquisition_attempts`, `interpretations` and `results` (B1b) |
 | `onboard --ground` replay | captures: `capture_refs`, `capture_addresses`, `retention_classes` (trigger; `nse-grounding` `NSE_XBRL_INSTANCE` → `EXCHANGE_REFETCHABLE`, `NSE_RESULTS_DOCUMENT` → `COVERED` by `base_class`) |
 | `onboard` replay | identity: `reporting_entities`, `securities`, `listings`, `identifier_relationships`, `identity_events`, `identity_event_edges`, `namespace_verifications`; onboarding: `onboarding_records`, `settings_records`, `evidence_inputs`, `evidence_input_captures`, `entity_basis_status`; captures as above (new exchange and vendor captures); package: `filing_packages`, `package_members`, `package_statements`, `package_statement_evidence`, `segment_members`, `segment_member_evidence`; extraction: `occurrences`, `interpretations`, `interpretation_operands`, `interpretation_condition_evidence`, `acquisition_attempts`; vendor: `vendor_values`, `vendor_outcomes`, `vendor_parser_versions`, `vendor_basis_bindings`; `version_pins`; conditional: `calculation_traces`, `calculation_trace_operands`, `construction_traces` (`put_interpretations`, when a v11/v12 construction or Screener construction fires at ingest) |
 | `evidence ingest` | package and extraction tables as above; `version_pins`; conditional: captures as above (a staged member not yet registered; a registered one advances only the `capture_refs` sequence), `calculation_traces`, `calculation_trace_operands`, `construction_traces` (`put_interpretations`) |
@@ -896,8 +899,8 @@ enter a live expected delta.
 
 **Windows.** No Phase 3 live task runs between a Phase 1 Task 13 or 14 (or any other phase's)
 baseline and its last live command, or the reverse; each Task 2, 11 and 13 takes its own backup and
-rehearsal and restarts on drift. Task 11 requires Phase 1 Task 13 done (0047, 0048 and 0049 live).
-Logs in `scratchpad/vendor-first/live-p3-<n>/`.
+rehearsal and restarts on drift. Task 11 requires Phase 1 Task 13 done (0047–0049, 0051 if landed,
+and 0052 live). Logs in `scratchpad/vendor-first/live-p3-<n>/`.
 
 ## Task 2: Live grounding and the grounding record
 
@@ -967,16 +970,16 @@ Goal: the store and contracts can hold an issuer class, an analysis basis with o
 evidence and (B1b) the bank framework.
 
 Files:
-- Create: `issuer_class.py`, `migrations/0050_issuer_class.sql`
+- Create: `issuer_class.py`, `migrations/0053_issuer_class.sql`
 - Modify: `identity_seed.py`, `vendor_first.py` (`IssuerClass.NON_FINANCIAL`). B1b's
   `observation.py` value lands in step R (B1c release amendment).
-- Test: the migration suite (upgrade from 0049; the CHECKs reject an unknown key and kind)
+- Test: the migration suite (upgrade from 0052; the CHECKs reject an unknown key and kind)
 
-Approach: 0050 replaces the two CHECKs with their lists plus the new values (as 0022 did), and
+Approach: 0053 replaces the two CHECKs with their lists plus the new values (as 0022 did), and
 (B1b, Task 3) the four 0001 `framework` CHECKs (`filing_packages`, `acquisition_attempts`,
 `interpretations`, `results`) with their list plus `INDIAN_GAAP`; no table, no backfill. Existing
-0049 untouched. The migration test also shows each widened CHECK accepts `INDIAN_GAAP` and still
-rejects an unknown framework.
+0001–0052 untouched. The migration test also shows each widened CHECK accepts `INDIAN_GAAP` and
+still rejects an unknown framework.
 
 Verification: `scripts/verify.sh` migration tests on `eqos_test_*`; mypy, ruff.
 
@@ -1348,11 +1351,11 @@ gate.
 
 ## Task 11: Live: migrate, onboard ICICIBANK
 
-Goal: live has 0050 and ICICIBANK onboarded as `BANK` on the pinned evidence, with its standalone
+Goal: live has 0053 and ICICIBANK onboarded as `BANK` on the pinned evidence, with its standalone
 package and vendor captures retained.
 
 Commands (main checkout on the Task 10 tip):
-1. `eqos db migrate` (0050).
+1. `eqos db migrate` (0053).
 2. Acquisition on the throwaway copy: `eqos onboard ICICIBANK --acquire --analysis-basis standalone
    --basis-decision config/companies/basis_decisions/icicibank.yaml --raw-root R --snapshot-root S
    --config-root config --sanction config/acquisition/sanctions/five-company.yaml` (FIVE-1 Task 1's
@@ -1491,8 +1494,8 @@ on the current tip at task start.
   behaviour; Task 7 adds the `source` argument to `acquire_results` and updates `fallback._acquire`
   and `_ingest`. Phase 1's Apar fallback test stays green; the bank path has its own test.
 - **Phase 1 Task 9** (in flight): owns `interface/entry/cli.py`; Phase 3 does not touch it.
-- **Phase 1 Tasks 13–14** (live, pending): windows rule; Task 11 needs 0047–0049 live. They run on
-  their own gated tip.
+- **Phase 1 Tasks 13–14** (live, pending): windows rule; Task 11 needs 0047–0049, 0051 (if landed)
+  and 0052 live. They run on their own gated tip.
 - **Apar live re-ingest (ruling 2; bead to be filed: Apar re-ingest under Phase 3 extractors).**
   After Phase 3's extractor bumps land (first-party, Screener financials and shareholding, Tijori
   and Upstox shareholding (`tijori-shp-v3`, `upstox-shp-v3`, R4-02), Tijori),

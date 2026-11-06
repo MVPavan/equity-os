@@ -396,6 +396,17 @@ Every renderer reading `read_selected` prints the label text beside the number (
 10. **Retention.** Expiry, and separately licence end, of either witness withdraws the admission
     for a new report; the sealed report keeps its value with the note (the status note of §6.9); a backup restore does not
     revive it; a hash-matched re-fetch does.
+
+    **Scope amendment (2026-11-06, P1 phase-review finding 8; approval: Sol re-review, pending).**
+    Phase 1 delivers the fail-closed part: expiry, and separately licence end, of either witness
+    withdraws the admission, and a backup restore does not revive it. Hash-verified vendor re-fetch
+    revival (§6.9, last bullet) is out of Phase 1 scope and tracked by `eqos-g5eh`. Reason: no
+    vendor capture in the five-company test reaches expiry or licence end during the phase (vendor
+    captures become purge-eligible only twelve months after registration, `VENDOR_WINDOW_MONTHS` in
+    `storage/retention/eligibility.py`, and a licence end is an explicit operator mark that the
+    phase does not make), and revival needs a new authorised vendor re-fetch path: restore and
+    refetchability are exchange-only today (`migrations/0031_retention_fixes.sql`,
+    `storage/retention/refetch.py`).
 11. **Fallback.** On retained Apar Q2 FY26 with its filing withheld from the first run, the command acquires the XBRL and results PDF for that period only, ingests, reruns with vendor sides, and records the fallback's terminal outcome. The retained case ends `FILING_UNRESOLVED`, with its genuine refused trigger cells and reasons listed; absence on every successfully processed side is recorded separately as `NOT_DISCLOSED`, and rerun-proven inapplicability as `NOT_APPLICABLE`. A separately labelled synthetic fixture made from edited copies of retained captures, whose filed trigger cells all pass the unchanged first-party rule and whose other original triggers are either guarded `NOT_DISCLOSED` or explicitly `NOT_APPLICABLE`, ends `ADMITTED`. That fixture includes at least one originally refused numeric cell that becomes an actual admission and at least one applicable cell settled `NOT_DISCLOSED`; missing cells create no facts. The command ends `ADMITTED` exactly when every original trigger is accounted for by one of those three dispositions. An unavailable filing ends `FILING_UNAVAILABLE` with cells still refused; an acquisition/intake/extraction or remaining review failure ends `FILING_UNRESOLVED`; an ordinary remaining refusal ends `STILL_REFUSED`. Assert the stored cell dispositions and rerun/admission links, failure precedence, no request for another issuer or period, and unchanged coverage.
 12. **Known difference.** No FY `finance_costs` cell is admitted under row 3.
 13. **Labels.** The rendered output carries a label for every number.

@@ -36,7 +36,9 @@ reader (reading 2).
   `data/raw/onboarding/`.
 - Files stay at or under 800 lines. `run_draft.py` is at 808 (F15); Task 5 brings it to ≤ 800 by a
   coherent extraction, not line folding. New logic goes into new modules.
-- New migrations are numbered `0051` or later (`0049` exists; Phase 3 holds `0050`).
+- New migrations are numbered `0051` or later (`0049` exists; P1's phase-fix round takes `0052`
+  and Phase 3 `0053`). This phase has no live `db migrate`; P1 Task 13 may apply `0051` to live
+  first (amended 2026-11-06).
 - Tests follow `.claude/rules/python/testing.md`: feature and end-to-end tests through public
   paths first. Unit tests are only for the numeral rule and span binding.
 - Live writes are permanent. Task 2 follows the live protocol below.

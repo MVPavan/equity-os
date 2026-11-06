@@ -640,6 +640,17 @@ exists, which reads the quarter's filing for its other sections; a report for a 
 filing is outside Phase 1 (acceptance 9 as amended). The restore and re-fetch behaviour comes from migrations 0028–0031; the test uses
 their existing commands.
 
+**Scope amendment (2026-11-06, phase-review finding 8; approval: Sol re-review, pending).** The
+citation test's acceptance 10 case covers the fail-closed part only: expiry, and separately licence
+end, of either witness withdraws the admission for a new report, and a backup restore does not
+revive it. Hash-verified vendor re-fetch revival is out of Phase 1 scope and tracked by `eqos-g5eh`
+(spec acceptance 10, amendment). Reason: no vendor capture in the five-company test reaches expiry
+or licence end during the phase (vendor captures become purge-eligible only twelve months after
+registration, `VENDOR_WINDOW_MONTHS` in `storage/retention/eligibility.py`, and a licence end is an
+explicit operator mark that the phase does not make), and revival needs a new authorised vendor
+re-fetch path: restore and refetchability are exchange-only today
+(`migrations/0031_retention_fixes.sql`, `storage/retention/refetch.py`).
+
 ## Task 10: Fallback workflow
 
 Goal: `eqos compare fallback --run <id>` acquires, for each triggered company-period only, the
@@ -736,13 +747,18 @@ Dependencies: Tasks 1–11 committed.
 2. **Baseline.** Immediately before the rehearsal, `eqos db backup` of live, restored into a fresh
    `eqos_test_*` (`eqos db restore`). The restored copy's per-table counts and fingerprints must
    equal live's at that moment, or the task stops.
-3. **Checks after each command**, rehearsal and live alike: `eqos db check-live` (schema, seed and
-   legacy store only); counts of every `eqos` table; business-key summaries (interpretations by
-   entity, representation, mapping set, extractor version and status; packages by entity, period
-   and basis; runs by status with their `run_versions` pins; `run_inputs` by kind and disposition;
-   results and source values by state and reason; queue items by severity; version pins by
-   artifact and version); and a fingerprint of every pre-existing row of the touched tables, which
-   must not change. New rows are compared with ids and timestamps normalised. The scripts extend
+3. **Checks after each command**, rehearsal and live alike: the live check (schema, seed and legacy
+   store only). Live runs `eqos db check-live`. That command refuses any `eqos_test_*` target, so
+   the rehearsal runs the same read-only checker, `check_live` in `storage/database/live_check.py`,
+   through a scratchpad helper (`uv run --no-sync python`, not committed) on a migrator connection
+   to the named rehearsal database, with the same migrations directory and issuer identity; each
+   result is recorded against its actual target database (amended 2026-11-06, phase-review finding
+   13). Then counts of every `eqos` table; business-key summaries (interpretations by entity,
+   representation, mapping set, extractor version and status; packages by entity, period and basis;
+   runs by status with their `run_versions` pins; `run_inputs` by kind and disposition; results and
+   source values by state and reason; queue items by severity; version pins by artifact and
+   version); and a fingerprint of every pre-existing row of the touched tables, which must not
+   change. New rows are compared with ids and timestamps normalised. The scripts extend
    `scratchpad/live-run-1/{counts,delta}.py`; they are scratch, not committed.
 4. **Allowed changes.** Each command's expected tables are stated in its task. A rehearsal delta
    outside them stops the task before live. Each live delta, summary and fingerprint set must
@@ -757,14 +773,22 @@ Dependencies: Tasks 1–11 committed.
 
 ## Task 13: Live: migrate, re-interpret, re-ingest Apar
 
-Goal: Live has migration 0047, Apar's retained first-party packages interpreted under mapping set
-`v9`, and its retained Screener and Tijori captures interpreted under the new extractor and `v9`,
-with no other change.
+Goal: Live has migrations 0047–0049, 0051 (if landed) and 0052, Apar's retained first-party packages
+interpreted under mapping set `v9`, and its retained Screener and Tijori captures interpreted under
+the new extractor and `v9`, with no other change.
 
 Files: none committed. Logs in `scratchpad/vendor-first/live-1/`.
 
 Commands, in order, with the main checkout on the tip Task 12 gated:
-1. `eqos db migrate` (0047). Allowed: the migration ledger, the 0047 objects, nothing else.
+1. `eqos db migrate`. It applies every pending migration, so before the rehearsal `commands.txt`
+   freezes the exact pending list (the live ledger against `migrations/` at the gated tip) and
+   each one's allowed objects; any other pending migration stops the run (amended 2026-11-06,
+   phase-review finding 14). The list expected now: 0047 (its objects); 0048 (`fact_admissions`
+   column `class_digest` and constraint `fact_admissions_unchecked_class`); 0049 (function
+   `check_screen_member_unpaired` and its `BEFORE INSERT` trigger on `screen_members`); 0051
+   (`0051_version_source_cutoff.sql`, P2 Task 4, if landed by then: the report-version source
+   cutoff table and its guard); 0052 (`0052_admission_witness_edges.sql`: the second witness's
+   edges in `row_captures`). Allowed: the migration ledger and those objects, nothing else.
 2. `eqos evidence ingest --mapping-set v9 --dictionary v2` for each retained Apar first-party
    package (the list, with its retrieval manifest, issuer config and members, comes from a
    read-only query over `filing_packages` and the retained manifests, as LIVE-RUN-1 ran them).
