@@ -1,5 +1,23 @@
 # VENDOR-1 Phase 3 Implementation Plan: banks
 
+## Task 3 review 1 dispositions
+
+Sol reviewed the Task 3 amendment (main `95ad553c`) and found CHANGES REQUIRED, with seven
+findings. Fix round 1 is below. Record: `docs/evidence/vendor-first/icicibank-grounding.md`
+(Meaning audit, Alias audit, Segments, Counts, locators T3.49–T3.81).
+
+| Item | Disposition |
+|---|---|
+| 1 (P1) A7 accepts another issuer's document | A7 is rewritten (Resolved branches). The PDF must carry one statement block whose title-block line equals the name of the package's identity-verified instance, case-insensitive and whole-line, above the basis heading, with a period heading and the framework declaration in the block. Contradiction checks and the no-authentication limit are stated. The tests cover a third-party mention, an appended release, conflicting issuers and identifier boundaries. The `NYSE: IBN` wording mismatch is withdrawn. **Checked against the retained PDFs: not met.** Issuer, basis and framework bind, but no period heading is bound to the statement page or block [T3.51, T3.52]. **B1c stands; the phase halts at Task 3.** |
+| 2 (P1) equity keys | `equity_share_capital ← Capital` and `other_equity ← ReservesAndSurplus` are withdrawn. L137 and L138 are `REFUSED R-MEAN`: `Capital` includes the separately printed employee-option balance [T3.55, T3.56], and neither row has a supported element. Nothing is combined into a reported row. `paid_up_equity_capital` stays distinct. |
+| 3 (P1) segment result | The bank's measure is segment PBT [T3.57–T3.62]. The members (L375–L382) enumerate no key, and the total (L383–L384) is `REFUSED R-MEAN`. Isolation: Apar's `capmkt.segment_result_total.2026` would map the bank total, and no supported selector separates them, so Task 8's stop rule applies (Task 8). Apar's meaning is unchanged. |
+| 4 (P1) opening cash | L359 is `REFUSED R-TIME`, the existing no-value refusal for the September key. The filed instant is 2026-03-31 [T3.04, B8.26]. Nothing is retimestamped. |
+| 5 (P2) share proceeds | L322 is `VALUE ProceedsFromIssuingShares@FourD`: H1, INR, `decimals=-5`, positive inflow, statement line "Proceeds from issue of share capital (including ESOPs/ESUSs)" under financing [T3.76–T3.78]. The line is not split; L326 is `R-SCOPE`. Every alias-based refusal was audited by meaning (record, Alias audit). 15 lines move from `R-NF` to `R-SCOPE` with a stated distinction, among them tangible-asset purchase and sale (L258, L260), whose "fixed assets" composition is undisclosed. The rest are confirmed `R-NF` with reasons. |
+| 6 (P2) elimination basis | Frozen in the record. `segment_revenue` is `PRE_ELIMINATION` [T3.63–T3.67], and `segment_assets` is `POST_ELIMINATION` [T3.68–T3.70]. Segment liabilities include capital [T3.71–T3.75], so their meaning is refused (members no key; total and net `R-MEAN`; Apar's entries would map them, so the Task 8 stop rule applies). `segment_capital_employed` has no common basis and is `REFUSED R-OP`. |
+| 7 (P2) Task 8 computed rows | Task 8's `MAPPED` check covers reported `VALUE` lines only. Computed lines go through the formula path (operands, complete key, trace) and stay `NOT_REPORTED` for admission. |
+| Rulings | EPS after extraordinary items is accepted (INR per share; Q and H1 separate). Exceptional items stay `R-SIGN`; the opposite sign is described as suggested, not proved. The computed-admission exclusion stands. |
+| Counts | 457 lines: `VALUE` 107 (102 reported, 5 computed); `NOT_APPLICABLE` 128; `REFUSED` 204 (`R-NF` 77, `R-QCF` 76, `R-PDF` 18, `R-SCOPE` 15, `R-OP` 7, `R-MEAN` 6, `R-SIGN` 2, `R-CON` 2, `R-TIME` 1); `no key` 18. Admissible on rehearsal: the 102 reported lines. Locator check: 242 of 242 `OK`. |
+
 ## Review 4 dispositions
 
 | Item | Disposition |
@@ -190,25 +208,27 @@ is unconditional; only the cells below vary.
 
 Fixed from `docs/evidence/vendor-first/icicibank-grounding.md` (gen-1). `[Bx.yy]` are its Task 2
 locators; `[T3.nn]` are the rows Task 3 added. The locator check
-(`scratchpad/vendor-first/live-p3-1/locators_t3.py`) passes 209 of 209, none `NOT_ASSESSED`.
+(`scratchpad/vendor-first/live-p3-1/locators_t3.py`) passes 242 of 242, none `NOT_ASSESSED`
+(fix round 1; 209 of 209 before).
 
-**The table gives B1c, a stop.** The framework is declared only in the results PDFs (B1′ P), and
-B7 fails on both PDFs because neither prints `Scrip Symbol :` [B7.15, B7.16]. "With B1′ P → B1c"
-then applies. Every arm below is conditional on amendment A7, which proposes an evidenced PDF
-identity rule. With A7, B1 is B1b. **If Sol rejects A7, B1c stands and the phase halts at Task 3.**
-The missing evidence would then be a PDF association with the issuer that the current contract
-accepts.
+**B1c stands. The phase halts at Task 3** (fix round 1, after Sol review 1 rejected the first
+A7). The framework is declared only in the results PDFs (B1′ P). B7 fails on both PDFs, because
+neither prints `Scrip Symbol :` [B7.15, B7.16], so "with B1′ P → B1c" applies. Revised A7 (below)
+states the evidenced issuer declaration that would release the stop. The retained PDFs do not
+satisfy it. Each names the bank in the title block of its standalone statement page, but no
+period heading is bound to that page or its block [T3.51, T3.52]. The arms below other than B1
+stay as evidenced. They and the ledger are not in force until an amendment releases B1c.
 
 | Branch | Arm | Evidence | Consequence |
 |---|---|---|---|
-| B1 | **B1b `INDIAN_GAAP`** (under A7; B1c without it) | No instance declares a framework [B1.01–B1.04]. All four PDF basis declarations agree [B1.05, B1.06, B1.09, B1.10]: "Accounting Standards prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949, the circulars, guidelines and directions issued by the Reserve Bank of India … and other accounting principles generally accepted in India". The releases call this "Indian GAAP" [B1.07, B1.11]. No `IND_AS` phrase occurs [B1.13–B1.18]. The new phrase matches all four as a token run [T3.15–T3.18]. | Task 4: `AccountingFramework.INDIAN_GAAP = "INDIAN_GAAP"`. 0050 also widens the four `framework` CHECKs (0001: `filing_packages`, `acquisition_attempts`, `interpretations`, `results`); without that, no bank package, attempt, interpretation or result row can be written. Task 5: `FRAMEWORK_DECLARATIONS[INDIAN_GAAP] = ("prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949",)`. The comment cites T3.15–T3.18. Task 9 applies A7's spec wording. |
-| B1′ | **P** | The declaration is in the PDFs only [B1.05, B1.09; B1.01–B1.04]. The basis association is the declaration's own subject, "The standalone financial results have been prepared" [B1.05, B1.09]. The period association is page 1, "for the quarter and six months ended September 30, 2026" and "for the quarter ended June 30, 2026" [B7.01, B7.09]. | Task 5's P arm and Task 7's P paths, as written. Identity is A7. |
+| B1 | **B1c** (stop). Content would be **B1b `INDIAN_GAAP`** once the PDF is associated | No instance declares a framework [B1.01–B1.04]. All four PDF basis declarations agree [B1.05, B1.06, B1.09, B1.10]: "Accounting Standards prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949, the circulars, guidelines and directions issued by the Reserve Bank of India … and other accounting principles generally accepted in India". The releases call this "Indian GAAP" [B1.07, B1.11]. No `IND_AS` phrase occurs [B1.13–B1.18]. The new phrase matches all four as a token run [T3.15–T3.18]. | Task 4: `AccountingFramework.INDIAN_GAAP = "INDIAN_GAAP"`. 0050 also widens the four `framework` CHECKs (0001: `filing_packages`, `acquisition_attempts`, `interpretations`, `results`); without that, no bank package, attempt, interpretation or result row can be written. Task 5: `FRAMEWORK_DECLARATIONS[INDIAN_GAAP] = ("prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949",)`. The comment cites T3.15–T3.18. Task 9 applies A7's spec wording. *All of this waits for the B1c release.* |
+| B1′ | **P** | The declaration is in the PDFs only [B1.05, B1.09; B1.01–B1.04]. The basis association is the declaration's own subject, "The standalone financial results have been prepared" [B1.05, B1.09]. Page 1, the covering letter, prints the period [B7.01, B7.09]. It sits outside the statement block, and no period heading is bound to the issuer-titled statement page [T3.51, T3.52]. | Task 5's P arm and Task 7's P paths, once released. Identity, period and basis association is revised A7, which is not met. |
 | B2 | **B2a** | Each of the four instances' namespace forms is exactly `{Banking}` [B2.01–B2.08]. | Task 5 maps `Banking` → `BANK`. |
 | B3 | **B3a** | Facts are in the registered `http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt` [B3.01, B3.06, B3.11, B3.16]. Its scope and period concepts are used at `OneD` [B3.02–B3.20]. | **Parser:** no change; no `TaxonomySpec` and no `xbrl_taxonomies.py` edit (B3b struck). |
 | B4 | **B4b** | The name is `NameOfBank` [B4.04, B4.10, B4.16, B4.22], not `NameOfTheCompany` [B4.05, B4.11, B4.17, B4.23]. Q1 contexts use scheme `http://www.sebi.gov.in/in-capmkt/Symbol` with `ICICIBANK` [B4.18, B4.24]. That equals the instance's own `Symbol` fact [B4.14, B4.20] and the master symbol [B4.25]. The Q2 contexts use the seeded ScripCode scheme [B4.06, B4.12]. | Ruling below. Task 5: `filing_identity` reads `NameOfBank` for the `BANK` form. `xbrl_identity.py` gains `SEBI_SYMBOL_ENTITY_SCHEME = "http://www.sebi.gov.in/in-capmkt/Symbol"`. `verify_xbrl_identity` and `xbrl_entity_state` map it to the NSE symbol set, as they map `NSE_ENTITY_SCHEME`. |
 | B5 | **B5a** | Both bases are listed for both periods [B5.01–B5.04]. | Discovery selects standalone. The basis status is `CONSOLIDATED_AND_STANDALONE`. |
 | B6 | **B6a** | Every collapsed row is `Integrated Filing- Financials` [B5.01–B5.04]. | No change; B6b struck. |
-| B7 | **B7b** for the package; identity, period and basis association pass under A7 | Neither PDF prints the marker [B7.15, B7.16]. Each cites "ICICI Bank Limited (NSE: ICICIBANK, BSE: 532174, NYSE: IBN)" [T3.09, T3.10] and no other exchange code [T3.11, T3.12]. The statement page's text layer is OCR-corrupted: "Operotinq expenses le)+(f)", "Tax expense !a)+(h)" [T3.19, T3.20]; "Operatinq expenses (e)+(f)" [T3.21]. Statement-line parsing on it is not evidenced. | XBRL-only package and staged inputs. The PDF is retained as the `REPORTING_FRAMEWORK` setting's evidence input. Its statement claims read `NOT_ASSESSED`; it is not a member. No `config/runs/icicibank-<period>.yaml`, no `pdf/v4/`, no `--member pdf`. The PDF extractor still bumps in Task 5, because `member_identity.py` changes. |
+| B7 | **B7b** for the package; revised A7 not met | Neither PDF prints the marker [B7.15, B7.16]. The release's exchange-code citation [T3.09–T3.12] is no longer an identity rule (Sol review 1, finding 1). The statement page's text layer is OCR-corrupted: "Operotinq expenses le)+(f)", "Tax expense !a)+(h)" [T3.19, T3.20]; "Operatinq expenses (e)+(f)" [T3.21]. Statement-line parsing on it is not evidenced. | XBRL-only package and staged inputs. The PDF is retained as the `REPORTING_FRAMEWORK` setting's evidence input. Its statement claims read `NOT_ASSESSED`; it is not a member. No `config/runs/icicibank-<period>.yaml`, no `pdf/v4/`, no `--member pdf`. The PDF extractor still bumps in Task 5, because `member_identity.py` changes. |
 | B8 | P&L present, **anchors do not match**; BS and CF present at the acceptance period, absent at Q1; segment present | P&L concepts at `OneD` and `FourD` [B8.17–B8.19, B8.27; T3.01, T3.02]. The v2 PL fields are absent [B8.21, B8.22]. BS fits v2 through `Assets` [B8.29]; CF fits [B8.31, B8.32]; segment fits [B8.20]. Q1 has no BS or CF [B8.40–B8.43, B8.51–B8.54]. | **Anchor:** Task 8 creates `statement_anchors/v3.yaml` with one PL anchor: `schema_identity` of the 2026-01-31 in-capmkt namespace, `native_fields: [InterestEarned, ProfitLossFromOrdinaryActivitiesBeforeTax]`, `DURATION_ENDING_AT_PERIOD_END` [B8.18, B8.19]. v11 lists it beside v2, and it joins the XBRL extractor pin. Q1's absent BS and CF are capability `UNSUPPORTED`, with rules unchanged. The acceptance period is 2026-09-30 (Evidence pins), where all four statements are present. |
 | B10 | **B10a** | `LevelOfRounding`, `DescriptionOfPresentationCurrency`, `DateOfStartOfFinancialYear` and `DateOfEndOfFinancialYear` are at `OneD` in all four instances [B10.01–B10.16]. `OneD` declares the reporting-period end [B3.04, B3.09, B3.14, B3.19]. | **B10:** no change; B10b struck. That `_declared` reads a `Banking` instance at all is Task 5's form change, not B10. |
 | B9 | pending | — | Task 12. |
@@ -231,60 +251,107 @@ are off the onboarding and ingest paths.
 `member_identity.py` by the XBRL, PDF and SHP extractors. All three bump once in Task 5, so B4b
 adds no bump.
 
-### Amendment A7 (proposed): PDF identity by the issuer's own exchange-code citation
+### Amendment A7 (revised, fix round 1): PDF identity by a bound issuer declaration — not met
 
-**Rule.** `verify_pdf_identity(pdf, identifiers)` works in two steps.
-1. Page 1's `Scrip Symbol :` line decides as today when it is present.
-2. Otherwise, the PDF verifies only when both hold:
-   - its text cites the seeded NSE symbol as `NSE: <symbol>` and the seeded BSE scrip as
-     `BSE: <scrip>`;
-   - every `NSE:` and `BSE:` code citation in the document, found by the pattern
-     `\b(NSE|BSE)\s*:\s*([A-Za-z0-9&-]+)`, names exactly those two identifiers.
+Sol review 1 (finding 1) rejected the first A7, under which both exchange codes could appear
+anywhere in the PDF. That rule accepted another company's PDF that mentions the bank, an
+appended unrelated release, and code prefixes such as `NSE: ICICIBANK.X`. The revised rule
+below states what would associate a results PDF with the issuer. **The retained PDFs do not
+satisfy it, so B1c stands.** The rule is recorded so that a later amendment can be checked
+against it. It is not to be weakened to fit these PDFs.
 
-Citing only one of the two codes, or citing any other code, rejects. A page without a text layer
-never verifies. The rule uses only the seeded identifiers, so the same code works unchanged for a
-second issuer. An issuer whose PDF has neither form still refuses.
+**Rule.** Page 1's `Scrip Symbol :` line decides as today when it is present. Otherwise, a
+results PDF is associated with the issuer for a requested basis and period end only when one
+*statement block* of the PDF carries all four of the following. A statement block runs from a
+page whose title block carries that basis's results heading up to the page before the next page
+that carries a results heading for any basis, or to the end of the document.
+1. **Issuer.** On the block's first page, a whole text line above the basis heading (by
+   `PdfPage` line geometry) equals the issuer's name. Comparison ignores case and collapses
+   whitespace. Equality is whole-line, so a line that merely contains the name never matches,
+   for example "ICICI Bank Limited (NSE: …)", "ICICI Bank Limited Employees Trust", or the name
+   inside another issuer's sentence. *Supporting source association:* the name never comes from
+   the PDF or the announcement listing. It is the name concept (`NameOfTheCompany`, or
+   `NameOfBank` under B4b) of the same package's instance, for the same basis and period end, and
+   that instance must already have passed `verify_xbrl_identity` against the seeded ISIN, symbol
+   and scrip. The seeded identifiers alone carry no name.
+2. **Basis.** The basis heading (e.g. `STANDALONE FINANCIAL RESULTS`) is a whole line on that same
+   page.
+3. **Period.** A period heading line on that page, or a heading line elsewhere in the block,
+   prints the requested period end as one date. A date inside note sentences does not count.
+4. **Framework.** The framework declaration (B1's phrase) occurs inside the block, with that basis
+   as its subject.
 
-**Evidence.**
-- The Q2 PDF p26 and the Q1 PDF p22, the news release bound into the results document, read
-  "The Board of Directors of ICICI Bank Limited (NSE: ICICIBANK, BSE: 532174, NYSE: IBN)"
-  [T3.09, T3.10].
-- No other `NSE:`/`BSE:` code occurs in either document [T3.11, T3.12]. The only other "BSE"
-  token is the addressee "BSE Limited" on p1, which has no colon and so no code.
-- The period association is page 1 [B7.01, B7.09]. The basis association is the declaration's
-  subject [B1.05, B1.09]. These satisfy B1′ P's "identity, period and basis association" without
-  B7a's statement parsing.
+**Contradiction checks (each rejects).** Another title block for the same basis names a
+different entity, or names none. The block prints a period heading for another period end.
+Another block declares a framework for the same basis. A page-1 marker names another symbol.
+Title blocks of other bases are not compared. In the Q2 PDF, the consolidated title block reads
+"ICICI Bonk Limited" (OCR) [T3.54]. A document-wide name check would reject on that OCR error, and
+fuzzy matching would weaken the rule.
 
-**Provenance rejected.** The other candidate was the PDF's own announcement-listing row. Each
-results PDF's row reads symbol `ICICIBANK`, ISIN `INE090A01013`, "Outcome of Board Meeting"
-[T3.13, T3.14]. That ISIN differs from the master's and every instance's `INE090A01021`
-[B4.25, B4.01]. A provenance rule would rest on a conflicting identifier. The listing is also
-requested for the symbol, so its symbol field restates the query and is not independent
-evidence. The CIN on p1 ("CIN:L65190GJ1994PLC021012") is not a seeded identifier.
+**Limit.** The rule associates text inside one document with an identity-verified instance. It
+does not authenticate the document. A forged PDF that copies the issuer's title block and
+headings passes. Provenance would be the defence, and its unreconciled ISIN route stays rejected
+(below).
 
-**Implementation.** Task 5, in `member_identity.verify_pdf_identity`, through constants beside
-`PDF_SYMBOL_MARKER`. Discovery's P-arm check and `_read_xbrl`'s ingest re-check call it unchanged.
-**Tests** (Task 5; unit, matching logic):
-- both retained ICICIBANK PDFs verify (`retained`);
-- a synthetic page citing the seeded codes plus `NSE: OTHER` rejects;
-- the seeded `NSE:` code without `BSE:` rejects;
-- a page-1 marker naming another symbol rejects, even when the citation matches;
-- Apar's retained PDFs verify through the marker as before (existing suite).
+**Evidence against the retained PDFs.**
 
-**Pins:** `member_identity.py` is content-pinned by the XBRL, PDF and SHP extractors
-(`run_config.py`, `EXTRACTOR_SOURCES` and `SHP_EXTRACTOR_SOURCES`). All three already bump once
-in Task 5, so A7 adds no version. A7 landing after Task 10 would bump again (F08 rule).
-**Spec wording for Task 9** (`docs/specs/2026-11-06-vendor-first.md` §8):
+| Requirement | Q2 PDF `b28a7191…` | Q1 PDF `1b3599e2…` |
+|---|---|---|
+| 1 Issuer | met: p3 "ICICI Bank Limited" above "STANDALONE FINANCIAL RESULTS" [T3.49]; instance name "ICICI BANK LIMITED" [B4.10] | met: p3 [T3.50] |
+| 2 Basis | met [B7.02, T3.49] | met [B7.10, T3.50] |
+| 3 Period | **missing.** No line on p3 prints a date [T3.51]. The column headers split the month from "30, 2026" across lines. The block's dates occur only in note sentences, e.g. p8 "during six months ended September 30, 2026" [T3.53] | **missing.** No line on p3 prints a date [T3.52] |
+| 4 Framework | met: p7, "Notes on standalone financial results" [B1.05, T3.15]; block p3–p12, next heading p13 [B7.08] | met: p6 [B1.09, T3.17]; block p3–p10, next heading p11 [B7.14] |
+| Contradictions | none in the standalone block | none in the standalone block |
+
+**Exactly what is missing:** a period heading for the standalone results, bound to the
+issuer-titled statement page or its block, that code can read as a line. The only full period
+heading is page 1 [B7.01, B7.09], in the covering letter, outside the block. Each of the
+following would weaken the rule, so none is taken: binding the covering letter to the block
+through its "Annexure I" cross-reference (an issuer-specific layout), matching a date anywhere in
+the block (the note sentences above), or reading the split column headers (statement-header
+parsing, which B7 found unevidenced on these OCR pages [T3.19–T3.21]).
+
+**What could release B1c** (each is a new amendment for Sol): (a) reviewed evidence that the
+generic column-header reader (`pdf_statement_pages` column binding with `header_period`) reads
+p3's headers as the requested Q and H1 periods on these PDFs; (b) a reviewed provenance route
+that reconciles the listing ISIN `INE090A01013` with `INE090A01021`; (c) a filing that prints the
+period heading on the statement page.
+
+**Provenance rejected (unchanged).** Each results PDF's announcement-listing row reads ISIN
+`INE090A01013` [T3.13, T3.14], not the master's and instances' `INE090A01021` [B4.25, B4.01]. No
+reviewed identifier relationship explains the difference, and this plan asserts none. The CIN on
+page 1 and page 3 is not a seeded identifier.
+
+**Implementation, if released.** Task 5, in `member_identity.verify_pdf_identity`. It takes the
+verified instance's name as an argument, and its constants sit beside `PDF_SYMBOL_MARKER`.
+Discovery's P-arm check and `_read_xbrl`'s ingest re-check pass the name. **Tests** (Task 5; unit,
+matching logic; synthetic pages unless marked):
+- a third-party mention rejects: another issuer's title block, whose notes read "Our lender is
+  ICICI Bank Limited (NSE: ICICIBANK, BSE: 532174)";
+- an appended unrelated release rejects: another issuer's statement block, followed by the bank's
+  news release;
+- conflicting issuer declarations reject: two standalone title blocks that name different
+  entities;
+- identifier boundaries: a title line "ICICI Bank Limited Employees Trust" rejects; a title line
+  "icici bank limited" in another case verifies;
+- a block without a period heading line rejects. This is the retained PDFs (`retained`), which
+  reject today;
+- a page-1 marker naming another symbol rejects; Apar's retained PDFs verify through the marker as
+  before (existing suite).
+
+**Pins.** `member_identity.py` is content-pinned by the XBRL, PDF and SHP extractors. They already
+bump once in Task 5, so a released A7 adds no version. Landing it after Task 10 would bump again
+(F08 rule).
+**Spec wording for Task 9** (`docs/specs/2026-11-06-vendor-first.md` §8), only once released. The
+first A7 sentence, "with no other exchange code cited", is withdrawn. It contradicted the
+`NYSE: IBN` code that the documents cite.
 - intro, after "`UNKNOWN`": "; Phase 3 adds `INDIAN_GAAP`".
-- step 2, first sentence: "Add the framework value the filing evidences, only if no existing
-  value fits: ICICIBANK's results PDFs declare preparation under 'Accounting Standards prescribed
-  under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation
-  Act, 1949, the circulars, guidelines and directions issued by the Reserve Bank of India … and
-  other accounting principles generally accepted in India' ('Indian GAAP'), recorded as
-  `INDIAN_GAAP`."
+- step 2, first sentence: as in the first draft (the `INDIAN_GAAP` declaration quote).
 - steps 2 and 4 paragraph, after "a Banking form alone is not a substitute for that declaration.":
   "A results PDF is associated with the issuer by its page-1 `Scrip Symbol :` line or, absent that
-  line, by citing the issuer's own NSE symbol and BSE scrip with no other exchange code cited."
+  line, by one statement block whose title block names the issuer, as the package's
+  identity-verified instance names it, above the basis heading, and which carries the period
+  heading and the framework declaration. Text matching does not authenticate the document."
 
 ## Version and pin inventory (F08, F09, F11)
 
@@ -803,9 +870,34 @@ setting, never a default.
 
 ## Task 8: First-party bank mappings, mapping set v11
 
-Goal: ICICIBANK's retained XBRL ~~(and, B7a, PDF)~~ interprets every ledger `VALUE` line `MAPPED`
-under v11 with verified meaning; every key a ledger `REFUSED` line names stays unmapped; other lines `UNMAPPED`; Apar interprets identically under v10 and
-v11.
+Goal: ICICIBANK's retained XBRL ~~(and, B7a, PDF)~~ interprets every ledger *reported* `VALUE`
+line (`VALUE <QName@contextRef>`) `MAPPED` under v11 with verified meaning. Every key that a
+ledger `REFUSED` or `no key` line names stays unmapped, and other lines are `UNMAPPED`. Ledger
+`VALUE computed` lines have no filed fact and no mapping entry. They are checked through the
+comparison and formula path, never as interpretations, and are never admitted as observed facts
+(`admit_run` refuses non-`REPORTED` rows as `NOT_REPORTED`). Apar interprets identically under
+v10 and v11.
+
+**Isolation (Task 3 review 1; stop rule applies).** Apar's 2026 in-capmkt entries
+(`xbrl/v5/in_capmkt.yaml`, listed by v10) select by namespace, element, period shape and
+dimension axis. The bank files in the same namespace, so `schema_identity` does not separate the
+two (B3a). Without a new scope, three of those entries would map bank facts that the ledger
+refuses:
+- `capmkt.segment_result_total.2026` (`SegmentProfitLossBeforeTaxAndFinanceCosts`, no dimension):
+  the bank's segment PBT, against L383–L384 `R-MEAN`;
+- `capmkt.segment_liabilities.2026` (members, `POST_ELIMINATION`) and
+  `capmkt.segment_liabilities_total.2026`: liabilities that include capital, against L401–L405;
+- `capmkt.segment_liabilities_net.2026` (`NetSegmentLiabilities`): against L407.
+
+The loader's selectors (`Selector`: native field, period shape, dimension axis and member;
+entry: `schema_identity`, `basis`, `period_kinds`) have no issuer-class or form scope. **No
+supported selector keeps Apar's meaning while refusing the bank's, so Task 8's stop rule applies
+to these entries.** The stop needs an amendment, for example an evidenced IntegratedFinance-form
+scope on mapping entries. Apar's canonical meaning is never changed to make the bank fit. The
+bank's per-member segment results (`ReportableSegmentsFinanceCostsAxis`) match no existing entry
+and stay unmapped. `SegmentRevenue` (`PRE_ELIMINATION`) and `SegmentAssets` (`POST_ELIMINATION`)
+match Apar's entries with the bases the record evidences for the bank. The stop is moot while B1c
+halts the phase, but it binds any amendment that releases B1c.
 
 Files:
 - Create: `config/normalisation/mappings/xbrl/v6/*`, `mappings/v11.yaml` (v10's files and keys
@@ -829,8 +921,11 @@ Approach (F10, F22):
 5. ~~B7a: the issuer config's `pdf_parse` with the PDF sha256; the PDF's identity, period, basis and
    framework gates pass on the actual layout.~~
 
-Verification: per ledger `VALUE` line, code compares the interpretation's canonical key, value,
-sign, period, interval and provenance with the retained fact; `statements_present`, reporting kind
+Verification: per ledger reported `VALUE` line, code compares the interpretation's canonical
+key, value, sign, period, interval and provenance with the retained fact. Per `VALUE computed`
+line, the comparison engine's formula path yields the value, with each operand a ledger reported
+`VALUE` key, the complete output key (every axis, including `elimination_basis`) and a stored
+calculation trace; its admission disposition stays `NOT_REPORTED`; `statements_present`, reporting kind
 and period shape as the record states; Apar's retained packages give equal interpretations per
 canonical key, value and status under v10 and v11; ~~B7a: a PDF ingest of the retained PDF yields
 `MAPPED` occurrences, not only a text layer.~~ Task 13's intake (R2-02, R4-01, before Task 10):
