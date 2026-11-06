@@ -101,7 +101,10 @@ def test_vendor_first_columns_tables_and_pins(
     row = _insert(
         runtime,
         "fact_admissions",
-        admission | unchecked | {"witness_interpretation_id": witness, "eligibility_version": "v1"},
+        admission
+        | unchecked
+        | {"witness_interpretation_id": witness, "eligibility_version": "v1"}
+        | {"class_digest": "c" * 64},
     )
     captures = runtime.execute(
         "SELECT eqos.row_captures('fact_admissions', to_jsonb(a)) FROM eqos.fact_admissions a "

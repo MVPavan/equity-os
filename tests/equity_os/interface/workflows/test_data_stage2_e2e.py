@@ -56,11 +56,13 @@ from equity_os.storage.facts.pg_fact_store import FactStoreFrozenError, PgFactSt
 from equity_os.storage.records.repository import EvidenceRepository
 from equity_os.storage.records.vendor_values_store import VENDOR_TABLES
 from equity_os.verification.admission.admission import (
+    AdmissionRefusal,
     admit_run,
     key_identity,
     read_selected,
     select_admitted,
 )
+from equity_os.verification.admission.vendor_first import filing_admissible
 from equity_os.verification.comparison.run import load_results
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
@@ -235,13 +237,23 @@ def test_stage2_end_to_end(
         results = {row_id: row for row_id, row in actual.items() if row_id not in excluded}
         outcome = admit_run(run_id, pool=pool, store_id=legacy)
         # Every actual result gets exactly one outcome; the excluded cells are refused as pinned.
+        # The manifest names first-party reasons (reading 4): a failed filing's detail; for a
+        # cell the filing does not hold (row 6), or one an open item now refuses first (row 0a),
+        # the first-party rule's own failure, which the pre-VENDOR-1 order checked first.
+        failures = dict(outcome.filing_failures)
+        first_party = (AdmissionRefusal.VENDOR_UNMAPPED, AdmissionRefusal.REVIEW_OPEN)
+        reasons = {
+            row_id: failures.get(row_id)
+            or (filing_admissible(actual[row_id], {}, {}) if refusal in first_party else refusal)
+            for row_id, refusal in outcome.refusals
+        }
         by_side = {v.interpretation_id: row for row in actual.values() for v in row.source_values}
-        outcomes = [row_id for row_id, _ in outcome.refusals]
+        outcomes = list(reasons)
         outcomes += [by_side[record.interpretation_id].row_id for record in outcome.records]
         assert len(actual) == RESULT_COUNT and sorted(outcomes) == sorted(actual)
         assert {
             row_key(stage.run, actual[row_id]): reason.value
-            for row_id, reason in outcome.refusals
+            for row_id, reason in reasons.items()
             if row_id in excluded
         } == EXCLUDED
         admission = MANIFEST["admission"]
@@ -250,7 +262,7 @@ def test_stage2_end_to_end(
             admission["counts"]["admitted"],
         )
         refused: dict[str, list[str]] = {}
-        for row_id, reason in outcome.refusals:
+        for row_id, reason in reasons.items():
             if row_id in results:
                 refused.setdefault(reason.value, []).append(row_key(stage.run, results[row_id]))
         assert {reason: sorted(keys) for reason, keys in refused.items()} == {
@@ -270,7 +282,7 @@ def test_stage2_end_to_end(
             )
             assert selected.canonical_selected_at is not None
             cutoff = selected.canonical_selected_at + timedelta(microseconds=1)
-            fact = read_selected(store, row.key, cutoff=cutoff, mode=RunMode.AS_KNOWN)
+            fact = read_selected(store, row.key, cutoff=cutoff, mode=RunMode.AS_KNOWN, pool=pool)
             assert fact is not None
             read[row_key(stage.run, row)] = (
                 str(fact.value),

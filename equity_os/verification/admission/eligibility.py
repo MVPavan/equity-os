@@ -21,6 +21,7 @@ from psycopg_pool import ConnectionPool
 from pydantic import BaseModel, ConfigDict
 
 from equity_os.contracts.measurement.evidence import (
+    Interpretation,
     InterpretationOrigin,
     InterpretationStatus,
     RunMode,
@@ -28,19 +29,20 @@ from equity_os.contracts.measurement.evidence import (
 from equity_os.contracts.measurement.measurement_key import MeasurementKey
 from equity_os.contracts.sourcing.source_catalog import SCREENER_PAGE, TIJORI_PAGE
 from equity_os.contracts.verification.comparison import SourceState
-from equity_os.contracts.verification.review_queue import QueueOverlay
-from equity_os.contracts.verification.vendor_first import FilingState, VendorOutcome
-from equity_os.verification.admission.admission import AdmissionRefusal, _decide
+from equity_os.contracts.verification.vendor_first import FilingFailure, FilingState, VendorOutcome
 from equity_os.verification.admission.vendor_first import (
     check_class,
+    filing_admissible,
     filing_state,
     issuer_class,
     vendor_outcome,
 )
 from equity_os.verification.comparison.engine_context import fiscal_year_end
 from equity_os.verification.comparison.engine_vendor_context import _DIMENSIONED
+from equity_os.verification.comparison.resolve_models import ResolvedInputs
 from equity_os.verification.comparison.run import load_results, replay_inputs
-from equity_os.verification.comparison.run_models import ResultRow
+from equity_os.verification.comparison.run_config import LoadedConfig
+from equity_os.verification.comparison.run_models import ResultRow, RunRequest
 from equity_os.verification.comparison.selection import period_end
 
 _Page = tuple[str | None, str]
@@ -239,28 +241,39 @@ def _agreeing(
         return
     interpretations = {item.interpretation_id: item for item in inputs.interpretations}
     occurrences = {item.occurrence_id: item for item in inputs.occurrences}
-    # The filing-admissible test excludes row 0a, so no queue item enters it.
-    no_queue = QueueOverlay(run_id=run_id, as_of=request.cutoff, open_items=(), dispositions=())
     for row in load_results(run_id, pool=pool):
         outcome, _ = vendor_outcome(row, interpretations, config.mapping_set, policy)
         if outcome is not VendorOutcome.VENDORS_AGREE:
             continue
-        decision = _decide(row, no_queue, interpretations, occurrences)
-        month = fiscal_year_end(
-            inputs.settings, entity_id, request.cutoff, period_end(row.key.period)
-        )
-        digest = check_class(
-            row,
-            interpretations,
-            mapping=config.mapping_set,
-            extractor_pins=request.pinned.vendor_extractors,
-            dictionary_version=config.dictionary.version,
-            policy_version=policy.version,
-            issuer_class=issuer,
-            period_kind=row.key.period.kind(month),
-        )
-        state = filing_state(row, not isinstance(decision, AdmissionRefusal))
+        digest = row_class(row, interpretations, inputs, request, config, issuer)
+        decision = filing_admissible(row, interpretations, occurrences)
+        state = filing_state(row, not isinstance(decision, FilingFailure))
         yield row, digest, state, policy.min_clean_key_periods
+
+
+def row_class(
+    row: ResultRow,
+    interpretations: Mapping[int | None, Interpretation],
+    inputs: ResolvedInputs,
+    request: RunRequest,
+    config: LoadedConfig,
+    issuer: str,
+) -> str:
+    """A cell's check class under its own run's pins, inputs and the issuer class."""
+    policy = config.vendor_first_policy
+    assert policy is not None
+    (entity_id,) = request.scope.entity_ids
+    month = fiscal_year_end(inputs.settings, entity_id, request.cutoff, period_end(row.key.period))
+    return check_class(
+        row,
+        interpretations,
+        mapping=config.mapping_set,
+        extractor_pins=request.pinned.vendor_extractors,
+        dictionary_version=config.dictionary.version,
+        policy_version=policy.version,
+        issuer_class=issuer,
+        period_kind=row.key.period.kind(month),
+    )
 
 
 def _three_way(row: ResultRow) -> bool:

@@ -337,12 +337,12 @@ def test_an_open_high_on_a_required_role_refuses_unselected(pilot: Pilot) -> Non
     before = pilot.query(unselected)
     with (
         capture_logs() as logs,
-        pytest.raises(RunDraftError, match="profit_for_period not admitted .*: OPEN_HIGH"),
+        pytest.raises(RunDraftError, match="profit_for_period not admitted .*: REVIEW_OPEN"),
     ):
         pilot.run("FY26_Q2")
     assert pilot.query(unselected) == before
     (summary,) = [log for log in logs if log["event"] == "admission_refusals"]
-    assert summary["run_id"] == run_id and summary["OPEN_HIGH"] >= 1
+    assert summary["run_id"] == run_id and summary["REVIEW_OPEN"] >= 1
 
 
 @pytest.mark.parametrize(

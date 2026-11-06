@@ -55,6 +55,7 @@ from equity_os.contracts.verification.comparison import (
     SourceState,
 )
 from equity_os.contracts.verification.config_versions import ConfigVersions
+from equity_os.contracts.verification.vendor_first import FilingFailure
 from equity_os.extraction.results_pdf.pdf_adapter import read_pdf_occurrences
 from equity_os.extraction.results_pdf.pdf_source import compute_file_sha256, load_pdf
 from equity_os.extraction.results_pdf.pdf_statement_pages import specs_from_config
@@ -349,10 +350,9 @@ def test_six_roles_agree_and_admit(
         pbt = _roles(legacy.run_id, ingest, quarter)["profit_before_tax"]
         assert pbt.extraction_status is ExtractionStatus.AGREE_UNQUALIFIED
         with ingest.pg_db.runtime_pool() as pool:
-            refusals = admit_run(
-                legacy.run_id, pool=pool, store_id=create_native_store(pool, "v1")
-            ).refusals
-        assert dict(refusals)[pbt.row_id] is AdmissionRefusal.EXTRACTION_NOT_AGREE
+            refused = admit_run(legacy.run_id, pool=pool, store_id=create_native_store(pool, "v1"))
+        assert dict(refused.refusals)[pbt.row_id] is AdmissionRefusal.FILING_UNRESOLVED
+        assert dict(refused.filing_failures)[pbt.row_id] is FilingFailure.EXTRACTION_NOT_AGREE
 
 
 @pytest.mark.retained

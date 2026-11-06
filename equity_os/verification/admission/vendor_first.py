@@ -23,17 +23,20 @@ from equity_os.contracts.measurement.canonical import PeriodKind, Representation
 from equity_os.contracts.measurement.evidence import (
     Interpretation,
     InterpretationOrigin,
+    KnowledgeTimeStatus,
+    Occurrence,
     VendorExtractorPin,
 )
 from equity_os.contracts.measurement.evidence_tier import EvidenceTier
 from equity_os.contracts.sourcing.source_catalog import SCREENER_PAGE, TIJORI_PAGE
-from equity_os.contracts.verification.comparison import SourceRole, SourceState
-from equity_os.contracts.verification.vendor_first import FilingState, VendorOutcome
+from equity_os.contracts.verification.comparison import ExtractionStatus, SourceRole, SourceState
+from equity_os.contracts.verification.vendor_first import FilingFailure, FilingState, VendorOutcome
 from equity_os.normalisation.mapping.mapping import MappingSet
 from equity_os.verification.comparison.run_models import ResultRow, SourceValue
 
 _Interval = tuple[Decimal, Decimal]
 _Interpretations = Mapping[int | None, Interpretation]
+_Occurrences = Mapping[int | None, Occurrence]
 NON_FINANCIAL = "NON_FINANCIAL"
 # Reading 1: an onboarded (or partially onboarded) entity whose Ind AS framework setting cites
 # onboarding's DISCOVERY input, both recorded by the cutoff. Nothing else implies a class.
@@ -97,6 +100,31 @@ def vendor_outcome(
     return VendorOutcome.VENDORS_AGREE, tijori if t_width < s_width else screener
 
 
+def filing_admissible(
+    row: ResultRow, interpretations: _Interpretations, occurrences: _Occurrences
+) -> FilingFailure | tuple[Interpretation, Occurrence]:
+    """Today's first-party rule for one cell: its filed interpretation and occurrence (XBRL
+    preferred), or why the filing fails. Open review items are row 0a's, not this test's."""
+    values = _first_party(row)
+    if row.extraction_status is ExtractionStatus.NOT_APPLICABLE:
+        if len(values) != 1:
+            return FilingFailure.NOT_SINGLE_REPRESENTATION
+    elif row.extraction_status is not ExtractionStatus.AGREE:
+        return FilingFailure.EXTRACTION_NOT_AGREE
+    direct = {
+        value.representation: interpretations[value.interpretation_id]
+        for value in values
+        if interpretations[value.interpretation_id].origin is InterpretationOrigin.DIRECT
+    }
+    chosen = direct.get(Representation.XBRL) or direct.get(Representation.PDF)
+    if chosen is None:
+        return FilingFailure.NO_DIRECT_OCCURRENCE
+    occurrence = occurrences[chosen.occurrence_id]
+    if occurrence.knowledge_time_status is not KnowledgeTimeStatus.KNOWN:
+        return FilingFailure.KNOWLEDGE_TIME_UNKNOWN
+    return chosen, occurrence
+
+
 def filing_state(row: ResultRow, admissible: bool) -> FilingState:
     """The first-party side of a cell against both vendor intervals; ``admissible`` is today's
     first-party admission rule. F is the XBRL value, else the PDF one, as admission chooses."""
@@ -156,6 +184,17 @@ def issuer_class(conn: Connection[Any], entity_id: int, cutoff: datetime) -> str
     """``NON_FINANCIAL`` on positive onboarding provenance known at the cutoff, else ``None``."""
     found = conn.execute(_ISSUER_CLASS, {"entity": entity_id, "cutoff": cutoff}).fetchone()
     return NON_FINANCIAL if found is not None and found[0] else None
+
+
+def _first_party(row: ResultRow) -> list[SourceValue]:
+    """A row's first-party source values that carry a value and its interpretation."""
+    return [
+        value
+        for value in row.source_values
+        if value.source_role is SourceRole.FIRST_PARTY
+        and value.state is SourceState.VALUE
+        and value.interpretation_id is not None
+    ]
 
 
 def _unmapped(side: SourceValue, interpretations: _Interpretations, mapping: MappingSet) -> bool:

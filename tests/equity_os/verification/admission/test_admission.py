@@ -38,6 +38,7 @@ from equity_os.contracts.verification.review_queue import (
     QueueItemDraft,
     QueueSeverity,
 )
+from equity_os.contracts.verification.vendor_first import AdmissionLabel, FilingFailure
 from equity_os.extraction.results_pdf.pdf_source import load_pdf
 from equity_os.extraction.results_pdf.pdf_statement_pages import (
     extract_statement_rows,
@@ -78,11 +79,14 @@ pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
 PAT, EPS = "profit_for_period|Q|-|REPORTED", "eps_basic|Q|-|REPORTED"
 INCOME, TAX = "total_income|Q|-|REPORTED", "tax_expense|Q|-|REPORTED"
-REFUSED = {
-    TAX: AdmissionRefusal.EXTRACTION_NOT_AGREE,  # AGREE_UNQUALIFIED
-    "profit_attributable_owners|Q|-|REPORTED": AdmissionRefusal.EXTRACTION_NOT_AGREE,  # INVALID
-    "tax_earlier_years|Q|-|REPORTED": AdmissionRefusal.EXTRACTION_NOT_AGREE,  # no value
-    "cf_profit_before_tax|Y|-|REPORTED": AdmissionRefusal.EXTRACTION_NOT_AGREE,  # one-sided
+# Reading 4: today's first-party codes are the detail of ``FILING_UNRESOLVED``.
+UNRESOLVED = {
+    TAX: FilingFailure.EXTRACTION_NOT_AGREE,  # AGREE_UNQUALIFIED
+    "profit_attributable_owners|Q|-|REPORTED": FilingFailure.EXTRACTION_NOT_AGREE,  # INVALID
+    "cf_profit_before_tax|Y|-|REPORTED": FilingFailure.EXTRACTION_NOT_AGREE,  # one-sided
+}
+REFUSED = {key: AdmissionRefusal.FILING_UNRESOLVED for key in UNRESOLVED} | {
+    "tax_earlier_years|Q|-|REPORTED": AdmissionRefusal.VENDOR_UNMAPPED,  # no filed value: row 6
     "opm_pct|Q|-|DERIVED": AdmissionRefusal.NOT_REPORTED,
 }
 CONFIRMED = ReconciliationStatus.CROSS_SOURCE_CONFIRMED
@@ -113,6 +117,8 @@ def _ran(pg_db: Any, tmp_path: Path, run: str) -> Iterator[Ran]:
     """One manifest run executed over its retained first-party and vendor inputs."""
     with pg_db.runtime_pool() as pool:
         stage = Stage(pg_db, pool, tmp_path, RUNS[run])
+        # No vendor-first policy pin: admitted from the filing alone, as before VENDOR-1.
+        stage.versions = stage.versions.model_copy(update={"vendor_first_policy": None})
         stage.first_party()
         stage.vendors()
         run_id = stage.execute().run_id
@@ -161,10 +167,12 @@ def test_admission_policy_records_bridge_selection_and_read(apar: Ran) -> None:
         assert conn.execute(COUNT_ROWS, (store_id,)).fetchone() == (0,)
 
     outcome = admit_run(run_id, pool=pool, store_id=store_id)
-    refusals = dict(outcome.refusals)
+    refusals, failures = dict(outcome.refusals), dict(outcome.filing_failures)
     assert {key: refusals[rows[key].row_id] for key in REFUSED} == REFUSED
+    assert {key: failures[rows[key].row_id] for key in UNRESOLVED} == UNRESOLVED
     assert len(outcome.records) + len(refusals) == len(rows)
     assert outcome.created == len(outcome.records)
+    assert {record.label for record in outcome.records} == {AdmissionLabel.CHECKED_AGAINST_FILING}
 
     # PAT (decimals -6) and EPS (decimals="INF") are admitted in the same run.
     pat, eps = _record(outcome.records, rows[PAT]), _record(outcome.records, rows[EPS])
@@ -207,7 +215,8 @@ def test_admission_policy_records_bridge_selection_and_read(apar: Ran) -> None:
         assert record.ref == store.fact_ref(record.handle)
     assert len({record.overlay_position for record in outcome.records}) == 1
 
-    # Vendor values are never admitted, and an API-document fact cannot enter the store.
+    # On this first-party-only run (no policy pin) no vendor interpretation is admitted, and an
+    # API-document fact cannot enter the store.
     vendor = {
         value.interpretation_id
         for row in rows.values()
@@ -281,10 +290,12 @@ def test_admission_policy_records_bridge_selection_and_read(apar: Ran) -> None:
         expected_selection_id=0,
     )
     assert selected.canonical_selected_at is not None
-    assert read_selected(store, rows[PAT].key, cutoff=before, mode=RunMode.AS_KNOWN) is None
+    assert (
+        read_selected(store, rows[PAT].key, cutoff=before, mode=RunMode.AS_KNOWN, pool=pool) is None
+    )
     after = selected.canonical_selected_at + timedelta(microseconds=1)
-    known = read_selected(store, rows[PAT].key, cutoff=after, mode=RunMode.AS_KNOWN)
-    assert known is not None
+    known = read_selected(store, rows[PAT].key, cutoff=after, mode=RunMode.AS_KNOWN, pool=pool)
+    assert known is not None and known.label is AdmissionLabel.CHECKED_AGAINST_FILING
     assert (known.value, known.unit, known.ref, known.provenance.context_ref) == (
         Decimal(2_517_000_000),
         "INR",
@@ -295,10 +306,18 @@ def test_admission_policy_records_bridge_selection_and_read(apar: Ran) -> None:
     # there, as-known has no selection yet. The test ingest stamps first-seen today, so the
     # quarter's own cutoff precedes it and even a retrospective read finds nothing.
     seen = max(facts[PAT].knowledge_time, facts[PAT].first_seen_time)
-    assert read_selected(store, rows[PAT].key, cutoff=seen, mode=RunMode.AS_KNOWN) is None
-    assert read_selected(store, rows[PAT].key, cutoff=seen, mode=RunMode.RETROSPECTIVE) == known
+    assert (
+        read_selected(store, rows[PAT].key, cutoff=seen, mode=RunMode.AS_KNOWN, pool=pool) is None
+    )
+    assert (
+        read_selected(store, rows[PAT].key, cutoff=seen, mode=RunMode.RETROSPECTIVE, pool=pool)
+        == known
+    )
     cutoff = load_config(APAR_ISSUER_CONFIG).quarter.knowledge_cutoff
-    assert read_selected(store, rows[PAT].key, cutoff=cutoff, mode=RunMode.RETROSPECTIVE) is None
+    assert (
+        read_selected(store, rows[PAT].key, cutoff=cutoff, mode=RunMode.RETROSPECTIVE, pool=pool)
+        is None
+    )
     with pytest.raises(CanonicalSelectionError):
         select_admitted(
             pool,
@@ -335,7 +354,7 @@ def test_open_high_refuses_until_disposed(apar: Ran) -> None:
         (item_id,) = publish_queue_drafts(cursor, run_id=run_id, drafts=[draft])
     store_id = create_native_store(pool, "high")
     refused = admit_run(run_id, pool=pool, store_id=store_id)
-    assert dict(refused.refusals)[row.row_id] is AdmissionRefusal.OPEN_HIGH
+    assert dict(refused.refusals)[row.row_id] is AdmissionRefusal.REVIEW_OPEN
 
     with stage.pg_db.owner_pool() as owner:
         record_disposition(

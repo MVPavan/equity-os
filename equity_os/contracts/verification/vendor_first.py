@@ -1,5 +1,5 @@
-"""Vendor-first admission vocabulary: labels, T1 outcomes, filing states, fallback outcomes
-(VENDOR-1 spec §6.5, §6.8)."""
+"""Vendor-first admission vocabulary: labels, T1 outcomes, filing states and failures, fallback
+outcomes (VENDOR-1 spec §6.5, §6.8)."""
 
 from __future__ import annotations
 
@@ -39,6 +39,16 @@ class FilingState(StrEnum):
     FILING_FAILED = "FILING_FAILED"
     FILING_DIFFERS = "FILING_DIFFERS"
     FILING_AGREES = "FILING_AGREES"
+
+
+class FilingFailure(StrEnum):
+    """Why a present filing fails the first-party admission rule: the detail of a
+    ``FILING_UNRESOLVED`` refusal."""
+
+    EXTRACTION_NOT_AGREE = "EXTRACTION_NOT_AGREE"
+    NOT_SINGLE_REPRESENTATION = "NOT_SINGLE_REPRESENTATION"
+    NO_DIRECT_OCCURRENCE = "NO_DIRECT_OCCURRENCE"
+    KNOWLEDGE_TIME_UNKNOWN = "KNOWLEDGE_TIME_UNKNOWN"
 
 
 class FallbackOutcome(StrEnum):
