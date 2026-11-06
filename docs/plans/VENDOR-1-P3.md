@@ -1,5 +1,7 @@
 # VENDOR-1 Phase 3 Implementation Plan: banks
 
+**Task 3 status (2026-11-06):** the Task 3 amendment is approved as a halt record. Approver: gpt-6.1-sol, `APPROVE` in review 3 at `1ca2de35`. B1c stands and the phase halts at Task 3. This approval releases neither B1c nor the Task 8 isolation stop, authorizes no implementation, and does not freeze the ledger. Each release route (a)/(b)/(c) below needs its own reviewed amendment.
+
 ## Task 3 review 2 dispositions
 
 Sol re-reviewed fix round 1 (main `2a70a09b`): CHANGES REQUIRED, two findings; B1c correctly
