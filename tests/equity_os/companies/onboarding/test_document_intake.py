@@ -84,8 +84,9 @@ def test_attempts_pin_routes_rights_times_and_refuse_wrong_bytes(
         )
         observation = intake.latest(1, "ANNOUNCEMENTS_LISTING")[0]
         cases = [
-            (DocumentKind.TRANSCRIPT, b"%PDF-1.7", 200, "OK"),
-            (DocumentKind.ANNUAL_REPORT, b"PK\x03\x04zip", 200, "OK"),
+            (DocumentKind.TRANSCRIPT, b"%PDF-1.7\n%%EOF\n", 200, "OK"),
+            (DocumentKind.ANNUAL_REPORT, b"PK\x03\x04zip" + b"PK\x05\x06" + bytes(18), 200, "OK"),
+            (DocumentKind.ANNUAL_REPORT, b"PK\x03\x04zip", 200, "TRUNCATED"),
             (DocumentKind.RESULTS, b"<html>denied</html>", 200, "WRONG_TYPE"),
             (DocumentKind.PRESENTATION, b"", 403, "HTTP_403"),
             (DocumentKind.CREDIT_RATING, b"", 999, "TOO_LARGE"),
@@ -95,7 +96,7 @@ def test_attempts_pin_routes_rights_times_and_refuse_wrong_bytes(
                 unit=VerificationUnit.EXCHANGE,
                 source_id="nse-documents",
                 surface=f"NSE_{kind}",
-                url=f"https://nsearchives.nseindia.com/{kind}",
+                url=f"https://nsearchives.nseindia.com/{kind}/{expected}",
             )
 
             def send(_: Request, status: int = status, body: bytes = body) -> tuple[int, bytes]:

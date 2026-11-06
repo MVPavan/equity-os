@@ -17,6 +17,7 @@ from equity_os.companies.onboarding.discovery import OK, TOO_LARGE
 from equity_os.contracts.sourcing.source_catalog import DocumentKind
 
 WRONG_TYPE = "WRONG_TYPE"
+TRUNCATED = "TRUNCATED"
 TERMINAL = frozenset({WRONG_TYPE, TOO_LARGE, "HTTP_404", "HTTP_410"})
 
 RETENTION_SHARED = "SELECT eqos.retention_shared()"
@@ -68,9 +69,14 @@ _FIRST_SPAN = "SELECT min(span_from) FROM eqos.document_listings WHERE entity_id
 
 
 def refusal(kind: DocumentKind, body: bytes) -> str:
-    """Accept PDF bytes, or an annual-report ZIP, without interpreting either."""
-    zipped = kind is DocumentKind.ANNUAL_REPORT and body.startswith(b"PK\x03\x04")
-    return OK if body.startswith(b"%PDF-") or zipped else WRONG_TYPE
+    """Accept complete PDF bytes, or a complete annual-report ZIP, without interpreting either.
+    A body without its end marker near the end is TRUNCATED, retried within the attempt bound
+    (eqos-tmof: NSE served a 2.9 MB prefix of a 20.6 MB annual report three times)."""
+    if body.startswith(b"%PDF-"):
+        return OK if b"%%EOF" in body[-1024:] else TRUNCATED
+    if kind is DocumentKind.ANNUAL_REPORT and body.startswith(b"PK\x03\x04"):
+        return OK if b"PK\x05\x06" in body[-65557:] else TRUNCATED
+    return WRONG_TYPE
 
 
 class Observation(BaseModel):

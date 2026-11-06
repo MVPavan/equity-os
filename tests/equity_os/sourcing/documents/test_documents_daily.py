@@ -18,7 +18,7 @@ import pytest
 from coverage_support import watchlist
 from onboarding_support import seed
 from pg_support import PgTestDatabase
-from test_nse_documents import read_probe
+from test_nse_documents import PROBE, read_probe
 
 from equity_os.companies.onboarding.discovery import Request
 from equity_os.contracts.publication.ledger import DecisionKind, SubjectKind
@@ -29,6 +29,7 @@ from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 DATE_KEYS = ("from_date", "to_date")
 NSE_DAY = "%d-%b-%Y"
+TRUNCATED_SHA = "c7126616c3917ac84d00674f6dee01e20bf4207a59dd97e8b6ac3b7d6b1c1836"
 
 
 class Lane:
@@ -85,7 +86,7 @@ class Lane:
             return 200, self.reports
         if request.source_id == "screener-subscriber":
             return 200, self.page
-        return 200, b"%PDF-SYNTHETIC identical document bytes"
+        return 200, b"%PDF-SYNTHETIC identical document bytes\n%%EOF\n"
 
     def bd(self, args: Sequence[str]) -> subprocess.CompletedProcess[str]:
         """Persist references independent of open/closed status, or fail the process boundary."""
@@ -564,3 +565,20 @@ def test_presentation_filed_as_update_is_fetched_and_unrelated_update_is_not(lan
         corporate + "APARINDSSM_27072026165132_IntimationofCorporatePresentation.pdf"
     ] == ("NSE_PRESENTATION")
     assert corporate + "APARINDS_25082026145919_SubmissionofBRSR.pdf" not in fetched
+
+
+def test_truncated_pdf_is_a_failed_attempt_and_a_complete_one_recovers(lane: Lane) -> None:
+    """NSE served the FY25 annual report's first 2.9 MB of 20.6 MB three times; each was
+    recorded OK (eqos-tmof). Its only end marker is the linearized first page's."""
+    truncated = PROBE.parents[2] / "snapshots/v1/blobs/nse-documents/c7" / TRUNCATED_SHA
+    lane.rows = [next(row for row in lane.rows if "about Transcript" in row["attchmntText"])]
+    lane.board = []
+    lane.status[lane.rows[0]["attchmntFile"]] = (200, truncated.read_bytes())
+    assert lane.run() == 4 and lane.counts()[1:] == (1, 0)
+    with lane.db.runtime_pool() as pool, pool.connection() as conn:
+        attempt = conn.execute(
+            "SELECT outcome, body_sha256, capture_ref_id FROM eqos.document_attempts"
+        ).fetchall()
+    assert attempt == [("TRUNCATED", TRUNCATED_SHA, None)]
+    lane.status.clear()
+    assert lane.run() == 0 and lane.counts()[1:] == (2, 1)
