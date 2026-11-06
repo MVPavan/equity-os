@@ -392,9 +392,11 @@ CLAIMED = {
 
 
 def _claim(row: ResultRow, key: str, ref: FactRef, value: Decimal | None = None) -> NumericClaim:
-    """A ``FIGURE`` claim on the admitted fact ``ref`` under the row's key."""
+    """A ``FIGURE`` claim on the admitted fact ``ref`` under the row's key, stating the label
+    every admission of this first-party run records (checked against the filing)."""
     unit, scale, kind, claimed = CLAIMED[key]
     return NumericClaim(
+        qualifiers=(AdmissionLabel.CHECKED_AGAINST_FILING,),
         claim_key=f"fact.{key}",
         section_key="results",
         citation=Citation(
