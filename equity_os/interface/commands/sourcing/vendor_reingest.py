@@ -61,7 +61,7 @@ from equity_os.extraction.vendors.screener.screener_session_page import (
 )
 from equity_os.extraction.vendors.tijori import vendor_tijori
 from equity_os.extraction.vendors.tijori.tijori_page import JsonScriptCollector, decode_document
-from equity_os.interface.commands.companies.onboard_cli import SCREENER_SECTIONS, TIJORI_DISPLAY
+from equity_os.interface.commands.companies.onboard_cli import SCREENER_SECTIONS
 from equity_os.sourcing.vendors.tijori.tijori_capture import (
     COMPANY_DETAILS_ISLAND,
     FINANCIALS_PAGE_LABEL,
@@ -73,6 +73,7 @@ from equity_os.storage.records.repository import EvidenceRepository
 from equity_os.storage.records.repository_rows import SELECT_VERSION_PIN
 from equity_os.verification.comparison.run_config import (
     load_run_config,
+    pinned_tijori_display,
     vendor_extractor_pin,
     vendor_version_pin,
 )
@@ -120,6 +121,7 @@ def reingest(
         raise LookupError(_NO_FISCAL_MONTH.format(key=entity, period=period_end))
     month = int(record.value_text)
     config = load_run_config(config_root, versions)
+    display = pinned_tijori_display(config_root)
     ids = repository.issuer_identifiers(entity_id)
     found = repository.basis_status_as_of(entity_id, repository.store_clock())
     status = None if found is None else found[1]
@@ -148,7 +150,7 @@ def reingest(
     def parsed(capture: CaptureReference) -> Iterator[tuple[Adapter, Any, bytes]]:
         identity = (capture.source_id, capture.surface, capture.request_key, capture.capture_id)
         record, body = store.read_capture_verified(*identity)
-        for adapter in _adapters(repository, capture, body, ids, basis, status, month, config_root):
+        for adapter in _adapters(repository, capture, body, ids, basis, status, month, display):
             yield adapter, record, body
 
     ordered = [capture for _, capture in sorted(captures.items())]
@@ -295,7 +297,7 @@ def _adapters(
     basis: Basis,
     status: BasisStatus | None,
     month: int,
-    config_root: Path,
+    display: vendor_tijori.TijoriDisplayRules,
 ) -> Iterator[Adapter]:
     """The capture's adapters under the current extractors: Screener once per page section."""
     if (capture.source_id, capture.surface) == TIJORI_PAGE:
@@ -308,7 +310,6 @@ def _adapters(
             symbol=ids.nse_symbol,
             company_id=details[_TIJORI_COMPANY_ID],
         )
-        display = vendor_tijori.load_tijori_display(config_root / TIJORI_DISPLAY)
         extract = partial(
             vendor_tijori.extract_tijori, binding=binding, display=display, basis=basis
         )

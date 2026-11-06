@@ -142,7 +142,11 @@ from equity_os.storage.database.settings import PgRole, PgSettings
 from equity_os.storage.raw_files.capture_retention import ingest_vendor_retained
 from equity_os.storage.raw_files.snapshot_store import MAX_BODY_BYTES, SnapshotStore
 from equity_os.storage.records.repository import EvidenceRepository
-from equity_os.verification.comparison.run_config import LoadedConfig, load_run_config
+from equity_os.verification.comparison.run_config import (
+    LoadedConfig,
+    load_run_config,
+    pinned_tijori_display,
+)
 from equity_os.verification.comparison.run_models import RunExitStatus
 
 ONBOARD_COMMAND = "onboard"
@@ -151,7 +155,6 @@ GENERATION_PREFIX = "gen-"
 TIMEOUT_SECONDS = 30
 RETRIEVAL_NAME = "retrieval-manifest.json"
 XBRL_KIND = "xbrl-{basis}"
-TIJORI_DISPLAY = Path("normalisation/mappings/tijori/v5/display.yaml")
 SCREENER_SECTIONS = (
     Section.QUARTERS,
     Section.PROFIT_LOSS,
@@ -360,6 +363,7 @@ def onboard(args: argparse.Namespace) -> Onboarded:
         raise ValueError(_ACQUIRE_GENERATION)
     authority = _authority(args) if args.acquire else None
     config = load_run_config(args.config_root, ONBOARDING_VERSIONS)
+    display = pinned_tijori_display(args.config_root)
     root: Path = args.raw_root
     taken = sorted(
         int(path.name.removeprefix(GENERATION_PREFIX))
@@ -408,7 +412,9 @@ def onboard(args: argparse.Namespace) -> Onboarded:
             (record_id,) = conn.execute(_RECORD_ID_SQL, (args.symbol,)).fetchone() or (0,)
         command = None
         if derived is not None and package is not None and recorded.entity_id is not None:
-            command = _ingest(pool, args, config, found, refs, derived, package, recorded, folder)
+            command = _ingest(
+                pool, args, config, display, found, refs, derived, package, recorded, folder
+            )
     return Onboarded(
         outcome=recorded.outcome,
         reason=recorded.reason,
@@ -484,6 +490,7 @@ def _ingest(
     pool: ConnectionPool,
     args: argparse.Namespace,
     config: LoadedConfig,
+    display: vendor_tijori.TijoriDisplayRules,
     found: Discovery,
     refs: Sequence[tuple[VerificationUnit, CaptureReference]],
     derived: DerivedSettings,
@@ -542,7 +549,7 @@ def _ingest(
     }
     verified = {u for u, (state, _) in found.states.items() if state is VerificationState.VERIFIED}
     for pair, representation, extract, version in _vendor_adapters(
-        args.config_root, found, stored, verified, month, recorded.inputs, basis
+        display, found, stored, verified, month, recorded.inputs, basis
     ):
         ref = stored[pair][1]
         vendor = ingest_vendor_retained(
@@ -597,7 +604,7 @@ def compare_command(entity: str, period_end: date, config_root: Path, basis: Bas
 
 
 def _vendor_adapters(
-    config_root: Path,
+    display: vendor_tijori.TijoriDisplayRules,
     found: Discovery,
     stored: Mapping[tuple[str, str], tuple[bytes, CaptureReference]],
     verified: set[VerificationUnit],
@@ -636,7 +643,7 @@ def _vendor_adapters(
             binding=vendor_tijori.TijoriBinding(
                 slug=str(slug), symbol=found.symbol, company_id=details[_TIJORI_COMPANY_ID]
             ),
-            display=vendor_tijori.load_tijori_display(config_root / TIJORI_DISPLAY),
+            display=display,
             basis=basis,
         )
         yield (

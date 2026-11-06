@@ -439,3 +439,32 @@ def test_a_changed_display_rule_is_drift_refused_before_any_write(
     with pytest.raises(VersionContentDriftError, match="vendor_extractor:tijori"):
         ingest(pg_db, entity_id, VERSIONS, vendor_tijori.EXTRACTOR_VERSION)
     assert {table: onboarding_support.count(pg_db, table) for table in EVIDENCE_TABLES} == before
+
+
+@pytest.mark.pg
+@pytest.mark.retained
+def test_reingest_refuses_display_rules_the_extractor_pin_does_not_cover(
+    pg_db: PgTestDatabase, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Tijori pin hashes the repository's display rules, but ``eqos vendor reingest`` reads
+    them from ``--config-root``: a copied tree with a changed rule would give a new capture other
+    units under the same pin, so it is refused as drift before any write; an identical copy
+    ingests."""
+    entity_id = seed_apar(pg_db)
+    ingest(pg_db, entity_id, OLDER, "tijori-v4")
+    config = tmp_path / "config"
+    shutil.copytree(CONFIG, config)
+    rules = config / DISPLAY_FILE
+    rules.write_text(rules.read_text().replace("raw_scale: 7", "raw_scale: 5", 1))
+    for name, value in pg_db.cli_env().items():
+        monkeypatch.setenv(name, value)
+    argv = ["vendor", "reingest", "--entity", "APARINDS", "--period-end", PERIOD_END.isoformat()]
+    argv += ["--basis", "consolidated", "--mapping-set", "v9", "--dictionary", "v2"]
+    argv += ["--snapshot-root", str(RETAINED), "--config-root", str(config)]
+    before = {table: onboarding_support.count(pg_db, table) for table in EVIDENCE_TABLES}
+    with pytest.raises(VersionContentDriftError, match="vendor_extractor:tijori"):
+        main(argv)
+    assert {table: onboarding_support.count(pg_db, table) for table in EVIDENCE_TABLES} == before
+    shutil.copy(CONFIG / DISPLAY_FILE, rules)
+    assert main(argv) == 0
+    assert {table: onboarding_support.count(pg_db, table) for table in EVIDENCE_TABLES} != before

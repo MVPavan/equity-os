@@ -66,6 +66,7 @@ VENDOR_FIRST_POLICY_DIR = "verification/vendor_first/policy"
 ELIGIBILITY_DIR = "verification/vendor_first/eligibility"
 YAML_SUFFIX = ".yaml"
 _SOURCE_ROOT = Path(__file__).resolve().parents[2]
+TIJORI_DISPLAY = Path("normalisation/mappings/tijori/v5/display.yaml")  # under a config root
 # Extractor content sources (design decision 7), relative to the ``equity_os`` package.
 EXTRACTOR_SOURCES: Mapping[Representation, tuple[str, ...]] = {
     Representation.XBRL: (
@@ -168,7 +169,7 @@ VENDOR_EXTRACTORS: Mapping[str | tuple[str, str], tuple[str, tuple[str, ...]]] =
             "extraction/vendors/tijori/tijori_tables.py",
             "extraction/vendors/tijori/tijori_common.py",
             _VENDOR_INGEST,
-            "../config/normalisation/mappings/tijori/v5/display.yaml",  # the extractor's rules
+            f"../config/{TIJORI_DISPLAY.as_posix()}",  # the extractor's rules
         ),
     ),
     vendor_upstox.SOURCE_ID: (
@@ -270,6 +271,21 @@ def vendor_extractor_pin(
         version=version,
         content_sha256=_sources_sha256(version, sources),
     )
+
+
+def pinned_tijori_display(config_root: Path) -> vendor_tijori.TijoriDisplayRules:
+    """The run's Tijori display rules, refused as drift unless their bytes are the ones the
+    Tijori extractor pin covers (the pin hashes the repository's file, not ``config_root``'s)."""
+    selected = (config_root / TIJORI_DISPLAY).read_bytes()
+    pinned = (_SOURCE_ROOT.parent / "config" / TIJORI_DISPLAY).read_bytes()
+    if selected != pinned:
+        raise VersionContentDriftError(
+            artifact=f"vendor_extractor:{vendor_tijori.SOURCE_ID}",
+            version=vendor_tijori.EXTRACTOR_VERSION,
+            pinned_sha256=hashlib.sha256(pinned).hexdigest(),
+            actual_sha256=hashlib.sha256(selected).hexdigest(),
+        )
+    return vendor_tijori.load_tijori_display(config_root / TIJORI_DISPLAY)
 
 
 def _sources_sha256(version: str, sources: tuple[str, ...]) -> str:
