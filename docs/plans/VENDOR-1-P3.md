@@ -422,6 +422,236 @@ first A7 sentence, "with no other exchange code cited", is withdrawn. It contrad
   identity-verified instance names it, above the basis heading, and which carries the period
   heading and the framework declaration. Text matching does not authenticate the document."
 
+## B1c release amendment (draft)
+
+**Status: draft for Sol review (eqos-awnc). Not in force.** B1c stands and the phase stays halted
+at Task 3 until Sol approves this amendment *and* step R's release proof (below) passes. This
+amendment does not touch the Task 8 mapping-isolation stop, which binds separately and still
+stops Task 8. A7's rule is unchanged; this amendment only supplies the reader that item 3 needs.
+
+Code facts are read at `aa1a7cb3` (tip of `fix-dictionary-v4-on-v3`, the plan's base, not yet on
+`main`). There `pdf_statement_pages.py` has 831 lines; on current `main` the refusal sits at
+`:626`, at the tip at `:649–653`.
+
+### Route sizing
+
+**Route (a), generic statement-header binding.** The probe shows two reader gaps. A prototype of
+both closes them on the retained PDFs and changes nothing for Apar. It is diagnostic code, not the
+implementation: `scratchpad/vendor-first/live-p3-1/route-a-proto/` (`prototype.diff` sha256
+`e679b1b9…c4b1`, `dump.py`, `dump-base.json` `dd6cabff…df88`, `dump-proto.json` `d98b16e8…160a`).
+
+| # | Gap (probe) | Reader change at `aa1a7cb3` | Generic? |
+|---|---|---|---|
+| R1 | The basis is named only in the title row ("STANDALONE FINANCIAL RESULTS", p3 row 6). `_locate_on_page` (`:464–497`) starts the block below the title (`:474`), so `_super_headers` (`:690–704`) finds no basis phrase, and `_bind_columns` (`:600–669`) refuses at `:649–653` | `_locate_on_page` passes its `title` row to `_bind_columns`. Only when the block's header phrases name no basis at all, the title row binds every column group to its basis. Two conditions apply. The title row must name exactly one basis marker. Its tokens, with that marker's tokens removed once, must equal one title marker's tokens (whole line). Otherwise the refusal stays as today. | Yes. A single-basis statement page titled by its basis is a common Regulation 33 layout. The words come from the spec's existing basis and title markers, never from issuer code. A side-by-side page (Apar) has super-headers and never reaches the fallback. |
+| R2 | One duration heading spans several columns ("Three months ended" over three columns). `_column_header_text` (`:707–726`) attaches only phrases that overlap the column's printed date (`:722`). The current-quarter and prior-year-quarter columns read as instants | In `_bind_columns`, a header phrase above the header row is a *spanning heading* when it carries a duration marker (`pdf_header_text.QUARTER_HEADER_MARKERS` or `NON_QUARTER_HEADER_MARKERS`) and no year. Per printed row, each column takes its nearest spanning heading (gap 0 when overlapping). A heading's columns must be contiguous, and their span's centre must lie within half the narrowest column's width of the heading's centre. A tie or a failed check attaches nothing from that row. A column whose own header already carries a duration phrase is unchanged. | Yes. The duration vocabulary is the existing shared one, and the geometry is page-relative. |
+
+Placement: `pdf_statement_pages.py` is already over the 800-line limit at the tip (831; the PDF
+fixes added 44). The R2 helper `spanning_headings(columns, phrases) -> dict[int, str]` therefore
+goes into `pdf_figure_columns.py` (73 lines; column geometry; already hashed by the PDF extractor).
+It takes plain `(text, row, x0, x1)` extents, so it imports nothing from `pdf_statement_pages`.
+`pdf_statement_pages.py` gains only the call sites and the R1 branch, about 12 lines. `_locate_on_page`
+becomes public as `locate_on_page`, so that A7 can locate a block on a given page (two call sites:
+`locate_statement` and A7). `pdf_adapter.py` and `pdf_header_text.py` do not change.
+
+Prototype result (aa1a7cb3 plus R1 and R2, generic A7 spec: title marker "Financial results",
+default P&L end and unit markers, no issuer config):
+
+| PDF, page | Columns: assembled header → `header_period` |
+|---|---|
+| Q2 `b28a7191…` p3 | col 0 "Three months ended September 30, 2026" → Q 2026-07-01..2026-09-30; col 1 "… June 30, 2026" → 2026-04-01..2026-06-30; col 2 "… September 30, 2025" → 2025-07-01..2025-09-30; col 3 "Six months ended September 30, 2026" → H1 2026-04-01..2026-09-30; col 4 "… September 30, 2025" → 2025-04-01..2025-09-30; col 5 "Year ended March 31, 2026" (OCR unit text prefixed) → 2025-04-01..2026-03-31 |
+| Q1 `1b3599e2…` p3 | col 0 "Three months ended June 30, 2026" → Q 2026-04-01..2026-06-30; col 1 "… March 31, 2026" → 2026-01-01..2026-03-31; col 2 "… June 30, 2025" → 2025-04-01..2025-06-30; col 3 "Year ended March 31, 2026" → 2025-04-01..2026-03-31 |
+| Spanning geometry | Q2 "Three months ended" x 249–334 (centre 292) over cols 0–2, span 210–380 (centre 295, tolerance 24); "Six months ended" centre 444 over cols 3–4 (447); "Year ended" 534 over col 5 (537). Q1 "Three months ended" 411 over cols 0–2 (416); "Year ended" 536 over col 3 (540) |
+| Negatives | The consolidated statement pages (Q2 p13, Q1 p11) now bind consolidated and refuse for standalone ("no column under the STANDALONE super-header"). The auditor-report and notes pages (Q2 p7, p19; Q1 p8) refuse as on the base: their first "financial results" row is a sentence, not a whole-line title. Q1 p6 and p16 already "locate" prose on the base when forced page by page. A7 never calls the locator there, because it locates only on a block's whole-line heading page. |
+| Apar | 4 retained results PDFs (FY26 Q2–Q4, FY27 Q1) × 2 bases × 4 families = 32 locations. Locations, column periods and every banded row are identical to the base (12 refusals unchanged). Apar's own spanning headings ("For the quarter ended") already overlap each column, so R2 is a no-op there. |
+
+**Route (b), provenance with ISIN reconciliation.** It needs three things, none retained today.
+1. *Identifier relationship.* An authoritative record that `INE090A01013` (announcement rows
+   [T3.13, T3.14]) and `INE090A01021` (master and instances [B4.25, B4.01]) are the same issuer's
+   equity security, with roles (predecessor or successor, or alias) and validity dates. Candidate
+   sources are the depository ISIN master entries for both ISINs (NSDL), or the exchange circular
+   that changed the ISIN. *Inference, unverified:* the change may follow a face-value sub-division.
+   If the old ISIN was retired years before 2026, the relationship explains a stale feed field, not
+   a current identifier. That explanation needs its own evidence.
+2. *Chain.* The announcement row's attachment URL equals the PDF capture's request URL, with both
+   hashes. This is probably checkable offline from grounding generation 1, but it has not been
+   checked.
+3. *Period.* The generic Annexure I association. The covering letter (p1) names the periods and
+   encloses the results "as Annexure I". The statement page prints "Annexure I" in its title block
+   (p3 row 0, probe). A7 item 3 forbids covering-letter prose as a date source, so this needs an
+   explicit item-3 amendment and a new generic prose-period reader ("quarter and six months ended
+   September 30, 2026" → two intervals). Negative cases: an enclosure label without the
+   statement-page label, a mismatched label, two enclosures, stale periods, an appended
+   attachment. Annexure labelling is an issuer's drafting choice, not a filed standard, so it is
+   weaker against the Data Extraction rule than R1/R2.
+
+Cost of (b): new identity source(s) in the catalog with a rights review, and a fetch command (the
+acquisition route is FIVE-1's and out of scope here). Then a Task 2-style live protocol run:
+backup, throwaway acquisition database, generation manifest, rehearsal, live replay. Its allowlist
+row covers the captures (`capture_refs`, `capture_addresses`, `retention_classes`) and, if the
+relationship is stored, `identifier_relationships`, `identity_events` and `identity_event_edges`.
+Whether `identifier_relationships` can hold a retired ISIN with validity dates is unchecked.
+`FrameworkEvidence` would also carry the announcement capture through ingest, reuse and fallback
+(Tasks 5, 7). It still needs A7 items 1, 2 and 4, and the contradiction checks, unchanged. So (b)
+is strictly more than (a) with the header reader replaced by prose. It cannot be proved without
+network access.
+
+**Recommendation: route (a).**
+- It is generic code in two files.
+- It needs no acquisition, live write or new source.
+- It adds no version beyond Task 5's bumps.
+- It meets A7 item 3 as written.
+- The prototype already shows the exact current intervals on both retained PDFs and no Apar change.
+
+Route (b) needs a live acquisition and an item-3 rewrite, and still rests on the same block rules.
+Route (c) is not needed.
+
+### Amendment (route (a))
+
+**Attaches to:** a new step **R (B1c release proof)**, run before Task 4. It takes from Task 5
+only A7's matching logic and its unit tests. It also takes from Task 4 the one enum value A7 item
+4 needs. Task 5 keeps A7's callers: discovery's P-arm check and `_read_xbrl`'s ingest re-check.
+Task 4 keeps 0050 and the other contracts.
+- Step R needs no migration. A failed proof must never leave a committed migration behind.
+- Implementer: Opus.
+- Step R is developed and its proof is run before anything is committed. If the proof fails,
+  nothing is committed and the phase stays halted for a further amendment.
+
+**Files:**
+- Modify `equity_os/extraction/results_pdf/pdf_statement_pages.py`: R1, R2 call site,
+  `locate_on_page`.
+- Modify `equity_os/extraction/results_pdf/pdf_figure_columns.py`: `spanning_headings`.
+- Modify `equity_os/extraction/packages/member_identity.py`: A7.
+- Modify `equity_os/contracts/measurement/observation.py`: `INDIAN_GAAP`, moved here from Task 4.
+- Tests: `test_pdf_statement_pages.py` and `test_pdf_figure_columns.py` (synthetic and
+  `retained`), `test_pdf_identity_a7.py` (new; unit plus `retained`), and an Apar characterization
+  in `test_pdf_statement_pages.py`.
+
+**Interfaces:**
+- `locate_on_page(page: PdfPage, spec: StatementPageSpec, basis: Basis) -> StatementLocation`.
+- `spanning_headings(columns: Sequence[tuple[float, float]], phrases: Sequence[tuple[str, int,
+  float, float]]) -> dict[int, str]`.
+- `current_intervals(instance: RawXbrlInstance, period_end: date) -> frozenset[PeriodInterval]`:
+  the distinct duration periods of the instance's undimensioned facts that end on `period_end`.
+- `verify_pdf_identity(pdf, identifiers, binding: PdfBinding | None = None) -> IdentityVerdict`.
+  `PdfBinding` holds `issuer_name` (the verified instance's `NameOfTheCompany` or `NameOfBank`),
+  `basis`, `current: frozenset[PeriodInterval]` and `framework`. With `binding=None`, or when
+  page 1 has a marker, it behaves exactly as today.
+- Constants beside `PDF_SYMBOL_MARKER`: `PDF_BASIS_HEADINGS` (`STANDALONE` → "Standalone financial
+  results", `CONSOLIDATED` → "Consolidated financial results") and the A7 spec's title marker
+  "Financial results". The basis markers are "Standalone" and "Consolidated", and the P&L end and
+  unit markers are the defaults. No issuer configuration is read.
+
+**A7, as code (the rule's text unchanged):**
+- *Blocks.* A heading page for a basis has a row whose text, with case ignored and whitespace
+  collapsed, equals that basis's heading. A block runs from its heading page to the page before the
+  next heading page of any basis.
+- *Item 1.* On the block's first page, a row above the heading row equals `issuer_name` under the
+  same comparison.
+- *Item 2.* The heading row itself.
+- *Item 3.* `locate_on_page` on that page, then `header_period(super_header_text + header_text)`
+  per column, the reader's own join. Each interval in `current` equals the period of exactly one
+  column. Every other column must read as a period that ends before the period end; it is a
+  comparative and binds nothing.
+- *Item 4.* `framework`'s declaration phrase occurs on the block's pages, with the basis as its
+  subject.
+
+Each of these rejects:
+- the locator refuses;
+- a column's period is `None`;
+- a current interval matches no column (missing) or several (ambiguous);
+- a column ends on or after the period end without being a current interval (an instant, a
+  different duration, a later date: conflicting or ambiguous);
+- one of A7's existing contradictions holds.
+
+The verdict's evidence lists, per column: page, x0–x1, `super_header_text`, `header_text` and the
+interval. Those are the retained geometry and assembled header text.
+
+**Acceptance (Sol review 3 route (a); A7 item 3):**
+1. The actual reader, `locate_on_page` with R1 and R2 and the generic A7 spec, binds the
+   issuer-titled standalone statement page. The binding is shown on retained bytes: Q2 p3, in block
+   p3–p12 whose framework notes are on p7 [B1.05, B7.08]; Q1 p3, in block p3–p10 with notes on p6
+   [B1.09, B7.14].
+2. The current intervals bind uniquely, from the instance:
+   - Q2: Q 2026-07-01..2026-09-30 to col 0 only, and H1 2026-04-01..2026-09-30 to col 3 only.
+   - Q1: Q 2026-04-01..2026-06-30 to col 0 only.
+
+   A test also asserts `current_intervals` on the retained standalone instances (Q2 `a2d49864…`,
+   Q1 `39677b48…` [B4.07, B4.19]) equals those sets. Current Q and H1 share an end date and are
+   told apart by duration.
+3. The comparatives are read and labelled, and bind nothing: Q2 cols 1, 2, 4 and 5; Q1 cols 1, 2
+   and 3.
+4. No date comes from the expected answer, the covering letter or note sentences. The reader takes
+   no expected interval, and only the block's first page is read.
+5. The issuer, basis, framework and contradiction checks of A7 stay in full, and run after a
+   positive match.
+6. Header-only success promotes nothing.
+   - B7 stays B7b for the package: XBRL-only, no PDF member.
+   - PDF statement claims stay `NOT_ASSESSED`.
+   - There is no `config/runs/icicibank-<period>.yaml` and no `pdf/v4/`.
+7. Apar is unchanged.
+   - Before R1 and R2, on the landed base, a `retained` characterization test is committed. It
+     records a sha256 of the canonical JSON of every location, column period and banded row for
+     the four retained Apar results PDFs × 2 bases × 4 families.
+   - The same test passes unchanged after the change.
+   - The existing results-PDF, evidence-ingest and admission suites pass.
+   - Apar's marker path in `verify_pdf_identity` is unchanged.
+8. The probe is re-run against the implementation. Its complete output and sha256 are recorded in
+   the grounding record as the new route (a) evidence. Success is never attributed to the base.
+
+**Tests:**
+- R1 (synthetic pages):
+  - a title-only basis page binds every column;
+  - a title sentence that contains the words refuses as today;
+  - a title naming both bases refuses;
+  - a block that has super-headers ignores the title.
+- R2 (synthetic pages):
+  - a centred spanning heading over three columns gives each column the duration;
+  - an off-centre heading attaches nothing;
+  - equidistant headings attach nothing;
+  - a column's own duration wins.
+- A7 unit cases: the existing list under amendment A7, plus a "Nine months ended" column at the
+  period end, which rejects as conflicting.
+- `retained`:
+  - acceptance 1–3 on both ICICIBANK PDFs;
+  - the consolidated statement page refuses for standalone;
+  - the notes and auditor pages never start a block;
+  - the Q1 PDF checked against the Q2 instance's intervals rejects (Q and H1 missing);
+  - Apar's characterization (acceptance 7).
+
+  The ICICIBANK `retained` tests read the grounding captures by sha256 from the snapshot store.
+  They never stage them as members.
+
+**Verification:**
+- `uv run --no-sync pytest -n 4 tests/equity_os/extraction/results_pdf
+  tests/equity_os/extraction/packages`, retained tests included;
+- then the evidence-ingest and admission suites that import the reader;
+- mypy and ruff.
+
+The orchestrator checks acceptance 1–8 against the output. It then records the release:
+- the status line and B1 move to **B1b** `INDIAN_GAAP`, B1′ P, A7 met;
+- the ledger is frozen with its sha256 (Task 3's verification);
+- the step R commit is cited.
+
+Tasks 4–7 then proceed. Task 8 stays stopped by its isolation stop.
+
+**Version bumps:** none beyond the plan's.
+- `pdf_statement_pages.py`, `pdf_figure_columns.py` and `member_identity.py` are hashed by the PDF
+  extractor. Its single Task 5 bump, `pdf-occurrences/5` → `/6`, covers them.
+- `member_identity.py` is also hashed by the XBRL and SHP extractors, which already bump once in
+  Task 5.
+- The F08 development-version window now runs from step R to Task 8. Step R pins only disposable
+  `eqos_test_*` databases.
+- `pdf_adapter.py`, `pdf_header_text.py`, `_SEMANTICS_VERSION`, the dictionary and the mapping
+  sets do not change.
+
+**Ordering against the PDF fixes:**
+- Step R starts only from `main` after `fix-dictionary-v4-on-v3` lands, which follows VENDOR-1
+  Phase 1 Task 14. That is the plan's existing base, confirmed as at Task 4.
+- No reader edit is made on any base without those fixes.
+- If the PDF-fix branch changes before landing, step R re-reads the cited functions and re-runs
+  the prototype comparison before coding. Changed geometry is a halt, not a retune.
+- Step R's Apar characterization is taken on the landed base, before R1 and R2.
+
 ## Version and pin inventory (F08, F09, F11)
 
 | Pin | Bytes changed by | Consequence |
