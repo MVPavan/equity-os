@@ -271,6 +271,9 @@ UPSTOX_ROUTED = (UPSTOX_STATEMENT, UPSTOX_SHAREHOLDING)
 SCREEN_EXPORT = ("screener-subscriber", "SCREEN_EXPORT")
 SCREENER_SCREEN_PAGE = ("screener-subscriber", "SCREEN_DEFINITION")
 TIJORI_SCREEN = ("tijori", "screen_results")
+# Retention-only grounding bodies (VENDOR-1 §8 step 1): an undeclared source, so never a member.
+NSE_GROUNDING_XBRL = ("nse-grounding", "NSE_XBRL_INSTANCE")
+NSE_GROUNDING_PDF = ("nse-grounding", "NSE_RESULTS_DOCUMENT")
 _IDENTITY_SURFACES = (
     (NSE_MASTER, Representation.HTML, _EXCHANGE_RIGHTS),
     (NSE_RESULTS_LISTING, Representation.JSON, _EXCHANGE_RIGHTS),
@@ -286,6 +289,8 @@ _IDENTITY_SURFACES = (
     (SHP_TAXONOMY, Representation.XBRL, _EXCHANGE_RIGHTS),
     (SEBI_REGULATION, Representation.PDF, _REGULATOR_REFERENCE),
     (SCREENER_DOCS, Representation.HTML, _SUBSCRIBER_RIGHTS),
+    (NSE_GROUNDING_XBRL, Representation.XBRL, _EXCHANGE_RIGHTS),
+    (NSE_GROUNDING_PDF, Representation.PDF, _EXCHANGE_RIGHTS),
 )
 
 VENDOR_SURFACES: tuple[SurfaceAuthority, ...] = (

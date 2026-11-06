@@ -6,7 +6,7 @@ broadcast. Every body is retained and registered; nothing else is requested."""
 from __future__ import annotations
 
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, cast
 
 import psycopg
@@ -29,9 +29,18 @@ from equity_os.contracts.sourcing.source_catalog import (
     NSE_INTEGRATED_LISTING,
     NSE_RESULTS_LISTING,
     VENDOR_SURFACES,
+    DocumentKind,
 )
 from equity_os.interface.commands.sourcing.documents_cli import announcement_documents
 from equity_os.interface.commands.sourcing.shareholding_cli import PAUSE_SECONDS
+from equity_os.sourcing.documents.first_party_documents import (
+    ANNOUNCEMENTS,
+    DocumentLink,
+    document_request,
+    nse_listing_url,
+    observed_link,
+)
+from equity_os.sourcing.documents.first_party_documents import listing_rows as announcement_rows
 from equity_os.sourcing.exchange.nse_filings import (
     INTEGRATED_LISTING,
     LEGACY_LISTING,
@@ -70,7 +79,7 @@ def acquire_results(
     """The results filing of one period end and basis; ``None`` when no single filing with an
     instance is acquirable (a tie, a missing broadcast or a failed fetch)."""
     legacy, integrated = (
-        _retained(conn, store, fetch, VerificationUnit.EXCHANGE, pair, listing_url(path, symbol, p))
+        retain(conn, store, fetch, VerificationUnit.EXCHANGE, pair, listing_url(path, symbol, p))
         for pair, (path, p) in (
             (NSE_RESULTS_LISTING, LEGACY_LISTING),
             (NSE_INTEGRATED_LISTING, INTEGRATED_LISTING),
@@ -83,7 +92,7 @@ def acquire_results(
     if row is None or row.xbrl_url is None:
         return None
     unit, source = VerificationUnit.XBRL_ENTITY, XBRL_SOURCES[basis]
-    instance = _retained(conn, store, fetch, unit, source, row.xbrl_url)
+    instance = retain(conn, store, fetch, unit, source, row.xbrl_url)
     if instance is None:
         return None
     filed = cast(Any, row.broadcast)
@@ -111,7 +120,35 @@ def acquire_results(
     return ResultsFiling(xbrl=xbrl, pdf=pdf)
 
 
-def _retained(
+def results_pdfs(
+    conn: psycopg.Connection[Any],
+    store: SnapshotStore,
+    fetch: Fetch,
+    symbol: str,
+    span: tuple[date, date],
+    pair: tuple[str, str],
+) -> list[tuple[DocumentLink, Response]]:
+    """Every results-category PDF the symbol's announcements listing files in ``span``, each
+    retained on ``pair`` (entity-free, none chosen): its link and response, listing order."""
+    url = nse_listing_url(ANNOUNCEMENTS, symbol, *span)
+    listing = retain(conn, store, fetch, VerificationUnit.EXCHANGE, ("nse", ANNOUNCEMENTS), url)
+    if listing is None:
+        return []
+    links: dict[str, DocumentLink] = {}
+    for _, payload in announcement_rows(ANNOUNCEMENTS, cast(bytes, listing.body)):
+        link = observed_link(ANNOUNCEMENTS, payload)
+        request = document_request(link) if link else None
+        if link and request and link.kind is DocumentKind.RESULTS:
+            if span[0] <= cast(datetime, link.filed_at).date() <= span[1]:
+                links.setdefault(request.url, link)
+    found = (
+        (link, retain(conn, store, fetch, VerificationUnit.EXCHANGE, pair, url))
+        for url, link in links.items()
+    )
+    return [(link, response) for link, response in found if response is not None]
+
+
+def retain(
     conn: psycopg.Connection[Any],
     store: SnapshotStore,
     fetch: Fetch,

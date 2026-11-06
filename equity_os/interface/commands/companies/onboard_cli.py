@@ -303,6 +303,8 @@ def add_onboard_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     parser.add_argument("--freeze-descriptor", type=Path)
     parser.add_argument("--sanction", type=Path)
     parser.add_argument("--generation", type=int)
+    parser.add_argument("--ground", action="store_true")
+    parser.add_argument("--structure", type=Path)
 
 
 def dispatch_onboard_command(args: argparse.Namespace) -> int | None:
@@ -310,6 +312,10 @@ def dispatch_onboard_command(args: argparse.Namespace) -> int | None:
     if args.command != ONBOARD_COMMAND:
         return None
     try:
+        if getattr(args, "ground", False):  # lazy: results_filing imports reach back here
+            from equity_os.interface.commands.companies.ground_cli import run_ground
+
+            return run_ground(args, live_transport, now)
         return _onboard(args)
     except OriginalExpiredError as error:  # R13: names the expired capture
         sys.stderr.write(f"onboard {args.symbol} refused: {error}\n")
