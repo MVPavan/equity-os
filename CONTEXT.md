@@ -58,7 +58,7 @@ The cited records of a report version, sealed by its digest; the frozen set of d
 _Avoid_: context (unqualified)
 
 **Admission label**:
-The label on every admitted number (VENDOR-1): "checked against filing" (the vendors agree and the filing agrees) or "vendors agree, not checked against filing" (no filing, admitted only for an eligible check class). A calculation carries the weaker label of its inputs.
+The label on every admitted number (VENDOR-1): "checked against filing" (either the agreeing vendors' value, retained because the filing agrees within declared precision, or the admissible filed value, used when the filing differs or the vendors are unmapped, disagree or are imprecise) or "vendors agree, not checked against filing" (no filing, admitted only for an eligible check class). The label does not say which value was admitted or what the vendors did; the vendor outcome and filing state stay in the run's comparison results, reachable from the admission. A calculation carries the weaker label of its inputs.
 _Avoid_: confidence, verified (unqualified)
 
 **Check class**:
