@@ -22,7 +22,6 @@ from equity_os.extraction.surfaces.vendor_surface_tables import read_js_var
 from equity_os.extraction.vendors.screener.screener_company_discovery import read_page_hooks
 from equity_os.extraction.vendors.screener.screener_financials_tables import schedule_parents
 from equity_os.extraction.vendors.screener.screener_session_models import ScreenerSessionError
-from equity_os.sourcing.surfaces.vendor_surface_capture import company_requests
 from equity_os.sourcing.surfaces.vendor_surface_due import covered_universe, history
 from equity_os.sourcing.surfaces.vendor_surface_fetch import (
     SITE_AUTHORITY,
@@ -34,6 +33,7 @@ from equity_os.sourcing.surfaces.vendor_surface_fetch import (
     request_key,
 )
 from equity_os.sourcing.surfaces.vendor_surface_market import traversal_key
+from equity_os.sourcing.surfaces.vendor_surface_requests import company_requests
 from equity_os.sourcing.surfaces.vendor_surface_specs import Cadence, SurfaceSpec, load_specs
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records.vendor_values_store import (

@@ -41,7 +41,6 @@ from equity_os.sourcing.surfaces.vendor_surface_canary import (
     yield_drift,
 )
 from equity_os.sourcing.surfaces.vendor_surface_capture import (
-    IDENTITY_PAGES,
     WATCHLIST,
     capture_company,
     company_ids,
@@ -57,6 +56,7 @@ from equity_os.sourcing.surfaces.vendor_surface_fetch import (
     VendorFetcher,
 )
 from equity_os.sourcing.surfaces.vendor_surface_market import capture_market
+from equity_os.sourcing.surfaces.vendor_surface_requests import IDENTITY_PAGES
 from equity_os.sourcing.surfaces.vendor_surface_specs import SITE_NAME, ParseGroup, load_specs
 from equity_os.storage.database.pool import open_pool
 from equity_os.storage.database.settings import PgRole, PgSettings

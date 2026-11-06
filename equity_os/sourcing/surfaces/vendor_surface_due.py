@@ -25,7 +25,6 @@ from equity_os.sourcing.surfaces.vendor_surface_capture import (
     RunReport,
     capture_company,
     company_ids,
-    company_requests,
     registered_ids,
 )
 from equity_os.sourcing.surfaces.vendor_surface_expand import advertised, expansion_name
@@ -36,6 +35,7 @@ from equity_os.sourcing.surfaces.vendor_surface_market import (
     progress,
     traversal_key,
 )
+from equity_os.sourcing.surfaces.vendor_surface_requests import company_requests
 from equity_os.sourcing.surfaces.vendor_surface_specs import SITE_NAME, Cadence, Scope, SurfaceSpec
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records.repository_rows import capture_of

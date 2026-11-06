@@ -22,7 +22,7 @@ from equity_os.analysis.lenses.thesis_tests.falsifier_status import FALSIFIER_ST
 from equity_os.contracts.verification.comparative import TAXONOMY_DRIFT_PREFIX
 from equity_os.interface.workflows.pipeline import PipelineResult
 from equity_os.publication.approval import lifecycle
-from equity_os.publication.drafting import run_draft
+from equity_os.publication.drafting import guidance_lines, run_draft
 from equity_os.publication.drafting.display import PLACEHOLDER, render_section
 from equity_os.publication.drafting.management_ledger import LedgerStatus
 from equity_os.publication.drafting.run_draft import GUIDANCE, RESULTS
@@ -70,7 +70,7 @@ def test_only_a_fiscal_period_horizon_is_specified(horizon: str, specified: bool
         bounds=("9.5", "10"), claim_key="ledger.x", horizon=horizon, metric_label="X guidance"
     )
     assert run_draft._specified(horizon) is specified
-    assert (UNSPECIFIED in run_draft._guided(claim, LedgerStatus.NEW)) is not specified
+    assert (UNSPECIFIED in guidance_lines._guided(claim, LedgerStatus.NEW)) is not specified
 
 
 @pytest.mark.pg

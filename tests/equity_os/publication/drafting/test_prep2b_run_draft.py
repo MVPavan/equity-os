@@ -64,16 +64,14 @@ from equity_os.publication.approval.lifecycle import DecisionRefusedError, versi
 from equity_os.publication.checking.citations import resolve_citation
 from equity_os.publication.checking.claim_check import check_claim, cutoff_instant
 from equity_os.publication.drafting.earnings_update import RETROSPECTIVE_LABEL
+from equity_os.publication.drafting.guidance_lines import GUIDANCE, GUIDANCE_KEY, _status
 from equity_os.publication.drafting.management_ledger import LedgerStatus
 from equity_os.publication.drafting.run_draft import (
     _LOCK,
     _READ_COMMITTED,
-    GUIDANCE,
-    GUIDANCE_KEY,
     RUN_AUTHOR,
     Prior,
     RunDraft,
-    _status,
     write_run_draft,
 )
 from equity_os.publication.export.export import export_version
