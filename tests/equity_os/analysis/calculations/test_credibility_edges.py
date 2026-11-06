@@ -211,6 +211,26 @@ def test_a_comparator_no_comparison_could_use_is_still_searched(
 
 @pytest.mark.pg
 @pytest.mark.retained
+def test_a_run_with_no_usable_comparator_refuses_before_any_trace(
+    pilot: Pilot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With neither QoQ nor YoY usable the report cannot cite its changes: the run refuses
+    before any trace or draft is written, not at ``AS_KNOWN`` (eqos-7d3a). Admitted facts persist
+    by design (VENDOR-1 Task 9)."""
+    pilot.registered("FY26_Q2")
+    before = beyond_facts(pilot)
+
+    def unusable(*_: Any) -> Any:
+        raise FactSelectionError("synthetic")
+
+    monkeypatch.setattr(run_comparatives, "_select_prior", unusable)
+    with pytest.raises(RunDraftError, match="no usable QoQ or YoY comparator"):
+        pilot.run("FY26_Q2")
+    assert beyond_facts(pilot) == before
+
+
+@pytest.mark.pg
+@pytest.mark.retained
 @pytest.mark.parametrize(
     ("value", "state"),
     [("1", ClaimState.MATCH), ("10000000", ClaimState.VALUE_MISMATCH)],

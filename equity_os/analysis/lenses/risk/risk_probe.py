@@ -458,13 +458,18 @@ def bind_probe(
     entity_id: int,
     versions: ConfigVersions,
     fiscal_year_end_month: int,
+    declared: Sequence[tuple[ComparatorKind, str, date]] = (),
 ) -> Probe:
     """The run's probe: the run's own statement, else its QoQ comparator's (stale), else none;
     a stored trace and claim per guarded-in check, a ``FILED`` figure per operand shown, and a
-    prior claim on a matching package statement for each trend check."""
+    prior claim on a matching package statement for each trend check. ``declared`` names the
+    run's comparator XBRLs and period ends, QoQ first, read even if no comparison could use one."""
     start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
     binder = _Binder(repo, entity_id, start, end, versions)
-    own, comparators = admitted_xbrl(update)
+    own, admitted = admitted_xbrl(update)
+    comparators = {
+        kind: (own.model_copy(update={"file_sha256": blob}), at) for kind, blob, at in declared
+    } | admitted
     historical = SelectionSource.HISTORICAL_PACKAGE
     reads = [_read(binder, own, end, SelectionSource.PACKAGE_AS_REPORTED, fiscal_year_end_month)]
     reads += [

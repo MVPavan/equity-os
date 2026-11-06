@@ -579,3 +579,30 @@ def test_a_rejected_probe_claim_routes_to_diagnosis_and_a_full_successor(
         _rerun(pilot)
     assert rejected in str(refused.value) and "thesis" not in str(refused.value)
     assert _rerun(pilot, "--full-successor").draft_version_id is not None
+
+
+def test_an_unusable_qoq_comparison_keeps_the_stale_fallback(
+    pilot: Pilot, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FY26_Q3 files no statement of its own, so its probe reads its declared QoQ capture (stale)
+    even when no comparison could use that capture (eqos-7d3a)."""
+    import yaml
+
+    from equity_os.extraction.xbrl.xbrl_parser import FactSelectionError
+    from equity_os.interface.workflows import run_comparatives
+
+    pilot.approve(pilot.run("FY26_Q2").draft_version_id or 0)
+    _, argv = pilot.registered("FY26_Q3")
+    config = yaml.safe_load(open(argv[argv.index("--config") + 1], encoding="utf-8"))
+    qoq, select = config["comparators"]["qoq"]["sha256"], run_comparatives._select_prior
+
+    def unusable(observations: Any, concept: str, instance: Any) -> Any:
+        if instance.sha256 == qoq:
+            raise FactSelectionError("synthetic")
+        return select(observations, concept, instance)
+
+    monkeypatch.setattr(run_comparatives, "_select_prior", unusable)
+    result = pilot.run("FY26_Q3")
+    assert all(item.qoq.prior_source is None for item in result.update.comparatives)
+    assert result.draft_version_id is not None
+    check_probe(pilot, {"FY26_Q3": result.draft_version_id})

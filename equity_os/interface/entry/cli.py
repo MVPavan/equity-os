@@ -31,6 +31,7 @@ from equity_os.analysis.calculations.run_traces import (
     Line,
     RunDraftError,
     _fiscal_month,
+    admitted_xbrl,
     bind_computed,
 )
 from equity_os.analysis.lenses.credibility.credibility import Built, bind_credibility, prepare
@@ -39,6 +40,7 @@ from equity_os.analysis.lenses.risk.risk_probe import Probe, bind_probe
 from equity_os.contracts.measurement.guidance_claim import GuidanceClaim
 from equity_os.contracts.measurement.role import FactRole
 from equity_os.contracts.sourcing.source_registration import SourceRegistrationError, SourceRole
+from equity_os.contracts.verification.comparative import ComparatorKind
 from equity_os.interface.commands.companies.entity_map_cli import (
     ENTITY_MAP_COMMAND,
     dispatch_entity_map_command,
@@ -388,6 +390,15 @@ def run_command(
                     )
 
             def before_commit(update: EarningsUpdate, guidance: tuple[GuidanceClaim, ...]) -> None:
+                if not admitted_xbrl(update)[1]:  # every change line would be uncited prose
+                    reasons = sorted(
+                        {
+                            str(change.unavailable_reason)
+                            for item in update.comparatives
+                            for change in (item.qoq, item.yoy)
+                        }
+                    )
+                    raise RunDraftError(f"no usable QoQ or YoY comparator: {'; '.join(reasons)}")
                 gate = None
                 month = _fiscal_month(repository, prior.entity_id, update)
                 with pool.connection() as conn, conn.cursor() as cursor:
@@ -423,6 +434,11 @@ def run_command(
                         entity_id=prior.entity_id,
                         versions=versions,
                         fiscal_year_end_month=month,
+                        declared=[
+                            (kind, instance.sha256, instance.period_end)
+                            for kind, instance in zip(ComparatorKind, declared, strict=True)
+                            if instance is not None
+                        ],
                     )
                 )
                 credibility.append(
