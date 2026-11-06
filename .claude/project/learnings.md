@@ -421,3 +421,32 @@ Format per entry:
 - Apply: never edit a pinned file to tidy it; bump its version instead, and delete that
   version's `MOVED_PINS` row once nothing stored still needs it. A later move needs a new row,
   generated and proved the same way (spec `docs/specs/2026-11-05-restructure.md` §1).
+
+## T3 worktree branch naming can edit files in a fresh worktree  (2026-11-06)
+- Observed: in VENDOR-1 P1 fix round 1, two workers' new worktrees gained edits they did not
+  make. T3's server trace shows its Codex branch-name generation (`generateBranchName`) running
+  inside each new worktree for 105 s and 180 s while the worktree was still on its `t3/<id>`
+  branch; the stray edits appeared during those spans.
+- Why it matters: a worker that starts editing at once mixes foreign edits into its commit.
+- Apply: worker briefs say: make no edit until the branch is renamed from `t3/<id>` or four
+  minutes have passed, check `git status` is clean before the first edit, and stop and report on
+  any edit the worker did not make.
+
+## Directory-scoped test runs miss importers in other directories  (2026-11-06)
+- Observed: two VENDOR-1 P1 fix rounds changed a function signature and the claim-label rule;
+  their scoped runs picked test directories by area and passed. Two tests elsewhere
+  (`extraction/xbrl`, `verification/admission`) that import the changed modules broke and were
+  found only by a later run.
+- Why it matters: "run only the relevant tests" is only as good as the selection.
+- Apply: select scoped tests by import, not by directory: every test file that imports a changed
+  module (`git grep -l <module> -- 'tests/equity_os/**.py'`), plus the changed modules' own test
+  directories. Shared `tests/equity_os/support/` helpers widen this; the phase-end gate covers
+  the rest.
+
+## Tests are outside mypy, so a wrong keyword on a frozen model is silently dropped  (2026-11-06)
+- Observed: `NumericClaim(..., admission_label=...)` in a test compiled, ran and was ignored:
+  the model is `frozen=True` without `extra="forbid"`, and mypy checks `equity_os` only. The
+  label belongs in `qualifiers`.
+- Why it matters: a test can look like it sets a field and test nothing.
+- Apply: check field names against the model when constructing contracts in tests; a test that
+  sets a field must assert an effect of it.
