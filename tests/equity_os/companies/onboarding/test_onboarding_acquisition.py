@@ -501,6 +501,21 @@ def test_the_nse_boundary_keeps_the_http_status_and_follows_no_redirect(
     assert session.options == [options]
 
 
+def test_an_nse_session_priming_timeout_is_a_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The installed client primes its cookies on entry; a connect timeout there is TIMEOUT,
+    the same as one during the request, not a transport error."""
+
+    def stalled(*_: object, **__: object) -> None:
+        raise requests.ConnectTimeout
+
+    monkeypatch.setattr(requests.Session, "get", stalled)
+    _no_credentials(monkeypatch)
+    log = list[Capture]()
+    fetch = acquiring_fetch(onboard_cli.live_transport(), lambda: CLOCK, log)
+    assert fetch(NSE_LISTING, True).outcome == "TIMEOUT"
+    assert [item.response.outcome for item in log] == ["TIMEOUT"]
+
+
 @pytest.mark.pg
 @pytest.mark.retained
 def test_a_listing_body_timing_out_is_retained_and_exits_cleanly(

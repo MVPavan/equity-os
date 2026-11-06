@@ -247,23 +247,24 @@ def nse_session() -> Iterator[Any]:
 
 def _nse_send(url: str) -> tuple[int, bytes]:
     """One NSE API GET on the primed session: the real status, no redirect, a bounded body. A
-    timeout or connection failure, during the request or the streamed body read, is the
-    built-in ``TimeoutError`` or ``ConnectionError`` the acquiring fetch records."""
+    timeout or connection failure, while priming the session, during the request or the
+    streamed body read, is the built-in ``TimeoutError`` or ``ConnectionError`` the acquiring
+    fetch records."""
     import requests
     import urllib3
 
-    with nse_session() as session:
-        try:
+    try:
+        with nse_session() as session:
             response = session.get(url, timeout=TIMEOUT_SECONDS, allow_redirects=False, stream=True)
             with response:
                 if response.status_code != 200:
                     return int(response.status_code), b""
                 body = SimpleNamespace(read=partial(response.raw.read, decode_content=True))
                 return 200, read_bounded(body, MAX_BODY_BYTES)
-        except (requests.Timeout, urllib3.exceptions.TimeoutError) as error:
-            raise TimeoutError from error
-        except (requests.RequestException, urllib3.exceptions.HTTPError) as error:
-            raise ConnectionError from error
+    except (requests.Timeout, urllib3.exceptions.TimeoutError) as error:
+        raise TimeoutError from error
+    except (requests.RequestException, urllib3.exceptions.HTTPError) as error:
+        raise ConnectionError from error
 
 
 def live_transport() -> Send:
