@@ -517,7 +517,8 @@ def _comparison(
             f"comparison run {run_id} is not a complete AS_KNOWN run of {period_end}"
         )
     try:
-        require_pins(load_run_config(Path(_CONFIG_DIR), PILOT_VERSIONS), manifest.pinned)
+        current = load_run_config(Path(_CONFIG_DIR), PILOT_VERSIONS, vendors=manifest.scope.vendors)
+        require_pins(current, manifest.pinned)
     except (VersionContentDriftError, ComparisonSemanticsError) as error:
         raise RunDraftError(f"comparison run {run_id}: {error}") from error
     selected = [
