@@ -14,12 +14,13 @@ import yaml
 from pydantic import BaseModel, ConfigDict, SecretStr
 
 from equity_os.extraction.model.vendor_surface_claims import SYSTEM as SPAN_SYSTEM
-from equity_os.extraction.model.vendor_surface_claims import source_text, validate_spans
+from equity_os.extraction.model.vendor_surface_claims import validate_spans
 from equity_os.extraction.model.vendor_surface_labels import SYSTEM as LABEL_SYSTEM
 from equity_os.extraction.model.vendor_surface_labels import accept
 from equity_os.extraction.model.vendor_surface_model import ChatCompletionsModel, LabelModel
 from equity_os.extraction.surfaces.vendor_surface_cells import LabelSample, label_samples
 from equity_os.extraction.surfaces.vendor_surface_parse import PARSERS, Body, ParseContext
+from equity_os.extraction.surfaces.vendor_text_readers import read_text
 from equity_os.extraction.vendors.screener.screener_session_models import Basis
 from equity_os.normalisation.dictionary.dictionary import load_dictionary
 from equity_os.sourcing.surfaces.vendor_surface_fetch import Site
@@ -99,7 +100,7 @@ def inputs() -> tuple[list[dict[str, Any]], list[LabelSample], list[Passage], se
             raise ValueError("reference body hash mismatch")
         site = Site.SCREENER if row["site"] == "screener" else Site.TIJORI
         if row["sha256"] in captures:
-            texts[row["sha256"]] = source_text(site, row["id"], raw)
+            texts[row["sha256"]] = read_text(site, row["id"], raw, row["url"]).text
         # These readers use only basis; the inert clock is never persisted.
         context = ParseContext(
             ids=None,
