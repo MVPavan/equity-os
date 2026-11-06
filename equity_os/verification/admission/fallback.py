@@ -2,7 +2,11 @@
 admission triggers, acquire that period's results filing, ingest it, rerun with the default
 vendor sides under the run's pins, admit, settle each original trigger cell against its rerun row
 and store one terminal outcome. Entity, symbol, ISIN, period end and basis come from the
-triggering run, so no other issuer is requested."""
+triggering run, so no other issuer is requested. A run triggering more than one group is refused
+before any fetch: each group requests the same two listings, and a replayable generation holds
+each request once. The public ``compare run`` builder (``request_for``) makes one entity, period
+end and basis, so its runs trigger at most one group; this bounds that interface, not stored
+runs, whose scope may hold several."""
 
 from __future__ import annotations
 
@@ -88,6 +92,7 @@ PDF_PARSE = "pdf_parse"
 AUTHORIZATION = "vendor-first fallback of run {run_id}"
 _LOG = structlog.get_logger("verification.fallback")
 _EVENT = "fallback_outcome"
+_MANY_GROUPS = "run {run_id} triggers {count} company-periods; fallback takes one"
 _INSERT = (
     "INSERT INTO eqos.vendor_fallback_outcomes "
     "(run_id, entity_id, period_end, basis, outcome, rerun_id, cells) "
@@ -134,6 +139,8 @@ def run_fallback(
     ).refusals:
         if refusal in TRIGGERS:
             triggered.setdefault(groups[row_id], {})[row_id] = refusal
+    if len(triggered) > 1:
+        raise ValueError(_MANY_GROUPS.format(run_id=run_id, count=len(triggered)))
     wants_pdf = issuer_config is not None and PDF_PARSE in yaml.safe_load(
         issuer_config.read_bytes()
     )

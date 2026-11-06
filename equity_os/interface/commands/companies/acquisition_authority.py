@@ -1,5 +1,6 @@
 """What authorises ``onboard --acquire``: the Stage 4 freeze protocol (C5) or a committed,
-reviewed sanction (FIVE-1 Task 1), and the protected roots no sanctioned write may touch.
+reviewed sanction (FIVE-1 Task 1); the protected roots no sanctioned write may touch; and the
+replayable entity-bound fetch of ``compare fallback`` (FIVE-1 Task 2).
 
 The sanction route never reads the held-out record, the manifest or the freeze descriptor."""
 
@@ -7,11 +8,22 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
+from collections.abc import Callable
+from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from equity_os.companies.onboarding.discovery import (
+    Capture,
+    Fetch,
+    Send,
+    acquiring_fetch,
+    replay_fetch,
+    write_generation,
+)
 from equity_os.contracts.companies.onboarding import ONBOARDING_VERSIONS
 from equity_os.contracts.verification.config_versions import ConfigVersions
 
@@ -47,6 +59,7 @@ _NEEDS_DESCRIPTOR = "--acquire needs --freeze-descriptor"
 _UNFROZEN = "the checkout does not satisfy the freeze protocol: {why}"
 _UNSANCTIONED = "the sanction does not authorise this acquisition: {why}"
 _PROTECTED = "{root} lies under a protected root"
+_GENERATION = "gen-"
 
 
 def ordinary_roots(*roots: Path) -> None:
@@ -56,6 +69,32 @@ def ordinary_roots(*roots: Path) -> None:
     for root in roots:
         if any(root.resolve().is_relative_to(checkout / held) for held in PROTECTED_ROOTS):
             raise ValueError(_PROTECTED.format(root=root))
+
+
+def entity_fetch(
+    raw_root: Path,
+    generation: int | None,
+    issuer: str,
+    authorization: str,
+    send: Callable[[], Send],
+) -> tuple[Fetch, Callable[[], None]]:
+    """A fetch with no NSE master, and the writer to call after the work: ``gen-<generation>``
+    under ``raw_root`` replayed in entity mode (the writer does nothing), or with ``None`` the
+    live ``send()``, whose exchanges the writer keeps as the next generation. ``raw_root`` must
+    be ordinary, checked before anything else."""
+    ordinary_roots(raw_root)
+    if generation is not None:
+        return replay_fetch(raw_root / f"{_GENERATION}{generation}", entity=True), lambda: None
+    taken = [int(path.name.removeprefix(_GENERATION)) for path in raw_root.glob(f"{_GENERATION}*")]
+    after = max(taken, default=0) + 1
+    log: list[Capture] = []
+
+    def write() -> None:
+        if log:
+            folder = raw_root / f"{_GENERATION}{after}"
+            write_generation(folder, issuer, authorization, after, log, entity=True)
+
+    return acquiring_fetch(send(), partial(datetime.now, UTC), log), write
 
 
 def sanctioned(path: Path, config_root: Path, symbol: str) -> dict[str, Any]:

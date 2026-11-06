@@ -213,14 +213,14 @@ class ManifestEntry(BaseModel):
 
 
 class DiscoveryManifest(BaseModel):
-    """A discovery generation: every request in order, and the window's ``as_of``."""
+    """A generation: every request in order, and the window's ``as_of`` (none if entity-bound)."""
 
     model_config = ConfigDict(frozen=True)
 
     issuer: str
     authorization: str
     generation: int
-    as_of: date
+    as_of: date | None
     entries: tuple[ManifestEntry, ...]
 
 
@@ -266,9 +266,10 @@ def authorised(request: Request, table: tuple[SurfaceAuthority, ...]) -> bool:
     return parts.scheme == _HTTPS and parts.netloc == ORIGINS.get(pair)
 
 
-def replay_fetch(folder: Path) -> Fetch:
+def replay_fetch(folder: Path, *, entity: bool = False) -> Fetch:
     """Serve each recorded response only to its exact request (key, unit, source, surface, URL),
-    a recorded denial included (today's authority table is not consulted); bodies are checked."""
+    a recorded denial included (today's authority table is not consulted); bodies are checked.
+    Onboarding's generation has one master and its ``as_of``; an ``entity`` one, neither."""
     manifest = DiscoveryManifest.model_validate_json((folder / MANIFEST_NAME).read_bytes())
     served: dict[tuple[str, Request], Response] = {}
     for entry in manifest.entries:
@@ -284,7 +285,8 @@ def replay_fetch(folder: Path) -> Fetch:
             outcome=entry.outcome, body=body, retrieved_at=entry.retrieved_at
         )
     master = [e for e in manifest.entries if (e.source_id, e.surface) == NSE_MASTER]
-    if len(master) != 1 or as_of_for(master[0].retrieved_at) != manifest.as_of:
+    dates = [as_of_for(e.retrieved_at) for e in master]
+    if dates != ([] if entity else [manifest.as_of]) or (manifest.as_of is None) != entity:
         raise ValueError(_BAD_REPLAY.format(folder=folder, why="as_of"))
 
     def fetch(request: Request, allowed: bool) -> Response:
@@ -322,9 +324,15 @@ def acquiring_fetch(
 
 
 def write_generation(
-    folder: Path, issuer: str, authorization: str, generation: int, log: Sequence[Capture]
+    folder: Path,
+    issuer: str,
+    authorization: str,
+    generation: int,
+    log: Sequence[Capture],
+    *,
+    entity: bool = False,
 ) -> None:
-    """Write a generation's bodies and manifest (the master's retrieval fixes ``as_of``)."""
+    """Write a generation's bodies and manifest (``as_of`` from the master, none if ``entity``)."""
     folder.mkdir(parents=True)
     entries = []
     for index, item in enumerate(log):
@@ -346,12 +354,12 @@ def write_generation(
                 outcome=item.response.outcome,
             )
         )
-    master = next(e for e in entries if (e.source_id, e.surface) == NSE_MASTER)
+    master = [e for e in entries if (e.source_id, e.surface) == NSE_MASTER]
     manifest = DiscoveryManifest(
         issuer=issuer,
         authorization=authorization,
         generation=generation,
-        as_of=as_of_for(master.retrieved_at),
+        as_of=None if entity else as_of_for(master[0].retrieved_at),
         entries=tuple(entries),
     )
     (folder / MANIFEST_NAME).write_text(manifest.model_dump_json(indent=1))

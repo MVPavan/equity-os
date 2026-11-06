@@ -15,7 +15,7 @@
     compare queue propose --item <id> --kind <kind> --reason <text> --evidence-ref <ref>
         [--pair-outcome <id>]
     compare fallback --run <id> --store-id <id> --snapshot-root <dir> --raw-root <dir>
-        [--issuer-config <yaml>] [--config-root config]
+        [--issuer-config <yaml>] [--config-root config] [--generation <n>]
 
 The composition root: ``PgSettings`` and the runtime pool are built here and nowhere else.
 The default cutoff is the store clock, never the host clock. Any database, configuration or
@@ -29,7 +29,9 @@ from the owner credential file (plan D3, D2 and D11). ``propose`` runs as the ru
 leaves the decision to the panel or the owner; it carries no amount (D11). ``fallback``
 acquires, ingests, reruns and admits each company-period the run's admission triggers (spec
 2026-11-06-vendor-first §6.8), prints every fetch and outcome, and exits ``INCOMPLETE`` unless
-every one ends ``ADMITTED``.
+every one ends ``ADMITTED``. Its fetches are written as the next entity generation under
+``--raw-root``; ``--generation`` replays one instead and opens no socket. Neither root may lie
+under a protected one.
 """
 
 from __future__ import annotations
@@ -48,7 +50,7 @@ import yaml
 from psycopg_pool import ConnectionPool
 from pydantic import ValidationError
 
-from equity_os.companies.onboarding.discovery import Capture, acquiring_fetch
+from equity_os.companies.onboarding.discovery import Capture, Request, Response
 from equity_os.contracts.measurement.canonical import Basis
 from equity_os.contracts.measurement.evidence import FilingFamily, RunMode
 from equity_os.contracts.sourcing.snapshot import SnapshotError
@@ -61,7 +63,11 @@ from equity_os.contracts.verification.review_queue import (
 )
 from equity_os.contracts.verification.vendor_first import FallbackOutcome
 from equity_os.contracts.verification.versioning import VersionContentDriftError
-from equity_os.interface.commands.companies.onboard_cli import live_transport, now
+from equity_os.interface.commands.companies.acquisition_authority import (
+    entity_fetch,
+    ordinary_roots,
+)
+from equity_os.interface.commands.companies.onboard_cli import live_transport
 from equity_os.normalisation.derivation.interval import RoundingPolicyError
 from equity_os.normalisation.dictionary.dictionary import DictionaryLoadError, load_dictionary
 from equity_os.normalisation.mapping.alignment import AlignmentLoadError
@@ -70,7 +76,7 @@ from equity_os.storage.database.pool import DatabaseUnavailableError, open_pool
 from equity_os.storage.database.role_secrets import RoleSecretError, load_login, secrets_dir
 from equity_os.storage.database.settings import PgRole, PgSettings
 from equity_os.storage.records.repository import EvidenceRepository
-from equity_os.verification.admission.fallback import run_fallback
+from equity_os.verification.admission.fallback import AUTHORIZATION, run_fallback
 from equity_os.verification.comparison.definitions import DefinitionSetError
 from equity_os.verification.comparison.engine_attempts import RunResolutionError
 from equity_os.verification.comparison.point_check import PointCheck, point_checks
@@ -222,6 +228,7 @@ def add_compare_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     fallback.add_argument("--raw-root", type=Path, required=True)
     fallback.add_argument("--issuer-config", type=Path)
     fallback.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
+    fallback.add_argument("--generation", type=int)
 
 
 def dispatch_compare_command(args: argparse.Namespace) -> int | None:
@@ -266,6 +273,7 @@ def dispatch_compare_command(args: argparse.Namespace) -> int | None:
         ValidationError,
         OSError,
         LookupError,
+        ValueError,
     ) as failure:
         structlog.get_logger("fundamentals.compare").error(
             _FAILED_EVENT, failure=type(failure).__name__, detail=str(failure)
@@ -320,21 +328,36 @@ def run_compare(args: argparse.Namespace) -> RunRecord:
 
 
 def _fallback(args: argparse.Namespace) -> int:
-    """Run the fallback workflow over the live transport; print each fetch and outcome."""
+    """Run the fallback workflow over the live transport, kept as an entity generation, or a
+    replayed one; print each fetch and outcome."""
+    ordinary_roots(args.snapshot_root)
     log: list[Capture] = []
     with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
-        outcomes = run_fallback(
-            pool,
-            args.run,
-            fetch=acquiring_fetch(live_transport(), now, log),
-            snapshot_root=args.snapshot_root,
-            raw_root=args.raw_root,
-            store_id=args.store_id,
-            config_root=args.config_root,
-            issuer_config=args.issuer_config,
-            vendors=DEFAULT_VENDORS,
-            code_version=_code_version(),
+        (entity_id,) = RunStore(pool).read_manifest(args.run).scope.entity_ids
+        authorization = AUTHORIZATION.format(run_id=args.run)
+        fetch, write = entity_fetch(
+            args.raw_root, args.generation, str(entity_id), authorization, live_transport
         )
+
+        def logged(request: Request, allowed: bool) -> Response:
+            log.append(Capture(request=request, response=fetch(request, allowed)))
+            return log[-1].response
+
+        try:
+            outcomes = run_fallback(
+                pool,
+                args.run,
+                fetch=logged,
+                snapshot_root=args.snapshot_root,
+                raw_root=args.raw_root,
+                store_id=args.store_id,
+                config_root=args.config_root,
+                issuer_config=args.issuer_config,
+                vendors=DEFAULT_VENDORS,
+                code_version=_code_version(),
+            )
+        finally:
+            write()
     lines = [
         _FETCHED.format(
             source=item.request.source_id,

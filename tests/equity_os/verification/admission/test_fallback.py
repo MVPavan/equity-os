@@ -16,6 +16,7 @@ import json
 import re
 import time
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import date
 from functools import partial
 from pathlib import Path
@@ -24,6 +25,7 @@ from typing import Any
 import pytest
 import stage1_e2e_support
 import yaml
+from onboarding_support import fresh_db
 from retained_support import APAR_RAW_ROOT, apar_original
 from stage1_e2e_support import CONFIG, RUNS, Stage
 
@@ -43,7 +45,7 @@ from equity_os.verification.comparison.run_config import (
     extractor_pin,
     load_run_config,
 )
-from equity_os.verification.comparison.run_models import ResultRow
+from equity_os.verification.comparison.run_models import ResultRow, RunRequest
 from equity_os.verification.comparison.run_store import RunStore
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
@@ -93,6 +95,11 @@ ADMISSIONS = (
 PACKAGES = "SELECT count(*) FROM eqos.filing_packages"
 COVERAGE = "SELECT count(*) FROM eqos.decisions"
 XBRL_SOURCE = "SELECT DISTINCT source_id FROM eqos.capture_refs WHERE surface = 'NSE_XBRL_INSTANCE'"
+STORED = (
+    "SELECT period_end, basis, outcome, cells FROM eqos.vendor_fallback_outcomes",
+    "SELECT source_id, surface, request_key, blob_sha256 FROM eqos.capture_refs ORDER BY 1, 2, 3",
+    PACKAGES,
+)
 
 
 def _served() -> dict[str, bytes]:
@@ -290,6 +297,51 @@ def test_fallback_keeps_the_run_extractor(
         assert run.read(ADMISSIONS, rerun)
 
 
+def test_fallback_replays_its_generation_on_a_fresh_database(
+    pg_db: Any, pg_template: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """FIVE-1 Task 2: the fallback's fetches are kept as an entity generation under
+    ``--raw-root``; ``--generation`` replays it on a fresh database with no transport (one
+    serving nothing) and stores the same outcome, captures and packages, writing nothing new."""
+    served = _served()
+    issuer = _associates_omitted(served, tmp_path)
+    stored = []
+    for index, (db, extra) in enumerate([(pg_db, ()), (None, ("--generation", "1"))]):
+        work = tmp_path / str(index)
+        work.mkdir()
+        with fresh_db(pg_template) if db is None else nullcontext(db) as database:
+            with _Fallback(database, work, monkeypatch, Basis.CONSOLIDATED) as run:
+                raw = ("--raw-root", str(tmp_path / "0" / "raw"))
+                assert run.main(served if db is not None else {}, issuer, *raw, *extra) == 0
+                stored.append([run.read(query) for query in STORED])
+        assert sorted(path.name for path in (tmp_path / "0" / "raw").iterdir()) == ["gen-1"]
+    assert stored[0] == stored[1]
+
+
+def test_fallback_refuses_a_run_triggering_two_groups(
+    pg_db: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A stored run whose scope holds two quarters (``compare run`` makes one) triggers two
+    company-periods; the fallback refuses before any fetch, storing no outcome and writing no
+    generation (each group would request the same listings)."""
+    june = date(2025, 6, 30)
+    with _Fallback(pg_db, tmp_path, monkeypatch, Basis.CONSOLIDATED) as run:
+        for vendor, label in run.stage.run["vendor_inputs"].items():
+            run.stage.vendor(vendor, label.split()[0], end=june)
+        manifest = RunStore(run.pool).read_manifest(run.run_id)
+        scope = manifest.scope.model_copy(update={"period_ends": (june, Q2)})
+        fields = manifest.model_dump(include=set(RunRequest.model_fields))
+        cutoff = run.stage.repository.store_clock()
+        request = RunRequest.model_validate({**fields, "scope": scope, "cutoff": cutoff})
+        run.run_id = execute_run(request, pool=run.pool, config_root=CONFIG).run_id
+        assert run.main(_served(), None) == 5
+        assert not run.read(OUTCOMES)
+    out, err = capsys.readouterr()
+    assert "fetch\t" not in out
+    assert "triggers 2 company-periods" in err
+    assert not list((tmp_path / "raw").iterdir())
+
+
 class _Fallback:
     """A Screener and Tijori run of Q2 FY26 on ``basis`` with its filing withheld, then the
     command over a transport of the case's bodies."""
@@ -314,7 +366,7 @@ class _Fallback:
         self.pool = self._pool.__enter__()
         stage = Stage(self.pg_db, self.pool, self.tmp_path, RUNS["APARINDS-Q2FY26"])
         stage.config, stage.versions = load_run_config(CONFIG, V9), V9
-        self.entity_id = stage.entity_id
+        self.entity_id, self.stage = stage.entity_id, stage
         self.run_id = _vendor_run(stage, self.basis, self.monkeypatch, self.xbrl)
         self.store_id = create_native_store(self.pool, "fallback")
         self.rows = {row.row_id: row for row in RunStore(self.pool).read_results(self.run_id)}
@@ -327,9 +379,9 @@ class _Fallback:
         """Close the pool."""
         self._pool.__exit__(*exc)
 
-    def main(self, served: dict[str, bytes], issuer: Path | None) -> int:
-        """``eqos compare fallback`` over a transport of ``served``; the run's triggers as
-        admission reads them."""
+    def main(self, served: dict[str, bytes], issuer: Path | None, *extra: str) -> int:
+        """``eqos compare fallback`` over a transport of ``served``, with any ``extra`` flags;
+        the run's triggers as admission reads them."""
         self.monkeypatch.setattr(compare_cli, "live_transport", lambda: _transport(served))
         self.triggers = {
             row_id: refusal.value
@@ -343,6 +395,7 @@ class _Fallback:
             *("--snapshot-root", str(self.tmp_path / "snapshots")),
             *("--raw-root", str(self.tmp_path / "raw")),
             *(("--issuer-config", str(issuer)) if issuer else ()),
+            *extra,
         ]
         return main(argv)
 
