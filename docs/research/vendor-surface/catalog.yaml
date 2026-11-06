@@ -1255,7 +1255,7 @@ screener:
     - Concall summary text
     existing:
       status: none
-    notes: 'Notes button of the company page #documents concalls rows. Evidence status: not yet captured (VENDOR-1 Phase 2 Task 2 captures it).'
+    notes: 'Notes button of the company page #documents concalls rows. Evidence status: captured 2026-11-06 (VENDOR-1 Phase 2 Task 2, live protocol, live equal to rehearsal): APARINDS, 56 of 56 advertised summaries retained. Structure: summary region /html/body/main/div[2]/article inside div.card.card-medium (55 of 56 pages; one page shows a div.callout.success notice and no article). Own company reference: one /company/<slug>/ breadcrumb link per page (/html/body/main/div[1]/ul/li/a, outside the region), matching the slug of the issuer''s vendor_basis_bindings addresses; no identity element. Text: list items (27-187 leaf items per page) with some paragraphs.'
   - id: forecasts
     scope: company
     url_pattern: /forecasts/{company_id}/?consolidated=
