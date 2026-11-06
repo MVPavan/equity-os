@@ -26,6 +26,7 @@ from ledger_support import (
     LEDGER_TABLES,
     MEMORY_TABLES,
     REVIEW_TABLES,
+    VENDOR_FIRST_TABLES,
 )
 from pg_support import PgTestDatabase, drop_database, mint_name
 from retention_support import RETENTION_TABLES, restore_args
@@ -419,7 +420,7 @@ def test_ledger_stage1_end_to_end(
     )
     tables = [*STAGE2["backup"]["tables"], *(t["table"] for t in MANIFEST["backup_tables"])]
     tables += MEMORY_TABLES | IDENTITY_TABLES | COVERAGE_TABLES | RETENTION_TABLES | REVIEW_TABLES
-    tables += DOCUMENT_TABLES
+    tables += DOCUMENT_TABLES | VENDOR_FIRST_TABLES
     tables += [
         "vendor_basis_bindings",
         "vendor_outcomes",

@@ -24,6 +24,7 @@ from ledger_support import (
     LEDGER_TABLES,
     MEMORY_TABLES,
     REVIEW_TABLES,
+    VENDOR_FIRST_TABLES,
 )
 from legacy_support import LEGACY_PATH, LEGACY_SHA256, baseline_rows, file_sha256, second_store
 from pg_support import PgTestDatabase, drop_database, mint_name
@@ -79,6 +80,7 @@ POST_0011_TABLES = (
     | RETENTION_TABLES
     | REVIEW_TABLES
     | DOCUMENT_TABLES
+    | VENDOR_FIRST_TABLES
     | VENDOR_TABLES
 )
 # The two cells Stage 1 marks not applicable by rule (outside the manifest's 439) and their refusal.
