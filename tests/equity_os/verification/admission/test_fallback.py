@@ -1,0 +1,259 @@
+"""VENDOR-1 Task 10: ``eqos compare fallback`` over Apar's Q2 FY26 (spec §6.8, acceptance 11).
+
+A Screener and Tijori run of the quarter with its filing withheld refuses trigger cells; the
+command then requests that period's filing through a transport replaying the retained NSE
+listings, XBRL instance and results PDF. SYNTHETIC, made here in memory: the announcements
+listing (one row naming the retained results PDF; no retained listing covers that span), and
+each case's edit of what is served or of the issuer config. No socket is opened.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import time
+from collections.abc import Callable
+from datetime import date
+from functools import partial
+from pathlib import Path
+from typing import Any
+
+import pytest
+import stage1_e2e_support
+import yaml
+from retained_support import APAR_RAW_ROOT, apar_original
+from stage1_e2e_support import CONFIG, RUNS, Stage
+
+from equity_os.companies.identity.identity_seed import EvidenceInputKind, SettingKey
+from equity_os.companies.onboarding.discovery import Request
+from equity_os.contracts.measurement.canonical import Basis
+from equity_os.interface.commands.verification import compare_cli
+from equity_os.interface.entry.cli import main
+from equity_os.sourcing.documents.first_party_documents import ANNOUNCEMENTS, nse_listing_url
+from equity_os.sourcing.exchange.nse_filings import INTEGRATED_LISTING, LEGACY_LISTING, listing_url
+from equity_os.storage.facts.pg_fact_store import create_native_store
+from equity_os.verification.comparison.run import DatabaseIdentity, execute_run, request_for
+from equity_os.verification.comparison.run_config import ConfigVersions, load_run_config
+
+pytestmark = [pytest.mark.pg, pytest.mark.retained]
+
+V9 = ConfigVersions(dictionary="v2", mapping_set="v9", alignment_rules="v2")
+Q2 = date(2025, 9, 30)
+SYMBOL, ISIN = "APARINDS", "INE372A01015"
+SCREENER, TIJORI = ("screener-subscriber", "SCREENER_FINANCIALS"), ("tijori", "financials")
+LEGACY_URL = listing_url(LEGACY_LISTING[0], SYMBOL, LEGACY_LISTING[1])
+INTEGRATED_URL = listing_url(INTEGRATED_LISTING[0], SYMBOL, INTEGRATED_LISTING[1])
+XBRL_URL = "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1560713_29102025085858_WEB.xml"
+STANDALONE_URL = "https://nsearchives.nseindia.com/corporate/xbrl/INTEGRATED_FILING_INDAS_1560684_29102025083842_WEB.xml"
+PDF_URL = "https://nsearchives.nseindia.com/corporate/APARINDS_29102025133102_OutcomeofBM.pdf"
+# The span runs from the period end to seven days after the XBRL broadcast (29 Oct 2025).
+ANNOUNCEMENTS_URL = nse_listing_url(ANNOUNCEMENTS, SYMBOL, Q2, date(2025, 11, 5))
+ISSUER_CONFIG = CONFIG / "runs/aparinds-fy26-q2.yaml"
+_ASSOCIATES = (
+    rb"<in-capmkt:ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsingEquityMethod "
+    rb"[^>]*>[^<]*</in-capmkt:ShareOfProfitLossOfAssociatesAndJointVenturesAccountedForUsing"
+    rb"EquityMethod>"
+)
+TRIGGER_REASONS = {"CHECK_REQUIRED", "VENDOR_UNMAPPED", "VENDORS_DISAGREE", "VENDORS_IMPRECISE"}
+REASONS = {
+    "FILING_UNAVAILABLE": TRIGGER_REASONS,
+    "STILL_REFUSED": TRIGGER_REASONS,
+    "FILING_UNRESOLVED": TRIGGER_REASONS | {"REVIEW_OPEN", "FILING_UNRESOLVED"},
+}
+_NATURE = rb'(NatureOfReportStandaloneConsolidated contextRef="[^"]+">)Consolidated'
+OUTCOMES = (
+    "SELECT run_id, period_end, basis, outcome, rerun_id IS NOT NULL, cells "
+    "FROM eqos.vendor_fallback_outcomes"
+)
+PACKAGES = "SELECT count(*) FROM eqos.filing_packages"
+COVERAGE = "SELECT count(*) FROM eqos.decisions"
+XBRL_SOURCE = "SELECT DISTINCT source_id FROM eqos.capture_refs WHERE surface = 'NSE_XBRL_INSTANCE'"
+
+
+def _served() -> dict[str, bytes]:
+    """The retained bodies by URL, and the SYNTHETIC announcements listing."""
+    listings = APAR_RAW_ROOT / "nse-listing"
+    announcement = {
+        "seq_id": "1",
+        "symbol": SYMBOL,
+        "sm_isin": ISIN,
+        "desc": "Outcome of Board Meeting",
+        "attchmntText": "Outcome of Board Meeting - Financial Results for the quarter",
+        "attchmntFile": PDF_URL,
+        "an_dt": "29-Oct-2025 13:33:43",
+    }
+    return {
+        LEGACY_URL: next(listings.glob("financial-results-*.json")).read_bytes(),
+        INTEGRATED_URL: next(listings.glob("integrated-filing-*.json")).read_bytes(),
+        XBRL_URL: apar_original("FY26_Q2", "xbrl-consolidated").read_bytes(),
+        ANNOUNCEMENTS_URL: json.dumps([announcement]).encode(),
+        PDF_URL: apar_original("FY26_Q2", "results").read_bytes(),
+    }
+
+
+def _withheld(served: dict[str, bytes], tmp_path: Path) -> Path | None:
+    """Serve the retained filing; the issuer config joins the results PDF."""
+    del served, tmp_path
+    return ISSUER_CONFIG
+
+
+def _associates_omitted(served: dict[str, bytes], tmp_path: Path) -> Path | None:
+    """SYNTHETIC: the instance omits the share of associates, so no filed profit before tax
+    including associates is constructed; an XBRL-only package (no issuer config)."""
+    del tmp_path
+    served[XBRL_URL], count = re.subn(_ASSOCIATES, b"", served[XBRL_URL])
+    assert count == 2
+    return None
+
+
+def _unlisted(served: dict[str, bytes], tmp_path: Path) -> Path | None:
+    """SYNTHETIC: the integrated listing carries no Q2 FY26 row, so no filing is acquirable."""
+    payload = json.loads(served[INTEGRATED_URL])
+    kept = [row for row in payload["data"] if row.get("qe_Date") != "30-SEP-2025"]
+    served[INTEGRATED_URL] = json.dumps({"data": kept}).encode()
+    return _withheld(served, tmp_path)
+
+
+def _truncated(served: dict[str, bytes], tmp_path: Path) -> Path | None:
+    """SYNTHETIC: the instance is served truncated, so its extraction fails."""
+    served[XBRL_URL] = served[XBRL_URL][:4096]
+    return _withheld(served, tmp_path)
+
+
+def _standalone(served: dict[str, bytes], tmp_path: Path) -> Path | None:
+    """SYNTHETIC: the standalone row's instance is the associates-omitted consolidated one,
+    restated standalone; XBRL-only."""
+    _associates_omitted(served, tmp_path)
+    served[STANDALONE_URL] = re.sub(_NATURE, rb"\1Standalone", served.pop(XBRL_URL))
+    return None
+
+
+def _repinned(served: dict[str, bytes], tmp_path: Path) -> Path | None:
+    """SYNTHETIC: the issuer config pins another PDF than the one acquired."""
+    del served
+    config = yaml.safe_load(ISSUER_CONFIG.read_bytes())
+    config["results_pdf"]["sha256"] = "0" * 64
+    path = tmp_path / "issuer.yaml"
+    path.write_text(yaml.safe_dump(config))
+    return path
+
+
+FULL = (LEGACY_URL, INTEGRATED_URL, XBRL_URL, ANNOUNCEMENTS_URL, PDF_URL)
+
+
+@pytest.mark.parametrize(
+    ("edit", "basis", "outcome", "packages", "rerun", "fetched"),
+    [
+        (_withheld, Basis.CONSOLIDATED, "FILING_UNRESOLVED", 1, True, FULL),
+        (_associates_omitted, Basis.CONSOLIDATED, "STILL_REFUSED", 1, True, FULL),
+        (_unlisted, Basis.CONSOLIDATED, "FILING_UNAVAILABLE", 0, False, FULL[:2]),
+        (_truncated, Basis.CONSOLIDATED, "FILING_UNRESOLVED", 1, False, FULL),
+        (
+            _standalone,
+            Basis.STANDALONE,
+            "STILL_REFUSED",
+            1,
+            True,
+            (*FULL[:2], STANDALONE_URL, *FULL[3:]),
+        ),
+        (_repinned, Basis.CONSOLIDATED, "FILING_UNRESOLVED", 0, False, FULL),
+    ],
+    ids=["withheld", "still-refused", "unavailable", "unresolved", "standalone", "pdf-pin"],
+)
+def test_fallback_acquires_only_the_triggering_period(
+    pg_db: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    edit: Callable[[dict[str, bytes], Path], Path | None],
+    basis: Basis,
+    outcome: str,
+    packages: int,
+    rerun: bool,
+    fetched: tuple[str, ...],
+) -> None:
+    """One stored terminal outcome per case; only Apar's Q2 FY26 filing is requested, and
+    coverage is unchanged (acceptance 11). The retained filing itself ends FILING_UNRESOLVED:
+    its XBRL and PDF disagree on lines one of them lacks, and concepts no source reports stay
+    refused, so no Apar period can end ADMITTED under §6.5's triggers."""
+    served = _served()
+    issuer = edit(served, tmp_path)
+    monkeypatch.setattr(compare_cli, "live_transport", lambda: _transport(served))
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    for name, value in pg_db.cli_env().items():
+        monkeypatch.setenv(name, value)
+    with pg_db.runtime_pool() as pool:
+        stage = Stage(pg_db, pool, tmp_path, RUNS["APARINDS-Q2FY26"])
+        stage.config, stage.versions = load_run_config(CONFIG, V9), V9
+        run_id = _vendor_run(stage, basis, monkeypatch)
+        store_id = create_native_store(pool, "fallback")
+        with pool.connection() as conn:
+            coverage = conn.execute(COVERAGE).fetchone()
+        for root in ("snapshots", "raw"):
+            (tmp_path / root).mkdir(mode=0o700)
+        argv = [
+            *("compare", "fallback", "--run", str(run_id), "--store-id", store_id),
+            *("--snapshot-root", str(tmp_path / "snapshots"), "--raw-root", str(tmp_path / "raw")),
+            *(("--issuer-config", str(issuer)) if issuer else ()),
+        ]
+        code = main(argv)
+        with pool.connection() as conn:
+            ((stored_run, period, stored_basis, stored, reran, cells),) = conn.execute(
+                OUTCOMES
+            ).fetchall()
+            assert conn.execute(COVERAGE).fetchone() == coverage
+            assert conn.execute(PACKAGES).fetchone() == (packages,)
+            sources = {source for (source,) in conn.execute(XBRL_SOURCE).fetchall()}
+    lines = capsys.readouterr().out.splitlines()
+    assert [line.split("\t")[2] for line in lines if line.startswith("fetch\t")] == list(fetched)
+    assert lines[-1] == f"fallback\t{stage.entity_id}\t{Q2}\t{basis.value}\t{outcome}"
+    assert code == 4
+    assert (stored_run, period, stored_basis, stored) == (run_id, Q2, basis.value, outcome)
+    assert reran is rerun
+    assert cells and set(cells.values()) <= REASONS[outcome]
+    if fetched[2:]:
+        assert sources == {f"nse-indas-xbrl-{basis.value.lower()}"}
+
+
+def _transport(served: dict[str, bytes]) -> Callable[[Request], tuple[int, bytes]]:
+    """Serve the case's bodies by URL; anything else is a 404."""
+
+    def send(request: Request) -> tuple[int, bytes]:
+        body = served.get(request.url)
+        return (200, body) if body is not None else (404, b"")
+
+    return send
+
+
+def _vendor_run(stage: Stage, basis: Basis, monkeypatch: pytest.MonkeyPatch) -> int:
+    """A Screener and Tijori run of Q2 FY26 on ``basis`` with no filing ingested, after the Ind AS
+    setting onboarding records."""
+    discovery = stage.repository.put_evidence_input(EvidenceInputKind.DISCOVERY, SYMBOL, "d" * 64)
+    stage.repository.put_settings_record(
+        stage.entity_id, SettingKey.REPORTING_FRAMEWORK, "IND_AS", discovery
+    )
+    if basis is Basis.CONSOLIDATED:
+        stage.vendors()
+        vendors = (SCREENER, TIJORI)
+    else:  # Tijori's page carries both bases' tables; read its standalone ones
+        adapter = stage1_e2e_support.tijori
+        monkeypatch.setattr(
+            stage1_e2e_support, "tijori", lambda *args: partial(adapter(*args), basis=basis)
+        )
+        stage.vendor("/".join(TIJORI), "A-TIJ", basis=basis)
+        vendors = (TIJORI,)
+    settings = stage.pg_db.settings
+    request = request_for(
+        stage.entity_id,
+        Q2,
+        basis,
+        cutoff=stage.repository.store_clock(),
+        config_root=CONFIG,
+        code_version="test-commit",
+        database_identity=DatabaseIdentity(
+            host=settings.host, port=settings.port, name=stage.pg_db.dbname
+        ),
+        vendors=vendors,
+        versions=V9,
+    )
+    return execute_run(request, pool=stage.pool, config_root=CONFIG).run_id

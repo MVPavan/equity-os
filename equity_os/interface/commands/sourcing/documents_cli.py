@@ -33,7 +33,7 @@ from equity_os.companies.onboarding.discovery import (
 from equity_os.companies.onboarding.verification import master_rows
 from equity_os.contracts.companies.entity_identity import IdentifierNamespace
 from equity_os.contracts.companies.onboarding import VerificationUnit
-from equity_os.contracts.sourcing.snapshot import SnapshotError
+from equity_os.contracts.sourcing.snapshot import CaptureRecord, SnapshotError
 from equity_os.contracts.sourcing.source_catalog import (
     NSE_MASTER,
     SCREENER_PAGE,
@@ -125,6 +125,41 @@ def run_documents(
     ) as error:
         sys.stderr.write(f"documents failed: {type(error).__name__}\n")
         return RunExitStatus.FAILURE
+
+
+def announcement_documents(
+    conn: psycopg.Connection[Any],
+    store: SnapshotStore,
+    fetch: Fetch,
+    *,
+    entity_id: int,
+    symbol: str,
+    isin: str,
+    span: tuple[date, date],
+) -> list[tuple[DocumentLink, CaptureRecord]]:
+    """The announcements listing of one issuer and span, then the results PDFs filed in it
+    (spec 2026-11-06-vendor-first §6.8): each retained one's link and capture, earliest filed
+    first. The pass's own listing and attempt steps do the work, within its attempt bound."""
+    step = _Pass(argparse.Namespace(documents_command=None), conn, store, fetch, span[1])
+    if not step._span(entity_id, symbol, isin, ANNOUNCEMENTS, span):
+        return []
+    found = []
+    for observation in step.intake.latest(entity_id, ANNOUNCEMENTS):
+        link = observed_link(ANNOUNCEMENTS, observation.payload)
+        request = document_request(link) if link else None
+        if link is None or request is None or link.kind is not DocumentKind.RESULTS:
+            continue
+        if not span[0] <= cast(datetime, link.filed_at).date() <= span[1]:
+            continue
+        outcomes = step.intake.attempts(observation.id, request.url)
+        if OK not in outcomes and not _closed(outcomes):
+            step._attempt(observation, link.kind, request)
+        if ok := step.intake.ok_attempt(observation.id, request.url):
+            route = hashlib.sha256(request.key.encode()).hexdigest()
+            found.append(
+                (link, store.get_capture(request.source_id, request.surface, route, ok[2]))
+            )
+    return sorted(found, key=lambda item: cast(datetime, item[0].filed_at))
 
 
 class _Pass:

@@ -138,6 +138,14 @@ def collapse(rows: Sequence[ListingRow]) -> tuple[list[ListingRow], bool]:
     return latest, tied
 
 
+def filing_for(rows: Sequence[ListingRow], period_end: date, basis: str) -> ListingRow | None:
+    """The qualifying filing of one period end on the listing ``basis`` after the collapse rule;
+    ``None`` on a tie or a missing broadcast (spec 2026-11-06-vendor-first §6.8)."""
+    latest, tied = collapse([r for r in rows if (r.period_end, r.basis) == (period_end, basis)])
+    found = [row for row in latest if row.qualifies(basis)]
+    return found[0] if found and not tied else None
+
+
 def quarter_ends(as_of: date) -> set[date]:
     """The six latest calendar quarter-ends on or before ``as_of``."""
     ends = [

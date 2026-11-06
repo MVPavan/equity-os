@@ -397,7 +397,8 @@ def onboard(args: argparse.Namespace) -> Onboarded:
                 found = discover(args.symbol, fetch, conn, SURFACES, config.mapping_set)
             if outcome(found.states)[0] in _ADMITTED:
                 derived = derive(found)
-                package = package_manifest(args.symbol, authorization, derived)
+                xbrl = [(_xbrl_kind(derived.basis), filing) for filing in derived.filings]
+                package = package_manifest(args.symbol, authorization, xbrl)
         finally:
             if acquisition is not None and log:
                 write_generation(folder, args.symbol, authorization, generation, log)
@@ -456,13 +457,12 @@ def _argv(args: argparse.Namespace) -> list[str]:
     ]
 
 
-def package_manifest(issuer: str, authorization: str, derived: DerivedSettings) -> bytes:
-    """The XBRL-only ``retrieval-manifest.json`` of the verified filings, in the intake format
-    (``quarter`` is the period end)."""
+def package_manifest(issuer: str, authorization: str, files: Sequence[tuple[str, Filing]]) -> bytes:
+    """The intake's ``retrieval-manifest.json`` of ``(kind, filing)`` files by period end."""
     entries = [
         {
             "quarter": filing.period_end.isoformat(),
-            "kind": _xbrl_kind(derived.basis),
+            "kind": kind,
             "url": filing.url,
             "filename": _filename(filing),
             "sha256": _sha256(filing.body),
@@ -470,7 +470,7 @@ def package_manifest(issuer: str, authorization: str, derived: DerivedSettings) 
             "filed_at_nse": filing.filed_at.strftime(NSE_FILED_AT_FORMAT),
             "retrieved_at": filing.retrieved_at.isoformat(),
         }
-        for filing in derived.filings
+        for kind, filing in files
     ]
     document = {"issuer": issuer, "authorization": authorization, "entries": entries}
     return json.dumps(document, indent=1).encode()

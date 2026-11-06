@@ -14,6 +14,8 @@
         --evidence-ref <ref> [--explained-amount <decimal>]
     compare queue propose --item <id> --kind <kind> --reason <text> --evidence-ref <ref>
         [--pair-outcome <id>]
+    compare fallback --run <id> --store-id <id> --snapshot-root <dir> --raw-root <dir>
+        [--issuer-config <yaml>] [--config-root config]
 
 The composition root: ``PgSettings`` and the runtime pool are built here and nowhere else.
 The default cutoff is the store clock, never the host clock. Any database, configuration or
@@ -24,7 +26,10 @@ results run without ``--vendor`` has Screener and Tijori sides (``DEFAULT_VENDOR
 Queue reads default to the current overlay boundary; ``--as-of`` may not be later. A
 disposition's time is the store clock's; ``dispose`` runs as the owner role, its login read
 from the owner credential file (plan D3, D2 and D11). ``propose`` runs as the runtime role and
-leaves the decision to the panel or the owner; it carries no amount (D11).
+leaves the decision to the panel or the owner; it carries no amount (D11). ``fallback``
+acquires, ingests, reruns and admits each company-period the run's admission triggers (spec
+2026-11-06-vendor-first §6.8), prints every fetch and outcome, and exits ``INCOMPLETE`` unless
+every one ends ``ADMITTED``.
 """
 
 from __future__ import annotations
@@ -43,8 +48,10 @@ import yaml
 from psycopg_pool import ConnectionPool
 from pydantic import ValidationError
 
+from equity_os.companies.onboarding.discovery import Capture, acquiring_fetch
 from equity_os.contracts.measurement.canonical import Basis
 from equity_os.contracts.measurement.evidence import FilingFamily, RunMode
+from equity_os.contracts.sourcing.snapshot import SnapshotError
 from equity_os.contracts.sourcing.source_catalog import SCREENER_PAGE, TIJORI_PAGE
 from equity_os.contracts.storage.retention import OriginalExpiredError
 from equity_os.contracts.verification.review_queue import (
@@ -52,7 +59,9 @@ from equity_os.contracts.verification.review_queue import (
     QueueOverlay,
     QueueSeverity,
 )
+from equity_os.contracts.verification.vendor_first import FallbackOutcome
 from equity_os.contracts.verification.versioning import VersionContentDriftError
+from equity_os.interface.commands.companies.onboard_cli import live_transport, now
 from equity_os.normalisation.derivation.interval import RoundingPolicyError
 from equity_os.normalisation.dictionary.dictionary import DictionaryLoadError, load_dictionary
 from equity_os.normalisation.mapping.alignment import AlignmentLoadError
@@ -61,6 +70,7 @@ from equity_os.storage.database.pool import DatabaseUnavailableError, open_pool
 from equity_os.storage.database.role_secrets import RoleSecretError, load_login, secrets_dir
 from equity_os.storage.database.settings import PgRole, PgSettings
 from equity_os.storage.records.repository import EvidenceRepository
+from equity_os.verification.admission.fallback import run_fallback
 from equity_os.verification.comparison.definitions import DefinitionSetError
 from equity_os.verification.comparison.engine_attempts import RunResolutionError
 from equity_os.verification.comparison.point_check import PointCheck, point_checks
@@ -109,6 +119,7 @@ LIST_ACTION = "list"
 SHOW_ACTION = "show"
 DISPOSE_ACTION = "dispose"
 PROPOSE_ACTION = "propose"
+FALLBACK_ACTION = "fallback"
 DEFAULT_CONFIG_ROOT = "config"
 UNKNOWN_CODE_VERSION = "UNKNOWN"
 GIT_TIMEOUT_S = 5
@@ -125,6 +136,9 @@ OPEN, DISPOSED, ALL = _STATUSES = ("open", "disposed", "all")
 _DISPOSE_HELP = "record a disposition (prints its id)"
 _PROPOSE_HELP = "propose a disposition for the panel or owner (prints its id)"
 _PROPOSED = "proposal\t{proposal}"
+_FALLBACK_HELP = "acquire, ingest, rerun and admit each company-period a run triggers"
+_FETCHED = "fetch\t{source}/{surface}\t{url}\t{outcome}"
+_OUTCOME = "fallback\t{entity}\t{period_end}\t{basis}\t{outcome}"
 _QUEUE_DEST = "queue_action"
 _LATE_AS_OF = "--as-of {as_of} is later than the overlay boundary {boundary}"
 _NO_AMOUNT = "ACCEPTED_AS_DEFINITION needs --explained-amount"
@@ -201,6 +215,13 @@ def add_compare_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     propose.add_argument("--reason", required=True)
     propose.add_argument("--evidence-ref", required=True)
     propose.add_argument("--pair-outcome", type=int)
+    fallback = actions.add_parser(FALLBACK_ACTION, help=_FALLBACK_HELP)
+    fallback.add_argument("--run", type=int, required=True)
+    fallback.add_argument("--store-id", required=True)
+    fallback.add_argument("--snapshot-root", type=Path, required=True)
+    fallback.add_argument("--raw-root", type=Path, required=True)
+    fallback.add_argument("--issuer-config", type=Path)
+    fallback.add_argument("--config-root", type=Path, default=Path(DEFAULT_CONFIG_ROOT))
 
 
 def dispatch_compare_command(args: argparse.Namespace) -> int | None:
@@ -210,6 +231,8 @@ def dispatch_compare_command(args: argparse.Namespace) -> int | None:
     try:
         if args.compare_action == RUN_ACTION:
             return _run(args)
+        if args.compare_action == FALLBACK_ACTION:
+            return _fallback(args)
         if args.compare_action == QUEUE_ACTION:
             queue_actions = {
                 LIST_ACTION: _list,
@@ -236,6 +259,7 @@ def dispatch_compare_command(args: argparse.Namespace) -> int | None:
         DictionaryLoadError,
         RoundingPolicyError,
         RoleSecretError,
+        SnapshotError,
         MappingLoadError,
         AlignmentLoadError,
         yaml.YAMLError,
@@ -293,6 +317,40 @@ def run_compare(args: argparse.Namespace) -> RunRecord:
             family=_FAMILIES[args.family],
         )
         return execute_run(request, pool=pool, config_root=args.config_root)
+
+
+def _fallback(args: argparse.Namespace) -> int:
+    """Run the fallback workflow over the live transport; print each fetch and outcome."""
+    log: list[Capture] = []
+    with open_pool(PgSettings(), PgRole.RUNTIME) as pool:
+        outcomes = run_fallback(
+            pool,
+            args.run,
+            fetch=acquiring_fetch(live_transport(), now, log),
+            snapshot_root=args.snapshot_root,
+            raw_root=args.raw_root,
+            store_id=args.store_id,
+            config_root=args.config_root,
+            issuer_config=args.issuer_config,
+            vendors=DEFAULT_VENDORS,
+            code_version=_code_version(),
+        )
+    lines = [
+        _FETCHED.format(
+            source=item.request.source_id,
+            surface=item.request.surface,
+            url=item.request.url,
+            outcome=item.response.outcome,
+        )
+        for item in log
+    ]
+    lines += [
+        _OUTCOME.format(entity=entity, period_end=end, basis=basis.value, outcome=outcome.value)
+        for entity, end, basis, outcome in outcomes
+    ]
+    sys.stdout.write("".join(f"{line}\n" for line in lines))
+    admitted = all(item[3] is FallbackOutcome.ADMITTED for item in outcomes)
+    return int(RunExitStatus.SUCCESS if admitted else RunExitStatus.INCOMPLETE)
 
 
 def _report(args: argparse.Namespace) -> int:
