@@ -109,3 +109,63 @@ def test_a_config_pin_carrying_a_foreign_locator_is_refused(field: str, value: o
 
     with pytest.raises(ValidationError, match=field):
         _config_pin(**{field: value})
+
+
+_API = {"document_id": "api:cash_flow_waterfall"}
+_API_TABLE = {**_API, "table_key": "1yr", "row_label": "0/WCC", "column_label": "y"}
+_ISLAND_URL = "https://example.invalid/#fin_tables_data/qt_c/Dec 2024/x"
+
+# (anchor type, the anchor's fields, the refusal) — one row per rule of every other anchor kind.
+_MALFORMED_ANCHORS: tuple[tuple[SourceAnchorType, dict[str, Any], str], ...] = (
+    (SourceAnchorType.PDF_SPAN, {"page": 11}, "PDF_SPAN"),
+    (SourceAnchorType.XBRL_CONTEXT, {"context_ref": None}, "XBRL_CONTEXT"),
+    (SourceAnchorType.JSON_ISLAND, {"context_ref": _ISLAND_URL}, "JSON_ISLAND anchor requires"),
+    (SourceAnchorType.API_DOCUMENT, _API, "API_DOCUMENT anchor requires"),
+    (SourceAnchorType.API_DOCUMENT, _API_TABLE, "API_DOCUMENT anchor requires"),
+    (
+        SourceAnchorType.API_DOCUMENT,
+        {**_API_TABLE, "context_ref": "https://x.invalid/api/#1yr", "island_id": "fin_tables_data"},
+        "must not set island_id",
+    ),
+    (
+        SourceAnchorType.JSON_ISLAND,
+        {
+            **_API_TABLE,
+            "context_ref": _ISLAND_URL,
+            "island_id": "fin_tables_data",
+            "column_index": 0,
+        },
+        "must not set column_index, document_id",
+    ),
+    (
+        SourceAnchorType.HTML_TABLE,
+        {
+            "table_id": "shareholding",
+            "row_path": "promoters",
+            "row_label": "Promoters",
+            "column_index": 0,
+            "column_label": "Dec 2024",
+            "island_id": "fin_tables_data",
+        },
+        "must not set island_id",
+    ),
+)
+
+
+@pytest.mark.parametrize(("anchor_type", "fields", "refusal"), _MALFORMED_ANCHORS)
+def test_every_anchor_kind_refuses_missing_or_foreign_locators(
+    anchor_type: SourceAnchorType, fields: dict[str, Any], refusal: str
+) -> None:
+    """An anchor must carry its own locators and none of another kind's.
+
+    Without them a value could not be re-fetched or compared, and a borrowed
+    field reads as a different retrieval procedure downstream.
+    """
+    with pytest.raises(ValidationError, match=refusal):
+        Provenance(
+            source_id="anchor-fixture",
+            file_sha256=_SHA256,
+            anchor_type=anchor_type,
+            retrieved_at=_RETRIEVED_AT,
+            **fields,
+        )

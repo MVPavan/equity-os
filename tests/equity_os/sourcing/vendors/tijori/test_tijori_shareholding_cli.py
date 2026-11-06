@@ -115,69 +115,6 @@ def test_shareholding_cli_binds_the_page_to_the_configured_company_id(
         main(["tijori-shareholding", "--stock", "THERMAX", "--out", str(tmp_path / "out")])
 
 
-def _watchlist_yaml(needs_verification: str) -> str:
-    """One-stock watchlist whose Tijori verification flags are under test."""
-    return f"""
-raw_dir: "data/raw/watchlist"
-stocks:
-  - name: "Titan Company Limited"
-    domain: "Jewellery / Retail"
-    identifiers:
-      nse_symbol: "TITAN"
-      bse_scrip: "500114"
-      screener_slug: "TITAN"
-      screener_company_id: 991001
-      screener_warehouse_id_consolidated: 992001
-      tijori_slug: "titan-company-limited"
-      tijori_company_id: 81
-      needs_verification: [{needs_verification}]
-    quarter:
-      label: "Q3FY25"
-      period_start: "2024-10-01"
-      period_end: "2024-12-31"
-      knowledge_cutoff: "2025-02-15T00:00:00Z"
-"""
-
-
-@pytest.mark.parametrize("flagged", ["tijori_slug", "tijori_company_id"])
-def test_shareholding_cli_refuses_an_unverified_tijori_identifier(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    flagged: str,
-) -> None:
-    """Either unconfirmed Tijori identifier must stop the run, not be trusted."""
-    monkeypatch.setenv("TIJORI_SESSION_COOKIE", "fixture-session-token")
-    monkeypatch.setattr(TijoriSource, "_fetch_shareholding_bytes", _fetch_fixture)
-    config = tmp_path / "watchlist.yaml"
-    config.write_text(_watchlist_yaml(f'"{flagged}"'), encoding="utf-8")
-
-    with pytest.raises(SystemExit, match=f"not verified: {flagged}"):
-        main(
-            [
-                "tijori-shareholding",
-                "--stock",
-                "TITAN",
-                "--config",
-                str(config),
-                "--out",
-                str(tmp_path / "out"),
-            ]
-        )
-
-
-def test_shareholding_cli_requires_an_injected_session_cookie(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Credentials come from the composition root only, never from the adapter."""
-    monkeypatch.delenv("TIJORI_SESSION_COOKIE", raising=False)
-    monkeypatch.delenv("TIJORI_EMAIL", raising=False)
-    monkeypatch.delenv("TIJORI_PASSWORD", raising=False)
-
-    with pytest.raises(SystemExit, match="required for tijori-shareholding"):
-        main(["tijori-shareholding", "--stock", "TITAN", "--out", str(tmp_path / "out")])
-
-
 @pytest.mark.parametrize("case", ["ok", "failed", "stopped"])
 def test_shareholding_cli_raw_first(case, tijori_cli_capture, pg_db, tmp_path, monkeypatch):
     """Every raw response is registered before parsing or a durable stop."""

@@ -377,24 +377,19 @@ def test_fetch_quarter_wrong_scrip_fails_closed(
         )
 
 
-def test_fetch_quarter_rejects_non_bse_url(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("xbrl_url", "refusal"),
+    [
+        ("https://evil.example.com/XBRLFILES/x.xml", "first-party host"),
+        ("http://www.bseindia.com/XBRLFILES/x.xml", "https"),
+    ],
+)
+def test_fetch_quarter_rejects_a_non_first_party_or_non_https_url(
+    tmp_path: Path, xbrl_url: str, refusal: str
+) -> None:
     source = BseSource(tmp_path, scrip_code=SCRIP_INFY)
-    with pytest.raises(BseFetchError, match="first-party host"):
-        source.fetch_quarter(
-            from_date=Q2_START,
-            to_date=Q2_END,
-            xbrl_url="https://evil.example.com/XBRLFILES/x.xml",
-        )
-
-
-def test_fetch_quarter_rejects_non_https_url(tmp_path: Path) -> None:
-    source = BseSource(tmp_path, scrip_code=SCRIP_INFY)
-    with pytest.raises(BseFetchError, match="https"):
-        source.fetch_quarter(
-            from_date=Q2_START,
-            to_date=Q2_END,
-            xbrl_url="http://www.bseindia.com/XBRLFILES/x.xml",
-        )
+    with pytest.raises(BseFetchError, match=refusal):
+        source.fetch_quarter(from_date=Q2_START, to_date=Q2_END, xbrl_url=xbrl_url)
 
 
 def test_terminal_block_not_retried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

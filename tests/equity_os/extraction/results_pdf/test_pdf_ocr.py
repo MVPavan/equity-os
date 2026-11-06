@@ -236,36 +236,18 @@ def test_ocr_parses_compact_day_month_header_date(tmp_path: Path) -> None:
     assert _by_concept(got)[REVENUE] == Decimal("1000.00")
 
 
-def test_ocr_rejects_nine_month_column_even_when_it_is_leftmost(tmp_path: Path) -> None:
-    """A readable nine-month marker can never win over the quarter marker."""
+@pytest.mark.parametrize("marker", ["Nine months ended", "Six months ended"])
+def test_ocr_rejects_a_cumulative_column_even_when_it_is_leftmost(
+    tmp_path: Path, marker: str
+) -> None:
+    """A readable nine-month or half-year marker can never win over the quarter marker."""
     pdf = tmp_path / "stmt.pdf"
     sha = _write_garbled_pdf(pdf)
     body = _statement_tokens(current_x=_CMP_X, comparison_x=_CUR_X)[4:]
     header = (
         _tok("(Rs. in Crore)", _LBL_X, 40.0),
         _tok("Consolidated", 200.0, 52.0),
-        _tok("Nine months ended", _CUR_X, 65.0, w_pt=70.0),
-        _tok("Quarter ended", _CMP_X, 65.0, w_pt=55.0),
-        _tok("December 31,", _CUR_X, 80.0, w_pt=55.0),
-        _tok("December 31,", _CMP_X, 80.0, w_pt=55.0),
-        _tok("2024", _CUR_X, 95.0),
-        _tok("2024", _CMP_X, 95.0),
-    )
-
-    got = _recover(pdf, sha, _MockOcrEngine((*header, *body)))
-
-    assert _by_concept(got)[REVENUE] == Decimal("1000.00")
-
-
-def test_ocr_rejects_six_month_column_even_when_it_is_leftmost(tmp_path: Path) -> None:
-    """A readable half-year marker can never win over the quarter marker."""
-    pdf = tmp_path / "stmt.pdf"
-    sha = _write_garbled_pdf(pdf)
-    body = _statement_tokens(current_x=_CMP_X, comparison_x=_CUR_X)[4:]
-    header = (
-        _tok("(Rs. in Crore)", _LBL_X, 40.0),
-        _tok("Consolidated", 200.0, 52.0),
-        _tok("Six months ended", _CUR_X, 65.0, w_pt=70.0),
+        _tok(marker, _CUR_X, 65.0, w_pt=70.0),
         _tok("Quarter ended", _CMP_X, 65.0, w_pt=55.0),
         _tok("December 31,", _CUR_X, 80.0, w_pt=55.0),
         _tok("December 31,", _CMP_X, 80.0, w_pt=55.0),

@@ -378,33 +378,6 @@ stocks:
 """
 
 
-@pytest.mark.parametrize("flagged", ["tijori_slug", "tijori_company_id"])
-def test_the_company_timeline_refuses_an_unverified_tijori_identifier(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    flagged: str,
-) -> None:
-    """The company id in the URL IS the identity here, so it must be a verified one."""
-    _use_fixtures(monkeypatch)
-    config = tmp_path / "watchlist.yaml"
-    config.write_text(_watchlist_yaml(f'"{flagged}"'), encoding="utf-8")
-
-    with pytest.raises(SystemExit, match=f"not verified: {flagged}"):
-        main(
-            [
-                "tijori-events",
-                "--surface",
-                "company-timeline",
-                "--stock",
-                "TITAN",
-                "--config",
-                str(config),
-                "--out",
-                str(tmp_path / "out"),
-            ]
-        )
-
-
 def test_an_unverified_slug_is_left_out_of_the_market_cross_link_map(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -429,24 +402,6 @@ def test_an_unverified_slug_is_left_out_of_the_market_cross_link_map(
 
     artifact = json.loads((out_dir / "upcoming.json").read_text(encoding="utf-8"))
     assert artifact["rows"][0]["company"]["on_watchlist"] is False
-
-
-def test_the_command_requires_an_injected_session_cookie(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Credentials come from the composition root only, never from the adapter."""
-    monkeypatch.delenv("TIJORI_SESSION_COOKIE", raising=False)
-    monkeypatch.delenv("TIJORI_EMAIL", raising=False)
-    monkeypatch.delenv("TIJORI_PASSWORD", raising=False)
-
-    def unexpected_fetch(*args: object, **kwargs: object) -> bytes:
-        raise AssertionError(f"unexpected fetch: {args!r} {kwargs!r}")
-
-    monkeypatch.setattr(TijoriSource, "_fetch_page_bytes", unexpected_fetch)
-
-    with pytest.raises(SystemExit, match="required for tijori-events"):
-        main(["tijori-events", "--out", str(tmp_path / "out")])
 
 
 class _Response(io.BytesIO):

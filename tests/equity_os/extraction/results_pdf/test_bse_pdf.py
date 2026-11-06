@@ -486,30 +486,22 @@ def test_pfp_binds_post_associate_profit_line_not_pre_associate(tmp_path: Path) 
     assert got[PBT] == Decimal("130.68")
 
 
-def test_pfp_post_associate_survives_glyph_garbled_label(tmp_path: Path) -> None:
-    # The real LAURUSLABS text layer garbles the post-associate label
-    # ("taxes"->"laxes", "share"->"shue"); binding must rely on the clean tokens
-    # ("Net profit after" head + "associates"), so the value 92.94 is still bound.
+@pytest.mark.parametrize(
+    "post_associate_label",
+    [
+        # The real LAURUSLABS text layer garbles the label ("taxes"->"laxes",
+        # "share"->"shue"); binding must rely on the clean tokens ("Net profit after"
+        # head + "associates").
+        "Net Profit after laxes and shue of (loss)/profit from associates and joint",
+        # Worded plainly with no "associates": the plain label must bind this line and
+        # the pre-associate "Net Profit after tax" (90.61) must never win — the
+        # greedy-label regression the reviewer caught.
+        "Profit for the period",
+    ],
+)
+def test_pfp_binds_the_post_associate_line(tmp_path: Path, post_associate_label: str) -> None:
     pdf_path = tmp_path / "stmt.pdf"
-    _write_associate_statement(
-        pdf_path,
-        post_associate_label=(
-            "Net Profit after laxes and shue of (loss)/profit from associates and joint"
-        ),
-    )
-    got = _by_concept(
-        extract_consolidated_pl(_load(pdf_path), spec=_spec(), retrieved_at=_RETRIEVED_AT)
-    )
-    assert got[PFP] == Decimal("92.94")
-
-
-def test_pfp_post_associate_worded_without_associates_binds_via_primary(tmp_path: Path) -> None:
-    # A filer with associates below tax whose profit-for-the-period line is worded
-    # plainly ("Profit for the period", no "associates"): the plain label must bind
-    # that line (92.94), and the pre-associate "Net Profit after tax" (90.61) must
-    # never win — guarding against the greedy-label regression the reviewer caught.
-    pdf_path = tmp_path / "stmt.pdf"
-    _write_associate_statement(pdf_path, post_associate_label="Profit for the period")
+    _write_associate_statement(pdf_path, post_associate_label=post_associate_label)
     got = _by_concept(
         extract_consolidated_pl(_load(pdf_path), spec=_spec(), retrieved_at=_RETRIEVED_AT)
     )

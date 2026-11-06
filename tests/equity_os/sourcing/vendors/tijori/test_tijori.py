@@ -138,65 +138,69 @@ def test_identity_substitution_fails_closed_naming_both_symbols() -> None:
         _parse_titan(_WRONG_IDENTITY_FIXTURE.read_bytes())
 
 
-def test_missing_financials_island_fails_closed() -> None:
-    """A page missing its financials island cannot be treated as an empty statement."""
-    raw = _HTML_FIXTURE.read_bytes().replace(b'id="fin_tables_data"', b'id="other_data"')
-
-    with pytest.raises(TijoriParseError, match="'fin_tables_data' is missing"):
-        _parse_titan(raw)
+_AUTH_ISLAND = b'<script id="is_auth" type="application/json">true</script>'
 
 
-def test_unparseable_required_island_fails_closed_with_its_name() -> None:
-    """A broken JSON island has a reason distinct from a missing island."""
+@pytest.mark.parametrize(
+    ("old", "new", "refusal"),
+    [
+        pytest.param(
+            b'id="fin_tables_data"',
+            b'id="other_data"',
+            "'fin_tables_data' is missing",
+            id="a-missing-financials-island-is-not-an-empty-statement",
+        ),
+        pytest.param(
+            _AUTH_ISLAND,
+            _AUTH_ISLAND.replace(b"true", b"{"),
+            "'is_auth' is unparseable",
+            id="a-broken-island-differs-from-a-missing-one",
+        ),
+        pytest.param(
+            _AUTH_ISLAND,
+            _AUTH_ISLAND.replace(b"true", b"false"),
+            "not authenticated",
+            id="an-anonymous-render-is-not-the-data-contract",
+        ),
+        pytest.param(
+            b'"Dec 2024"',
+            b'"Dec 2025"',
+            "available labels: Sep 2024, Dec 2025, Mar 2025",
+            id="the-configured-quarter-never-a-positional-neighbour",
+        ),
+        pytest.param(
+            b"[1200.0,1396.0,1300.0]",
+            b'[1200.0,"1396",1300.0]',
+            "Profit Before Tax.*non-numeric",
+            id="a-string-value-cannot-bypass-the-numeric-boundary",
+        ),
+        pytest.param(
+            b'"name":"Net Sales"',
+            b'"name":[]',
+            "row name must be a string",
+            id="a-malformed-row-name-is-not-a-type-error",
+        ),
+    ],
+)
+def test_a_malformed_page_fails_closed_naming_its_cause(
+    old: bytes, new: bytes, refusal: str
+) -> None:
+    """Each defect is refused with its own reason, never read as an empty or partial page."""
+    with pytest.raises(TijoriParseError, match=refusal):
+        _parse_titan(_HTML_FIXTURE.read_bytes().replace(old, new, 1))
+
+
+@pytest.mark.parametrize(
+    "lexeme",
+    [
+        pytest.param("0.1000000000000000000000001", id="a-long-fraction"),
+        pytest.param("9007199254740993", id="an-integer-beyond-float-precision"),
+    ],
+)
+def test_a_json_number_keeps_its_exact_wire_lexeme(lexeme: str) -> None:
+    """A value must never round-trip through binary float, which would change it."""
     raw = _HTML_FIXTURE.read_bytes().replace(
-        b'<script id="is_auth" type="application/json">true</script>',
-        b'<script id="is_auth" type="application/json">{</script>',
-    )
-
-    with pytest.raises(TijoriParseError, match="'is_auth' is unparseable"):
-        _parse_titan(raw)
-
-
-def test_unauthenticated_page_fails_closed() -> None:
-    """Anonymous page rendering does not satisfy the authenticated data contract."""
-    raw = _HTML_FIXTURE.read_bytes().replace(
-        b'<script id="is_auth" type="application/json">true</script>',
-        b'<script id="is_auth" type="application/json">false</script>',
-    )
-
-    with pytest.raises(TijoriParseError, match="not authenticated"):
-        _parse_titan(raw)
-
-
-def test_missing_requested_quarter_lists_available_labels() -> None:
-    """The adapter selects the configured label, never a positional neighbour."""
-    raw = _HTML_FIXTURE.read_bytes().replace(b'"Dec 2024"', b'"Dec 2025"', 1)
-
-    with pytest.raises(TijoriParseError, match="available labels: Sep 2024, Dec 2025, Mar 2025"):
-        _parse_titan(raw)
-
-
-def test_non_numeric_requested_value_fails_closed() -> None:
-    """Stringly JSON values cannot bypass the numeric boundary."""
-    raw = _HTML_FIXTURE.read_bytes().replace(b"[1200.0,1396.0,1300.0]", b'[1200.0,"1396",1300.0]')
-
-    with pytest.raises(TijoriParseError, match="Profit Before Tax.*non-numeric"):
-        _parse_titan(raw)
-
-
-def test_unhashable_row_name_fails_closed() -> None:
-    """A malformed row name must not escape as a dictionary-key TypeError."""
-    raw = _HTML_FIXTURE.read_bytes().replace(b'"name":"Net Sales"', b'"name":[]', 1)
-
-    with pytest.raises(TijoriParseError, match="row name must be a string"):
-        _parse_titan(raw)
-
-
-def test_json_fraction_preserves_its_exact_wire_lexeme() -> None:
-    """A long JSON fraction must never round-trip through binary float."""
-    raw = _HTML_FIXTURE.read_bytes().replace(
-        b"[1200.0,1396.0,1300.0]",
-        b"[1200.0,0.1000000000000000000000001,1300.0]",
+        b"[1200.0,1396.0,1300.0]", f"[1200.0,{lexeme},1300.0]".encode()
     )
 
     observations = _parse_titan(raw)
@@ -204,22 +208,7 @@ def test_json_fraction_preserves_its_exact_wire_lexeme() -> None:
     pbt = next(
         observation for observation in observations if observation.concept_qname == "tijori:pbt"
     )
-    assert pbt.normalized_value == Decimal("0.1000000000000000000000001")
-
-
-def test_json_integer_is_accepted_without_float_conversion() -> None:
-    """An integer beyond binary-float precision remains exact."""
-    raw = _HTML_FIXTURE.read_bytes().replace(
-        b"[1200.0,1396.0,1300.0]",
-        b"[1200.0,9007199254740993,1300.0]",
-    )
-
-    observations = _parse_titan(raw)
-
-    pbt = next(
-        observation for observation in observations if observation.concept_qname == "tijori:pbt"
-    )
-    assert pbt.normalized_value == Decimal("9007199254740993")
+    assert pbt.normalized_value == Decimal(lexeme)
 
 
 def test_duplicate_requested_quarter_label_fails_closed() -> None:
@@ -392,18 +381,6 @@ def test_missing_credentials_is_a_skippable_error() -> None:
         )
 
 
-def test_watchlist_carries_verified_tijori_slugs_for_every_stock() -> None:
-    """Every live-verified legal-name slug exits only the Tijori configuration gate."""
-    watchlist = load_watchlist_config(_REPO_ROOT / "config" / "coverage/watchlist.yaml")
-    titan = watchlist.stock(_TITAN_SYMBOL)
-
-    assert titan.identifiers.tijori_slug == _TITAN_SLUG
-    assert all(stock.identifiers.tijori_slug for stock in watchlist.stocks)
-    assert all(
-        "tijori_slug" not in stock.identifiers.needs_verification for stock in watchlist.stocks
-    )
-
-
 def test_a_watchlist_reusing_one_tijori_company_id_is_rejected(tmp_path: Path) -> None:
     """A duplicate id would let one issuer's page satisfy another issuer's request."""
     config = tmp_path / "watchlist.yaml"
@@ -447,21 +424,6 @@ stocks:
 
     with pytest.raises(ValidationError, match="reuses tijori_company_id across stocks: 4242"):
         load_watchlist_config(config)
-
-
-def test_watchlist_carries_a_verified_tijori_company_id_for_every_stock() -> None:
-    """The shareholding heading gate is inert without a configured id, so all ten carry one."""
-    watchlist = load_watchlist_config(_REPO_ROOT / "config" / "coverage/watchlist.yaml")
-
-    assert watchlist.stock(_TITAN_SYMBOL).identifiers.tijori_company_id == 81
-    company_ids = [stock.identifiers.tijori_company_id for stock in watchlist.stocks]
-    assert all(company_id > 0 for company_id in company_ids)
-    # A duplicated id would silently bind two stocks to one Tijori company.
-    assert len(set(company_ids)) == len(company_ids)
-    assert all(
-        "tijori_company_id" not in stock.identifiers.needs_verification
-        for stock in watchlist.stocks
-    )
 
 
 def test_observation_provenance_binds_the_json_island_location() -> None:

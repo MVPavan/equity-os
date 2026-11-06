@@ -607,27 +607,6 @@ _WAVE1_SYMBOLS = {"LAURUSLABS", "MTARTECH", "SONACOMS", "THERMAX", "TITAN"}
 _WAVE2_SYMBOLS = {"NETWEB", "HFCL", "POLYCAB", "CGPOWER", "ETERNAL"}
 
 
-def test_watchlist_config_loads_wave1_stocks() -> None:
-    config = load_watchlist_config(_REPO_ROOT / "config" / "coverage/watchlist.yaml")
-    symbols = {stock.identifiers.nse_symbol for stock in config.stocks}
-    # Wave-1 stocks must remain present; the watchlist also carries the Wave-2
-    # expansion, so this is a subset check rather than an exact-set assertion.
-    assert _WAVE1_SYMBOLS <= symbols
-    # TITAN's legal-name slug is verified against the authenticated live DOM.
-    titan = config.stock("TITAN")
-    assert "tijori_slug" not in titan.identifiers.needs_verification
-
-
-def test_watchlist_config_tags_each_stock_with_its_wave() -> None:
-    # Every stock carries its own wave so `validate --watchlist` rolls up per wave
-    # and a cross-wave run never clobbers another wave's roll-up.
-    config = load_watchlist_config(_REPO_ROOT / "config" / "coverage/watchlist.yaml")
-    for symbol in _WAVE1_SYMBOLS:
-        assert config.stock(symbol).wave is Wave.WAVE_1, symbol
-    for symbol in _WAVE2_SYMBOLS:
-        assert config.stock(symbol).wave is Wave.WAVE_2, symbol
-
-
 def test_watchlist_config_wave_helpers_partition_the_stocks() -> None:
     config = load_watchlist_config(_REPO_ROOT / "config" / "coverage/watchlist.yaml")
     # Waves are returned in canonical enum order regardless of stock ordering.

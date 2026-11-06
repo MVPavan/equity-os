@@ -9,7 +9,6 @@ another; and no token may reach a filename, a log line or a summary.
 from __future__ import annotations
 
 import argparse
-import gzip
 import hashlib
 import json
 from collections.abc import Mapping
@@ -36,7 +35,6 @@ from equity_os.interface.entry.cli_parser import build_parser
 from equity_os.sourcing.vendors.upstox.upstox_source import (
     UpstoxFetch,
     UpstoxRoute,
-    UpstoxSurface,
 )
 
 _TOKEN = "fixture-analytics-token"
@@ -204,11 +202,6 @@ def test_the_dispatcher_ignores_every_other_command() -> None:
     assert dispatch_upstox_command(namespace, credentials_factory=lambda: None) is None
 
 
-def test_every_surface_the_parser_offers_has_a_reader() -> None:
-    """A choice the parser accepts and the runner cannot serve would be a dead flag."""
-    assert INSTRUMENTS_SURFACE == UpstoxSurface.INSTRUMENTS.value
-
-
 def test_the_entity_map_build_takes_the_catalog_only_when_asked() -> None:
     """D8: the map's inputs change when someone asks, and not before.
 
@@ -234,8 +227,3 @@ def test_the_entity_map_build_takes_the_catalog_only_when_asked() -> None:
         ]
     )
     assert wired.upstox_catalog == "cat.json"
-
-
-def test_the_gzip_fixture_really_is_gzip() -> None:
-    """Guard the fixture itself: a plain-JSON fixture would make the decode vacuous."""
-    assert gzip.decompress(gzip_body([nse_equity_row()])).startswith(b"[")

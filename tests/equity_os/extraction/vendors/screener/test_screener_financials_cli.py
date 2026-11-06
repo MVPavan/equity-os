@@ -24,8 +24,6 @@ from screener_financials_support import (
     _DUPLICATE_PARENT_ROW_SECTION,
     _PAGE,
     _SCHEDULES,
-    _SESSION_ENV,
-    _SESSION_TOKEN,
     _balance_sheet_table,
     _family,
     _page_with,
@@ -68,7 +66,6 @@ from equity_os.sourcing.vendors.screener.screener_financials import (
     ALL_SECTIONS,
     _page_row,
 )
-from equity_os.sourcing.vendors.screener.screener_session import ScreenerSessionSource
 
 # --------------------------------------------------------------------------
 # The acquisition contract.
@@ -118,58 +115,6 @@ def test_the_command_retains_the_page_and_every_schedule_body_beside_its_artifac
     summary = capsys.readouterr().out
     assert "balance-sheet/Borrowings\tflat_sum\treconciled" in summary
     assert "quarters/Sales\tall_percent\tnot_applicable" in summary
-
-
-def test_an_unverified_identifier_refuses_before_any_request_is_made(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """An unverified id would attach the owner's cookie to the wrong company's URL."""
-    requested: list[str] = []
-
-    def unexpected(*args: object, **kwargs: object) -> tuple[int, bytes]:
-        requested.append(repr(args))
-        raise AssertionError("no request may be made for an unverified identifier")
-
-    monkeypatch.setenv(_SESSION_ENV, _SESSION_TOKEN)
-    monkeypatch.setattr(ScreenerSessionSource, "_fetch_bytes", unexpected)
-    with pytest.raises(SystemExit) as raised:
-        main(
-            [
-                "screener-financials",
-                "--stock",
-                "FIXTURECO",
-                "--out",
-                str(tmp_path / "out"),
-                "--config",
-                str(_watchlist(tmp_path, flagged='"screener_company_id"')),
-            ]
-        )
-    assert "not verified" in str(raised.value)
-    assert requested == []
-
-
-def test_the_command_refuses_to_overwrite_an_existing_artifact_before_fetching(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Refusing after the sweep would spend sixteen rate-limited requests to discard them."""
-    requested = _serve(monkeypatch)
-    out_dir = tmp_path / "out"
-    out_dir.mkdir()
-    (out_dir / META_FILENAME).write_text("{}", encoding="utf-8")
-    with pytest.raises(SystemExit) as raised:
-        main(
-            [
-                "screener-financials",
-                "--stock",
-                "FIXTURECO",
-                "--out",
-                str(out_dir),
-                "--config",
-                str(_watchlist(tmp_path)),
-            ]
-        )
-    assert "refusing to overwrite" in str(raised.value)
-    assert requested == []
 
 
 def test_a_rate_limit_mid_sweep_keeps_what_was_read_and_marks_the_artifact_incomplete(

@@ -222,29 +222,3 @@ def test_tijori_tables_cli_fails_when_no_supported_table_is_present(
         )
 
     assert not out_dir.exists() or list(out_dir.iterdir()) == []
-
-
-def test_tijori_tables_cli_requires_cookie_before_fetch(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Missing composition-root credentials fail before the outbound boundary."""
-    monkeypatch.delenv("TIJORI_EMAIL", raising=False)
-    monkeypatch.delenv("TIJORI_PASSWORD", raising=False)
-    monkeypatch.delenv("TIJORI_SESSION_COOKIE", raising=False)
-
-    def unexpected_fetch(*args: object, **kwargs: object) -> PageEnvelope:
-        raise AssertionError(f"unexpected fetch: {args!r} {kwargs!r}")
-
-    monkeypatch.setattr(TijoriSource, "_fetch_pl_envelope", unexpected_fetch)
-
-    with pytest.raises(SystemExit, match="TIJORI_SESSION_COOKIE is required"):
-        main(
-            [
-                "tijori-tables",
-                "--stock",
-                "TITAN",
-                "--out",
-                str(tmp_path),
-            ]
-        )

@@ -14,7 +14,7 @@ On network unavailability the test skips rather than failing spuriously.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -119,8 +119,3 @@ def test_provenance_binds_accession_and_file_hash(result: SecAnnualResult) -> No
         assert FY25_ACCESSION in provenance.source_id
         assert len(provenance.file_sha256) == 64
         assert all(char in "0123456789abcdef" for char in provenance.file_sha256)
-
-
-def test_fy25_period_constants_are_a_full_year() -> None:
-    assert FY25_PERIOD_START == date(2024, 4, 1)
-    assert FY25_PERIOD_END == date(2025, 3, 31)

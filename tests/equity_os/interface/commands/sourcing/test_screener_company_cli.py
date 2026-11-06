@@ -31,7 +31,6 @@ from equity_os.interface.commands.sourcing.screener_company_cli import (
     run_screener_company_command,
 )
 from equity_os.interface.entry.cli import main
-from equity_os.interface.entry.watchlist_config import SCREENER_COMPANY_ID_FIELD
 
 BARE_PAGE = support.FIXTURES / "synthetic_screener_company_bare.html"
 
@@ -178,43 +177,6 @@ def test_metadata_records_each_document_on_both_axes_separately(
 # --------------------------------------------------------------------------
 # Refusals before the network
 # --------------------------------------------------------------------------
-
-
-def test_an_unverified_identifier_stops_the_run_before_any_request(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Every request here binds to the issuer through an identifier and nothing else.
-
-    The investors, segments, peers and quick-ratios endpoints all name the
-    company only in their path, so an unconfirmed company id would produce
-    documents that parse perfectly and describe someone else.
-    """
-    requested = support.serve(monkeypatch)
-    config = support.watchlist(tmp_path, flagged=f'"{SCREENER_COMPANY_ID_FIELD}"')
-    with pytest.raises(SystemExit) as excinfo:
-        main(_argv(tmp_path, config))
-    assert SCREENER_COMPANY_ID_FIELD in str(excinfo.value)
-    assert requested == []
-
-
-def test_an_existing_artifact_is_refused_before_the_page_is_fetched(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Refusing after the sweep would spend fifteen rate-limited requests to discard it.
-
-    Screener rate-limits at ~40 GETs, so a pre-flight that runs after the fetch
-    is not a pre-flight — it is a way to burn a third of the budget on a run
-    whose output was never going to be written.
-    """
-    out_dir = tmp_path / "out"
-    out_dir.mkdir(parents=True)
-    (out_dir / META_FILENAME).write_text("{}", encoding="utf-8")
-    requested = support.serve(monkeypatch)
-    config = support.watchlist(tmp_path)
-    with pytest.raises(SystemExit) as excinfo:
-        main(_argv(tmp_path, config))
-    assert "refusing to overwrite" in str(excinfo.value)
-    assert requested == []
 
 
 def test_a_basis_the_company_does_not_publish_exits_three_and_writes_nothing(

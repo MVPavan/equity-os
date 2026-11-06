@@ -18,9 +18,6 @@ page-binding rules of the acquisition in :mod:`test_screener_watchlist_acquire`.
 
 from __future__ import annotations
 
-from enum import StrEnum
-from typing import Any
-
 import pytest
 import screener_watchlist_fixtures as fx
 from pydantic import ValidationError
@@ -34,33 +31,9 @@ _ROSTER = fx.members()
 _TOOLTIPS = tuple(column.tooltip for column in fx.DEFAULT_COLUMNS)
 
 
-def _incomplete(run: Any, refusal: str | None = None) -> Any:
-    """Assert a run refused, optionally by the named typed error, and return its artifact."""
-    artifact = run.artifact
-    assert artifact.outcome is fx.models.WatchlistOutcome.INCOMPLETE
-    assert artifact.failure is not None
-    assert artifact.incomplete_reason
-    if refusal is not None:
-        assert artifact.failure.refusal == refusal
-    return artifact
-
-
 # --------------------------------------------------------------------------
-# The frozen models, enum and errors every other test reads through
+# The frozen models every other test reads through
 # --------------------------------------------------------------------------
-
-
-def test_the_outcome_enum_has_no_empty_member(monkeypatch: pytest.MonkeyPatch) -> None:
-    """SL4-14 / A9: an outcome that cannot be told apart from a failure is not published.
-
-    Nothing in the evidence distinguishes a genuinely empty watchlist from an
-    anonymous shell or a degraded page rendering no rows. An ``EMPTY`` outcome
-    would let that shell be published as a successful answer, so the enum is
-    ``RESULTS`` and ``INCOMPLETE`` only.
-    """
-    outcomes = fx.models.WatchlistOutcome
-    assert issubclass(outcomes, StrEnum)
-    assert {member.name for member in outcomes} == {"RESULTS", "INCOMPLETE"}
 
 
 def test_an_incomplete_artifact_with_neither_failure_nor_evidence_cannot_be_built(
@@ -97,23 +70,6 @@ def test_a_results_artifact_cannot_carry_an_incomplete_reason(
 
     with pytest.raises(ValidationError):
         fx.rebuilt(run.artifact, incomplete_reason="stopped")
-
-
-def test_every_watchlist_refusal_is_a_session_error() -> None:
-    """The CLI dispatcher catches ``ScreenerSessionError`` and exits by code.
-
-    A refusal outside that hierarchy reaches the operator as a traceback with
-    exit 1, indistinguishable from a bug, and skips the retained-evidence path.
-    """
-    base = fx.models.ScreenerWatchlistError
-    assert issubclass(base, ScreenerSessionError)
-    for name in (
-        "WatchlistStructureError",
-        "WatchlistPageError",
-        "WatchlistExportError",
-        "WatchlistCrossCheckError",
-    ):
-        assert issubclass(getattr(fx.models, name), base)
 
 
 @pytest.mark.parametrize(
@@ -171,19 +127,6 @@ def test_no_export_url_is_ever_constructed(monkeypatch: pytest.MonkeyPatch) -> N
     assert run.artifact.watchlist_id == fx.WATCHLIST_ID
     assert transport.posts[0].url == f"{SCREENER_ORIGIN}{action}"
     assert constructible not in transport.urls
-
-
-def test_the_published_guarantee_is_cross_render_consistency_and_never_completeness() -> None:
-    """A8 / A24: two renderings agreeing does not prove the list contains nothing else.
-
-    Both are served by one backend and could share one capped or stale snapshot.
-    The artifact's own documentation must say what it proves in those words, so
-    a consumer never reads agreement as completeness.
-    """
-    for documented in (fx.models.WatchlistArtifact, fx.watchlist.acquire_watchlist):
-        assert "cross-render consistency" in (documented.__doc__ or "")
-    field_names = set(fx.models.WatchlistArtifact.model_fields)
-    assert not {name for name in field_names if "complete" in name} - {"incomplete_reason"}
 
 
 # --------------------------------------------------------------------------

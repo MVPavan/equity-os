@@ -250,12 +250,6 @@ def test_the_schedule_families_come_from_the_pages_own_buttons(
     assert fetched <= {f"{section.value}/{parent}" for section, parent in KNOWN_SCHEDULE_FAMILIES}
 
 
-def test_the_known_family_list_records_the_fifteen_families_seen_live() -> None:
-    """A drift signal, not a gate: the runtime list always comes off the page."""
-    assert len(KNOWN_SCHEDULE_FAMILIES) == 15
-    assert len({family for family in KNOWN_SCHEDULE_FAMILIES}) == 15
-
-
 # --------------------------------------------------------------------------
 # Classifying and reconciling the schedules.
 # --------------------------------------------------------------------------

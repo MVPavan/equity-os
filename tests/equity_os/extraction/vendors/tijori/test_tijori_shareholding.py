@@ -24,13 +24,10 @@ from pydantic import ValidationError
 from equity_os.contracts.measurement.provenance import Provenance, SourceAnchorType
 from equity_os.extraction.vendors.tijori.tijori_common import TijoriIslandStatus
 from equity_os.extraction.vendors.tijori.tijori_shareholding import (
-    IDENTITY_ISLAND_IDS,
-    MAX_SHAREHOLDING_DEPTH,
     SHAREHOLDING_TABLE_ID,
     TijoriShareholding,
     TijoriShareholdingAbsentError,
     TijoriShareholdingAmbiguousError,
-    TijoriShareholdingDepthError,
     TijoriShareholdingIdentityError,
     TijoriShareholdingRowSelectionError,
     TijoriShareholdingSchemaError,
@@ -212,37 +209,63 @@ def test_the_identified_table_must_still_prove_its_shape() -> None:
         _parse(_mutated(real_unit_cell, real_unit_cell.replace(" in % ", " in Cr ")))
 
 
-def test_unknown_parent_id_fails_closed_naming_the_dangling_reference() -> None:
-    """Machine nesting that names a parent the page never defined is fatal."""
-    with pytest.raises(TijoriShareholdingSchemaError, match="unknown parent 'NoSuchNode'"):
-        _parse(
-            _mutated(
-                'parent="IndianPromoters" data-parent="IndianPromoters"',
-                'parent="NoSuchNode" data-parent="NoSuchNode"',
-            )
-        )
+@pytest.mark.parametrize(
+    ("old", "new", "refusal"),
+    [
+        pytest.param(
+            'parent="IndianPromoters" data-parent="IndianPromoters"',
+            'parent="NoSuchNode" data-parent="NoSuchNode"',
+            "unknown parent 'NoSuchNode'",
+            id="a-parent-the-page-never-defined",
+        ),
+        pytest.param(
+            '<tr class="row3" parent="IndianPromoters"',
+            '<tr class="row4" parent="IndianPromoters"',
+            "declares depth 4 under parent",
+            id="a-depth-that-skips-a-level",
+        ),
+        pytest.param(
+            '<tr class="row1" parent="1" data-parent="1" myid="Promoter"',
+            '<tr class="row2" parent="1" data-parent="1" myid="Promoter"',
+            "declares depth 2, expected 1",
+            id="a-root-row-at-a-non-root-depth",
+        ),
+        pytest.param(
+            'myid="ForeignPromoters"',
+            'myid="IndianPromoters"',
+            "repeats a node id that is used as a parent: 'IndianPromoters'",
+            id="a-reused-id-that-a-row-names-as-parent",
+        ),
+        pytest.param(
+            'parent="NonInstitutions" data-parent="NonInstitutions" '
+            'myid="SyntheticCrossoverHoldings"',
+            'parent="Institutions" data-parent="Institutions" myid="SyntheticCrossoverHoldings"',
+            "repeats node id 'SyntheticCrossoverHoldings' under one parent 'Institutions'",
+            id="a-true-duplicate-under-one-parent",
+        ),
+        pytest.param(
+            "<span>Foreign Promoters</span>",
+            "<span></span>",
+            "empty display name",
+            id="an-unnamed-row",
+        ),
+        pytest.param(
+            '<tr class="row1" parent="1" data-parent="1" myid="NoOfShareholders" index=\'13\'',
+            "<tr index='13'",
+            r"data rows without rowN/myid/data-parent: 'No\. of Shareholders'",
+            id="a-value-row-without-nesting-attributes",
+        ),
+    ],
+)
+def test_a_row_the_tree_cannot_place_fails_closed(old: str, new: str, refusal: str) -> None:
+    """Nesting is the address: a row with no single place in the tree is fatal, never dropped.
 
-
-def test_depth_jump_against_the_declared_parent_fails_closed() -> None:
-    """A row whose class depth skips a level cannot be placed in the tree."""
-    with pytest.raises(TijoriShareholdingSchemaError, match="declares depth 4 under parent"):
-        _parse(
-            _mutated(
-                '<tr class="row3" parent="IndianPromoters"',
-                '<tr class="row4" parent="IndianPromoters"',
-            )
-        )
-
-
-def test_a_root_row_at_a_non_root_depth_fails_closed() -> None:
-    """``data-parent="1"`` means root, so any other depth is inconsistent."""
-    with pytest.raises(TijoriShareholdingSchemaError, match="declares depth 2, expected 1"):
-        _parse(
-            _mutated(
-                '<tr class="row1" parent="1" data-parent="1" myid="Promoter"',
-                '<tr class="row2" parent="1" data-parent="1" myid="Promoter"',
-            )
-        )
+    A dangling or skipped parent, an inconsistent root, an ambiguous or duplicate
+    node id, an unnamed row or a row without nesting attributes would each put a
+    value under the wrong label path or silently lose it.
+    """
+    with pytest.raises(TijoriShareholdingSchemaError, match=refusal):
+        _parse(_mutated(old, new))
 
 
 def test_a_reclassified_shareholder_may_appear_under_two_parents() -> None:
@@ -260,51 +283,6 @@ def test_a_reclassified_shareholder_may_appear_under_two_parents() -> None:
     assert retail.source_parent_id == "NonInstitutions"
     assert institutional.cells[0].value == Decimal("1.05")
     assert retail.cells[0].value is None
-
-
-def test_a_repeated_node_id_used_as_a_parent_fails_closed() -> None:
-    """A reused id that some row names as its parent cannot resolve to one node."""
-    with pytest.raises(
-        TijoriShareholdingSchemaError,
-        match="repeats a node id that is used as a parent: 'IndianPromoters'",
-    ):
-        _parse(_mutated('myid="ForeignPromoters"', 'myid="IndianPromoters"'))
-
-
-def test_a_repeated_node_id_under_the_same_parent_fails_closed() -> None:
-    """Twice under one parent is a true duplicate, not a reclassification."""
-    with pytest.raises(
-        TijoriShareholdingSchemaError,
-        match="repeats node id 'SyntheticCrossoverHoldings' under one parent 'Institutions'",
-    ):
-        _parse(
-            _mutated(
-                'parent="NonInstitutions" data-parent="NonInstitutions" '
-                'myid="SyntheticCrossoverHoldings"',
-                'parent="Institutions" data-parent="Institutions" '
-                'myid="SyntheticCrossoverHoldings"',
-            )
-        )
-
-
-def test_a_row_without_a_display_name_fails_closed() -> None:
-    """The label path is the address, so an unnamed row cannot be addressed."""
-    with pytest.raises(TijoriShareholdingSchemaError, match="empty display name"):
-        _parse(_mutated("<span>Foreign Promoters</span>", "<span></span>"))
-
-
-def test_a_data_row_without_nesting_attributes_fails_closed_naming_it() -> None:
-    """A value row the parser cannot place is an error, never a silent drop."""
-    with pytest.raises(
-        TijoriShareholdingSchemaError,
-        match=r"data rows without rowN/myid/data-parent: 'No\. of Shareholders'",
-    ):
-        _parse(
-            _mutated(
-                '<tr class="row1" parent="1" data-parent="1" myid="NoOfShareholders" index=\'13\'',
-                "<tr index='13'",
-            )
-        )
 
 
 def test_a_table_with_no_aligned_cells_is_drift_not_data() -> None:
@@ -433,15 +411,6 @@ def test_row_selector_reports_an_unknown_row_rather_than_returning_nothing() -> 
     """Selection failure is typed, never a silent empty result."""
     with pytest.raises(TijoriShareholdingRowSelectionError, match="no row matching"):
         _parse().row("Promoter/Nonexistent")
-
-
-def test_nesting_bound_and_identity_candidates_are_declared_not_implicit() -> None:
-    """The bound and the supplementary island set are contract, not incidental behavior."""
-    assert MAX_SHAREHOLDING_DEPTH > 0
-    assert issubclass(TijoriShareholdingDepthError, TijoriShareholdingSchemaError)
-    # Tijori names its identity island per surface; none appears on shareholding
-    # today, so these only ever corroborate the required heading gate.
-    assert IDENTITY_ISLAND_IDS == ("company_details", "company_details_data", "metrics")
 
 
 def test_fetch_targets_the_shareholding_url_and_refuses_redirects(

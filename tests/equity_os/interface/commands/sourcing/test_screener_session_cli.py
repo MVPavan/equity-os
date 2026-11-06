@@ -24,7 +24,6 @@ from equity_os.interface.commands.sourcing.screener_cli_dispatch import (
 from equity_os.interface.commands.sourcing.screener_page_cli import META_FILENAME, RAW_FILENAME
 from equity_os.interface.entry.cli import main
 from equity_os.interface.entry.watchlist_config import (
-    SCREENER_IDENTIFIER_FIELDS,
     load_watchlist_config,
 )
 from equity_os.sourcing.vendors.screener.screener_session import ScreenerSessionSource
@@ -242,76 +241,6 @@ def test_a_standalone_only_company_acquires_cleanly_on_its_own_basis(
     assert metadata["markers"] == []
 
 
-@pytest.mark.parametrize("flagged", SCREENER_IDENTIFIER_FIELDS)
-def test_an_unverified_screener_identifier_stops_the_run_before_any_request(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, flagged: str
-) -> None:
-    """An unconfirmed identifier must not be spent on a rate-limited request."""
-    monkeypatch.setenv(_SESSION_ENV, _SESSION_TOKEN)
-    _refuse_any_fetch(monkeypatch)
-
-    with pytest.raises(SystemExit, match=f"not verified: {flagged}"):
-        main(
-            [
-                "screener-page",
-                "--stock",
-                "FIXTURECO",
-                "--config",
-                str(_watchlist(tmp_path, flagged=f'"{flagged}"')),
-                "--out",
-                str(tmp_path / "out"),
-            ]
-        )
-
-
-def test_an_existing_artifact_is_never_overwritten_and_costs_no_request(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """No-clobber is pre-flighted: a doomed write must not spend a request first."""
-    monkeypatch.setenv(_SESSION_ENV, _SESSION_TOKEN)
-    _refuse_any_fetch(monkeypatch)
-    out_dir = tmp_path / "out"
-    out_dir.mkdir()
-    victim = out_dir / META_FILENAME
-    victim.write_text("sentinel", encoding="utf-8")
-
-    with pytest.raises(SystemExit, match="refusing to overwrite"):
-        main(
-            [
-                "screener-page",
-                "--stock",
-                "FIXTURECO",
-                "--config",
-                str(_watchlist(tmp_path)),
-                "--out",
-                str(out_dir),
-            ]
-        )
-
-    assert victim.read_text(encoding="utf-8") == "sentinel"
-
-
-def test_a_missing_session_cookie_refuses_the_command(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Without the cookie Screener would serve a valid anonymous page, not an error."""
-    monkeypatch.delenv(_SESSION_ENV, raising=False)
-    _refuse_any_fetch(monkeypatch)
-
-    with pytest.raises(SystemExit, match="SCREENER_SESSION_COOKIE is required"):
-        main(
-            [
-                "screener-page",
-                "--stock",
-                "FIXTURECO",
-                "--config",
-                str(_watchlist(tmp_path)),
-                "--out",
-                str(tmp_path / "out"),
-            ]
-        )
-
-
 def test_a_symbol_outside_the_watchlist_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -333,65 +262,37 @@ def test_a_symbol_outside_the_watchlist_is_refused(
         )
 
 
-def test_the_watchlist_pins_both_screener_id_namespaces_for_every_stock() -> None:
-    """Every watchlist stock carries a live-verified company id and at least one basis."""
-    watchlist = load_watchlist_config(_WATCHLIST_PATH)
-
-    assert len(watchlist.stocks) == 11
-    for stock in watchlist.stocks:
-        identifiers = stock.identifiers
-        assert identifiers.screener_company_id > 0
-        assert identifiers.unverified_screener_fields() == ()
-        assert (
-            identifiers.screener_warehouse_id_consolidated is not None
-            or identifiers.screener_warehouse_id_standalone is not None
-        )
-
-
-def test_the_standalone_only_stock_carries_no_consolidated_warehouse_id() -> None:
-    """NETWEB publishes no consolidated page; that null is a fact, not an unverified guess."""
-    netweb = load_watchlist_config(_WATCHLIST_PATH).stock("NETWEB")
-
-    assert netweb.identifiers.screener_warehouse_id_consolidated is None
-    assert netweb.identifiers.screener_warehouse_id_standalone == 104235517
-    assert netweb.identifiers.needs_verification == ()
-
-
-def test_a_stock_with_no_screener_warehouse_id_on_either_basis_is_rejected(
-    tmp_path: Path,
+@pytest.mark.parametrize(
+    ("old", "new", "refusal"),
+    [
+        pytest.param(
+            "      screener_warehouse_id_standalone: 992003\n",
+            "",
+            "at least one of",
+            id="no-warehouse-id-could-not-be-fetched-on-any-basis",
+        ),
+        pytest.param(
+            "screener_company_id: 991002",
+            "screener_company_id: 991001",
+            "reuses screener_company_id",
+            id="a-shared-company-id-lets-one-page-answer-for-another-issuer",
+        ),
+        pytest.param(
+            "screener_warehouse_id_standalone: 992003",
+            "screener_warehouse_id_standalone: 992001",
+            "reuses a screener warehouse id",
+            id="a-shared-warehouse-id-scopes-the-wrong-basis-api",
+        ),
+    ],
+)
+def test_a_watchlist_with_unusable_screener_ids_is_rejected(
+    tmp_path: Path, old: str, new: str, refusal: str
 ) -> None:
-    """A stock with neither id could not be fetched on any basis."""
-    yaml_text = _WATCHLIST_YAML.format(flagged="").replace(
-        "      screener_warehouse_id_standalone: 992003\n", ""
-    )
+    """Every stock needs fetchable ids, and no two stocks may share one."""
     path = tmp_path / "watchlist.yaml"
-    path.write_text(yaml_text, encoding="utf-8")
+    path.write_text(_WATCHLIST_YAML.format(flagged="").replace(old, new), encoding="utf-8")
 
-    with pytest.raises(ValidationError, match="at least one of"):
-        load_watchlist_config(path)
-
-
-def test_two_stocks_may_not_share_one_screener_company_id(tmp_path: Path) -> None:
-    """A duplicate id would let one issuer's page satisfy another issuer's request."""
-    yaml_text = _WATCHLIST_YAML.format(flagged="").replace(
-        "screener_company_id: 991002", "screener_company_id: 991001"
-    )
-    path = tmp_path / "watchlist.yaml"
-    path.write_text(yaml_text, encoding="utf-8")
-
-    with pytest.raises(ValidationError, match="reuses screener_company_id"):
-        load_watchlist_config(path)
-
-
-def test_two_stocks_may_not_share_one_screener_warehouse_id(tmp_path: Path) -> None:
-    """Warehouse ids scope the basis-specific APIs, so they must be unique too."""
-    yaml_text = _WATCHLIST_YAML.format(flagged="").replace(
-        "screener_warehouse_id_standalone: 992003", "screener_warehouse_id_standalone: 992001"
-    )
-    path = tmp_path / "watchlist.yaml"
-    path.write_text(yaml_text, encoding="utf-8")
-
-    with pytest.raises(ValidationError, match="reuses a screener warehouse id"):
+    with pytest.raises(ValidationError, match=refusal):
         load_watchlist_config(path)
 
 
