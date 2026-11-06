@@ -70,8 +70,8 @@ promoting any mapping (§7 there).
 - Never open `stage4_holdout.yaml`, `stage4_manifest.yaml`, `data/holdout/` or `data/raw/onboarding/`.
   No new code path reads the holdout record or manifest; tests use synthetic sentinels.
 - Minimal code: every module traces to a gap below; no speculative seams or guards.
-- Files stay under 800 lines. `onboard_cli.py` is at 800 and `discovery.py` at 789: Task 1 moves
-  the freeze check out of `onboard_cli.py`; `discovery.py` stays under 800.
+- Files stay at most 800 lines. `onboard_cli.py` is at 800 and `discovery.py` at 789: Task 1 moves
+  the freeze check out of `onboard_cli.py`; `discovery.py` stays at most 800.
 - Standard data is code; nothing is derived, estimated or filled. A comparison-config identifier
   is written only from a retained capture that shows it.
 - Tests follow `.claude/rules/python/testing.md`: integration through the public commands with a
@@ -503,8 +503,10 @@ both roots (path, sha256) must equal the rehearsal's. Additions:
 - **Gated tip (F08, F13).** `commands.txt` names the gated tip the commands run on: FIVE-1's
   reviewed gate tip, or a later phase's gated tip under that phase's protocol (Phase 3 Task 11 on
   its Task 10 tip). Acquisition, rehearsal and live each record `git rev-parse HEAD` and the
-  `config/` tree id, and all equal that tip; the acquisition's recorded `acquisition_head` equals
-  it. Any difference stops before the next command.
+  `config/` tree id, and all equal that tip; an onboarding generation's recorded
+  `acquisition_head` (`acquisition.json`) equals it, and each entity acquisition's HEAD and
+  `config/` tree id, recorded in `commands.txt` with its generation number and manifest sha256,
+  equal it. Any difference stops before the next command.
 - **Windows.** Live write windows are mutually exclusive across FIVE-COMPANY-TEST, VENDOR-1 phases
   and anything else, as Phase 3's windows rule states.
 

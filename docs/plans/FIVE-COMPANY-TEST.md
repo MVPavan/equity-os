@@ -229,8 +229,10 @@ counterexample; no FY `finance_costs` cell under row 3; every row with T1 `VENDO
 eqos compare fallback --run <RUN> --store-id <STORE> --snapshot-root <SNAP> --raw-root <ROOT> \
   [--issuer-config <yaml>] [--generation <G>]
 ```
-Without `--generation` only as the acquisition (§6 step 2); rehearsal and live replay its
-generation with `--generation <G>` (§8 Q4). A run's trigger
+Without `--generation` only as the acquisition (§6 step 2); rehearsal and live replay a fallback
+that fetched with `--generation <G>` (§8 Q4). A run with no trigger fetches nothing and writes no
+generation: it is a non-fetching command, run with identical arguments and no `--generation` in
+rehearsal and live (§6 step 2). A run's trigger
 groups are its stored `CHECK_REQUIRED`, `VENDOR_UNMAPPED`, `VENDORS_DISAGREE` and
 `VENDORS_IMPRECISE` refusals, so a filing-present run may still trigger; expectations are derived
 from those stored refusals, not from filing presence. Fallback refuses before fetching if one run
@@ -310,19 +312,29 @@ Per company, in this order:
    snapshot roots (`VENDOR-1-P3.md` acquisition boundary). A command that reads earlier commands'
    writes (`compare fallback --run <RUN>`) runs after those commands' replay lines on the same
    throwaway copy. Its generation folder is the retained response manifest; its number `<G>` and
-   manifest sha256 go into `commands.txt`, after which the file is final and its sha256 recorded.
-   Acquisition output never widens an allowlist row.
-3. **Baseline.** `eqos db backup` of live, restored into a fresh `eqos_test_*`; counts and
-   fingerprints equal live's, or stop.
+   manifest sha256 go into `commands.txt`. For each entity acquisition (`evidence acquire`, and a
+   `compare fallback` that fetched), `commands.txt` also records its exact command and the HEAD
+   and `config/` tree id recorded before it (step 5), bound to its `<G>` and manifest sha256. A
+   `compare fallback` with no triggering refusal fetches nothing and writes no generation; it is
+   inventoried as a non-fetching command, with its trigger and refusal evidence (the run's stored
+   refusals) saved beside `commands.txt`, and gets no generation number. Then the file is final and
+   its sha256 recorded. Acquisition output never widens an allowlist row. The baseline backup
+   (`eqos db backup` of live) is captured once, before acquisition, and reused for step 3.
+3. **Baseline.** The backup captured before acquisition (step 2; after a drift restart, a fresh
+   `eqos db backup`), restored into a fresh `eqos_test_*`; counts and fingerprints equal live's,
+   or stop.
 4. **Rehearsal, then live, replay the same generation.** Both run the final `commands.txt`
    unchanged: every fetching command in replay mode (`--generation <G>`), so inputs are identical by
-   construction. Rehearsal runs on the fresh restore with fresh copies of both roots; live follows.
+   construction; a non-fetching fallback (step 2) runs with its identical arguments and no
+   `--generation`, and the checks assert zero fetches and no new generation. Rehearsal runs on the fresh restore with fresh copies of both roots; live follows.
    No acquisition happens in rehearsal or live.
 5. **Equal-revision rule.** Acquisition, rehearsal and live each record, before every command,
    `git rev-parse HEAD` and the `config/` tree id (`git rev-parse HEAD:config`); both must equal the
-   gated tip `commands.txt` names, and each acquisition's recorded `acquisition_head`
-   (`acquisition.json`) must equal it. A new gated revision (§5.6.1) re-applies the rule on that
-   revision with a re-inventoried `commands.txt`. Any difference stops before the next command.
+   gated tip `commands.txt` names. An onboarding generation's recorded `acquisition_head` (its
+   `acquisition.json`, which only onboarding writes) must equal it, and so must each entity
+   acquisition's HEAD and `config/` tree id recorded in `commands.txt` (step 2). A new gated
+   revision (§5.6.1) re-applies the rule on that revision with a re-inventoried `commands.txt`.
+   Any difference stops before the next command.
 6. **Checks after each command:** `eqos db check-live`; counts of every `eqos` table; business-key
    summaries (as Phase 1, plus admissions by label, counterexamples by class, fallback outcomes);
    fingerprints of pre-existing rows of touched tables, unchanged. Each command's delta stays within
