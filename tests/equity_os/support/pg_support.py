@@ -53,6 +53,9 @@ from equity_os.storage.database.test_databases import drop_test_database as drop
 REPO_ROOT = Path(__file__).resolve().parents[3]
 MIGRATIONS_DIR = REPO_ROOT / "migrations"
 TEMPLATE_INFIX = "tpl_"
+# DROP DATABASE waits for a forced cluster checkpoint; with many workers cloning and dropping,
+# queued checkpoints outlast the 30 s runtime statement timeout (eqos-1kq).
+DROP_TIMEOUT = "SET statement_timeout = '5min'"
 
 
 def mint_name(settings: PgSettings, *, template: bool = False) -> str:
@@ -61,6 +64,13 @@ def mint_name(settings: PgSettings, *, template: bool = False) -> str:
     name = f"{settings.test_db_prefix}{infix}{uuid.uuid4().hex}"[:MAX_IDENTIFIER]
     check_test_db_name(name, settings)
     return name
+
+
+def _drop_connector(conninfo: str) -> psycopg.Connection:
+    """An admin connection whose DROP DATABASE may wait out a loaded cluster's checkpoints."""
+    connection = psycopg.connect(conninfo, autocommit=True)
+    connection.execute(DROP_TIMEOUT)
+    return connection
 
 
 def load_test_settings() -> PrivilegedPgSettings:
@@ -196,7 +206,7 @@ def pg_template(tmp_path_factory: pytest.TempPathFactory) -> Iterator[PgTestData
                 dbname=name, settings=settings, logins=logins, secrets_dir=directory
             )
     finally:
-        drop_database(settings, name)
+        drop_database(settings, name, connect=_drop_connector)
 
 
 @contextmanager
@@ -208,7 +218,7 @@ def cloned_database(template: PgTestDatabase) -> Iterator[PgTestDatabase]:
     try:
         yield template.model_copy(update={"dbname": name})
     finally:
-        drop_database(settings, name)
+        drop_database(settings, name, connect=_drop_connector)
 
 
 @pytest.fixture
