@@ -1,12 +1,16 @@
 """Context for a results group with no filing package, from evidenced metadata (spec §6.3).
 
-Currency comes from the requested vendors' current interpretations of the group's periods
-(their evidenced units), framework, fiscal year and basis status from identity settings,
-``disclosed_rows`` from the vendor rows present (never their values) and the period kind from
-the longest vendor column of the group. Nothing is defaulted: a missing input raises
-``RunResolutionError`` and the group refuses. A dimensioned row a requested vendor maps
-refuses too, since its members are enumerated from a filing package (§6.1). A consolidated
-request of a standalone-only entity reads nothing: every row is ``NOT_APPLICABLE`` first.
+Currency comes from the requested vendors' current mapped interpretations of the group's
+periods (their evidenced units), framework, fiscal year and basis status from identity settings,
+and the period kind from the longest vendor column of the group. ``disclosed_rows`` and
+``statements_present`` come from table structure: every vendor row whose canonical row and
+period are established at the group's periods or end-date instant, mapped or ``INVALID``, never
+its value. A row at the group's end whose row or period cannot be established and whose row is
+not otherwise disclosed refuses: its presence cannot be assessed. Nothing is defaulted: a
+missing input raises ``RunResolutionError`` and the group refuses. A dimensioned row a
+requested vendor maps refuses too, since its members are enumerated from a filing package
+(§6.1). A consolidated request of a standalone-only entity reads nothing: every row is
+``NOT_APPLICABLE`` first.
 """
 
 from __future__ import annotations
@@ -15,7 +19,7 @@ from datetime import date
 
 from equity_os.companies.identity.identity_seed import SettingKey
 from equity_os.contracts.measurement.canonical import Basis, ReportingRegime
-from equity_os.contracts.measurement.evidence import InterpretationStatus
+from equity_os.contracts.measurement.evidence import Interpretation, InterpretationStatus
 from equity_os.contracts.measurement.measurement_key import PeriodInterval
 from equity_os.normalisation.dictionary.applicability import ApplicabilityContext
 from equity_os.verification.comparison.engine_attempts import RunResolutionError
@@ -30,11 +34,17 @@ from equity_os.verification.comparison.resolve_models import ResolvedInputs
 from equity_os.verification.comparison.run_config import LoadedConfig
 from equity_os.verification.comparison.run_family import RUN_FAMILIES
 from equity_os.verification.comparison.run_models import RunRequest
+from equity_os.verification.comparison.selection import period_end
 from equity_os.verification.comparison.vendor_sides import VendorSides
 
 VendorContext = tuple[str | None, ApplicabilityContext]
+_STRUCTURAL = frozenset({InterpretationStatus.MAPPED, InterpretationStatus.INVALID})
 _FRAMEWORK = "entity {entity_id} has no {framework} reporting framework recorded by the cutoff"
 _NO_COLUMN = "entity {entity_id} period {period_end}: no vendor column evidences the period"
+_UNASSESSABLE = (
+    "entity {entity_id} period {period_end}: vendor rows {rows} cannot be placed in the "
+    "group's structure"
+)
 _DIMENSIONED = (
     "entity {entity_id} period {period_end}: members of dimensioned rows {rows} cannot be "
     "enumerated without a filing package"
@@ -54,14 +64,27 @@ def vendor_group_context(
     (entity_id, basis, end), cutoff = group, request.cutoff
     family = RUN_FAMILIES[request.scope.family]
     status = basis_status(inputs.basis_statuses, entity_id, cutoff)
-    items = [
+    window = {*periods, PeriodInterval.at(end)}
+    scoped = [
         item
         for item in vendors.group_interpretations(entity_id, basis, end)
-        if item.status is InterpretationStatus.MAPPED
-        and item.entity_id == entity_id
-        and item.basis is basis
-        and item.period in periods
+        if item.entity_id == entity_id and item.basis is basis
     ]
+    items = [
+        item
+        for item in scoped
+        if item.status is InterpretationStatus.MAPPED and item.period in periods
+    ]
+    disclosed = frozenset(
+        item.canonical_id
+        for item in scoped
+        if item.status in _STRUCTURAL and item.canonical_id and item.period in window
+    )
+    unplaced = sorted(
+        str(item.canonical_id or item.interpretation_id)
+        for item in scoped
+        if _unplaced(item, end) and item.canonical_id not in disclosed
+    )
     currency = reporting_currency(items, inputs.basis_statuses, entity_id, basis, end, cutoff)
     columns = [period for period in periods if any(item.period == period for item in items)]
     if currency is not None:
@@ -74,6 +97,10 @@ def vendor_group_context(
             )
         if not columns:
             raise RunResolutionError(_NO_COLUMN.format(entity_id=entity_id, period_end=end))
+        if unplaced:
+            raise RunResolutionError(
+                _UNASSESSABLE.format(entity_id=entity_id, period_end=end, rows=unplaced)
+            )
         if dimensioned := _vendor_dimensioned(config, request):
             raise RunResolutionError(
                 _DIMENSIONED.format(entity_id=entity_id, period_end=end, rows=dimensioned)
@@ -82,15 +109,24 @@ def vendor_group_context(
     return currency, ApplicabilityContext(
         regime=ReportingRegime.IN_LODR,
         document_type=family.document_type,
-        statements_present=frozenset(),
+        statements_present=frozenset(config.dictionary.row(row).family for row in disclosed),
         period_kind=(columns or periods)[-1].kind(fiscal_month),
         requested_basis=basis,
         entity_basis_status=status,
         evidenced_segment_bases=segment_bases(
             segment_members(inputs.segment_members, entity_id, cutoff), occurrences
         ),
-        disclosed_rows=frozenset(item.canonical_id for item in items if item.canonical_id),
+        disclosed_rows=disclosed,
     )
+
+
+def _unplaced(item: Interpretation, end: date) -> bool:
+    """A vendor row at (or of unknown) period end whose canonical row or period is unknown."""
+    unknown = item.status is InterpretationStatus.PERIOD_AMBIGUOUS or (
+        item.status is InterpretationStatus.INVALID
+        and (item.canonical_id is None or item.period is None)
+    )
+    return unknown and (item.period is None or period_end(item.period) == end)
 
 
 def _vendor_dimensioned(config: LoadedConfig, request: RunRequest) -> list[str]:
