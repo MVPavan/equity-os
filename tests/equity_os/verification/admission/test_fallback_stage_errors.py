@@ -25,6 +25,7 @@ from equity_os.contracts.measurement.canonical import Basis
 from equity_os.contracts.verification.vendor_first import FallbackFailure
 from equity_os.verification.admission import fallback
 from equity_os.verification.comparison.engine_attempts import RunResolutionError
+from equity_os.verification.comparison.run_models import RunExitStatus
 
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
 
@@ -83,12 +84,11 @@ def test_stage_error_ends_unresolved(
 def test_other_errors_propagate(
     pg_db: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An error that is not a source-parse or resolution failure is not turned into an
-    outcome."""
+    """An error that is not a source-parse or resolution failure escapes the fallback as a
+    command failure; it is not turned into an outcome."""
     served = _served()
     issuer = _associates_omitted(served, tmp_path)
     monkeypatch.setattr(fallback, "execute_run", _broken_rerun)
     with _Fallback(pg_db, tmp_path, monkeypatch, Basis.CONSOLIDATED) as run:
-        with pytest.raises(KeyError):
-            run.main(served, issuer)
+        assert run.main(served, issuer) == RunExitStatus.FAILURE
         assert not run.read(OUTCOMES)
