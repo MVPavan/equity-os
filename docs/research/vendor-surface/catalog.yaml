@@ -1243,6 +1243,19 @@ screener:
       status: none
       ref: S23
     notes: 'Metric sets: Price-DMA50-DMA200-Volume, PE, Sales & Margin, EV/EBITDA, Price to Book, Market Cap/Sales.'
+  - id: concall-summary
+    scope: company
+    url_pattern: /concalls/summary/{concall_id}/
+    format: html
+    found_by:
+    - opus
+    eligible_crawlers:
+    - opus
+    contents:
+    - Concall summary text
+    existing:
+      status: none
+    notes: 'Notes button of the company page #documents concalls rows. Evidence status: not yet captured (VENDOR-1 Phase 2 Task 2 captures it).'
   - id: forecasts
     scope: company
     url_pattern: /forecasts/{company_id}/?consolidated=

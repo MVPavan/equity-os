@@ -84,7 +84,6 @@ NAMED_PATHS = (
     "/watchlist/",
     "/api/portfolio/task-status/",
     "/api/portfolio/refresh-status/",
-    "/concalls/summary/",
     "/results/concall-summaries/",
 )
 LOG = structlog.get_logger()

@@ -170,6 +170,7 @@ sources:
   - schedules-api
   - investors-api
   - segments-api
+  - concall-summary
   - forecasts
   - related-party
   - corporate-actions-modal

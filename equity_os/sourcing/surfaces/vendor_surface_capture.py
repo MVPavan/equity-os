@@ -13,7 +13,7 @@ from urllib.parse import quote, urlsplit
 from lxml.etree import ParserError  # type: ignore[import-untyped]
 from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from equity_os.companies.identity.identity_layers import latest_slice, resolve_owner
 from equity_os.companies.onboarding.verification import tijori_candidate, tijori_page_state
@@ -116,6 +116,7 @@ class RunReport(BaseModel):
     refused: tuple[str, ...]
     incomplete: tuple[str, ...]
     stopped_sites: tuple[Site, ...]
+    frozen_stop: bool = Field(default=False, exclude=True)
 
 
 def company_ids(stock: StockConfig) -> CompanyIds:
@@ -688,8 +689,12 @@ def capture_company(
     specs: tuple[SurfaceSpec, ...],
     ids: CompanyIds,
     requests: tuple[Request, ...] | None = None,
+    frozen: frozenset[str] | None = None,
 ) -> RunReport:
     """Capture company obligations, or a scheduled subset, through the site gates.
+
+    With `frozen`, a request outside it is refused before fetching, and before the first advertised
+    child is fetched the requested-or-pending set must equal it, else the run stops there.
 
     A scheduled subset captures only its requests (plus those a newly verified slug or company id
     makes possible); advertised children wait for the scheduler's next round.
@@ -739,11 +744,25 @@ def capture_company(
         ["tijori:slug resolution request"] * (discovery_expected - discovery_completed)
     )
     seen: set[str] = set()
+    initial = {r.url for r in pending}
+    frozen_stop = False
     while pending:
         request = pending.pop(0).model_copy(update={"ids": ids})
         if request.url in seen:
             expected -= 1
             continue
+        if frozen is not None:
+            if request.url not in initial and not frozen_stop:
+                known_urls = seen | {r.url for r in pending} | {request.url}
+                differing = sorted(request_key(u) for u in known_urls.symmetric_difference(frozen))
+                if differing:
+                    incomplete.extend(f"frozen set differs: {key}" for key in differing)
+                    frozen_stop = True
+                    break
+            if request.url not in frozen:
+                seen.add(request.url)
+                refused.append(request.report_key)
+                continue
         if request.spec.site in blocked:
             seen.add(request.url)
             if request.url not in cached:
@@ -876,4 +895,5 @@ def capture_company(
         refused=tuple(refused),
         incomplete=tuple(incomplete),
         stopped_sites=tuple(dict.fromkeys(stopped)),
+        frozen_stop=frozen_stop,
     )

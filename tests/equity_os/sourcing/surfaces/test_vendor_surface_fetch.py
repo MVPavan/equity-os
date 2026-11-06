@@ -112,7 +112,6 @@ KEYS = "ack acked mark mark_read mark_as_seen seen read dismiss".split()
         "/dashboard/",
         "/api/portfolio/task-status/",
         "/annual-reports/1/summary/",
-        "/concalls/summary/1/",
         "/results/concall-summaries/",
         "/%2e%2e/watchlist/../delete/",
         "//in//watchlist/company/1",
@@ -131,6 +130,7 @@ def test_deny_list(path):
     [
         "/company/ask-automotive-ltd/",
         "/ratios/gallery/",
+        "/concalls/summary/1/",
     ],
 )
 def test_read_only_exceptions(path):

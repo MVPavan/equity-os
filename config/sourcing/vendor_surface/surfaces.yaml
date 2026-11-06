@@ -110,6 +110,7 @@
 - {site: screener-subscriber, id: schedules-api, scope: COMPANY, path: '/api/company/{company_id}/schedules/?parent={row}&section={section}&consolidated=', group: READER, cadence: AFTER_RESULTS, expand: screener_schedules}
 - {site: screener-subscriber, id: investors-api, scope: COMPANY, path: '/api/3/{company_id}/investors/{class}/{quarterly|yearly}/', group: READER, cadence: WEEKLY, expand: screener_investors}
 - {site: screener-subscriber, id: segments-api, scope: COMPANY, path: '/api/segments/{company_id}/{quarters|profit-loss}/{segment_type}/?consolidated=', group: READER, cadence: AFTER_RESULTS, expand: screener_segments}
+- {site: screener-subscriber, id: concall-summary, scope: COMPANY, path: '/concalls/summary/{concall_id}/', group: NONE, cadence: AFTER_RESULTS, expand: screener_concall_summaries}
 - {site: screener-subscriber, id: forecasts, scope: COMPANY, path: '/forecasts/{company_id}/?consolidated=', group: NONE, cadence: WEEKLY}
 - {site: screener-subscriber, id: related-party, scope: COMPANY, path: '/results/rpt/{company_id}/[consolidated/]', group: READER, cadence: WEEKLY}
 - {site: screener-subscriber, id: corporate-actions-modal, scope: COMPANY, path: '/company/actions/{company_id}/', group: READER, cadence: WEEKLY, xhr: true}

@@ -29,7 +29,7 @@ A link-following crawler must deny-list `rename`, `add`, `create`, `remove`, `de
 | screener | `/password_change/`, `/user/account/email/`, `/user/account/delete/`, `/login/`, logout | account | Credential, account or session changes |
 | screener | `/company/actions/{id}/`, `/wiki/company/{id}/commentary/v2/`, `/notebook/{id}/`, `/alerts/stock-{wid}/`, `/trades/insider-summary-{id}/` | XHR-only | 302 without `X-Requested-With`; the actions modal is existing (S14). In the catalog with redirect references |
 | screener | `/ai/`, `/ai/usage/`, `/ai/company/{id}/` | AI | Excluded by brief |
-| screener | `/annual-reports/{id}/summary/`, `/concalls/summary/{id}/` | AI | AI summaries; the audit saw 200 on GET (S27, S28), but they are excluded |
+| screener | `/annual-reports/{id}/summary/` | AI | AI summary; the audit saw 200 on GET (S27), but it is excluded. `/concalls/summary/{id}/` is captured since VENDOR-1 Phase 2 (only via the company page's Notes buttons) |
 | screener | `/premium/` payment links | payment | Plan page is in the catalog; payment is not |
 | screener | `bseindia.com` (AnnPdfOpen, xml-data/corpfiling, HIS_ANN_RPT, bseplus AnnualReport), `nsearchives`/`archives.nseindia.com` | off-host | Filings, annual reports and results PDFs (S21, S29); `/company/source/quarter/...` redirects here |
 | screener | crisil.com, icra.in, careratings.com and other rating agencies | off-host | Credit-rating documents |

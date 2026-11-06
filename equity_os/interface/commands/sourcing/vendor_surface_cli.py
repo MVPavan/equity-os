@@ -85,6 +85,8 @@ def add_vendor_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
             target.add_argument("--symbol")
             target.add_argument("--market", action="store_true")
             parser.add_argument("--tijori-slug")
+            parser.add_argument("--frozen", type=Path)
+            parser.add_argument("--budget", type=int)
 
     labels = commands.add_parser("map-labels")
     labels.add_argument("--site", choices=tuple(SITE_NAME.values()), required=True)
@@ -328,10 +330,22 @@ def dispatch_vendor_command(
         if args.tijori_slug:
             ids = ids.model_copy(update={"tijori_slug": args.tijori_slug})
         locks = PgSiteLock(pool)
-        fetcher = VendorFetcher(store, resolved_sessions, opener_factory(), STOP_DIR, locks)
+        limit, frozen_file = getattr(args, "budget", None), getattr(args, "frozen", None)
+        budget = {} if limit is None else {"site_budget": limit}
+        fetcher = VendorFetcher(
+            store, resolved_sessions, opener_factory(), STOP_DIR, locks, **budget
+        )
+        frozen = None if frozen_file is None else frozenset(frozen_file.read_text().split())
         try:
-            report = capture_company(fetcher, store, pool, values, tuple(selected), ids)
+            report = capture_company(
+                fetcher, store, pool, values, tuple(selected), ids, frozen=frozen
+            )
         finally:
             locks.close()
     sys.stdout.write(report.model_dump_json() + "\n")
-    return 0
+    budget_stop = (
+        limit is not None
+        and bool(report.incomplete)
+        and any(fetcher.remaining(site) <= 0 for site in Site)
+    )
+    return int(bool(report.frozen_stop) or budget_stop)

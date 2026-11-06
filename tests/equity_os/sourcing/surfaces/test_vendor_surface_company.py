@@ -1014,3 +1014,77 @@ def test_reparse_binds_timeline_continuation_through_its_root(
                 (key[1], "%traversal%"),
             ).fetchall()
     assert replayed == [("OK", "review.v1")] * 2
+
+
+def test_concall_summary_spec_loads_and_expands_one_request_per_notes_button():
+    from equity_os.sourcing.surfaces.vendor_surface_expand import EXPANSIONS, parent_surface
+
+    spec = next(s for s in SPECS if s.id == "concall-summary")
+    assert parent_surface(spec) == "company-page"
+    body, context = retained("screener", "company-page", "APARINDS")
+    notes = set(re.findall(rb'data-url="(/concalls/summary/[0-9]+/)"', body.raw))
+    context = context.model_copy(update={"parent": {"spec": spec.model_dump()}})
+    urls = [r.url for r in EXPANSIONS["screener_concall_summaries"](body, context)]
+    assert notes and len(urls) == len(notes)
+    assert {u.removeprefix("https://www.screener.in").encode() for u in urls} == notes
+
+
+@pytest.fixture
+def summary_cli(company_rig, pg_db, tmp_path, monkeypatch, capsys):
+    """Run `vendor capture --surface screener:concall-summary` through the public CLI."""
+    from argparse import Namespace
+
+    from equity_os.interface.commands.sourcing import vendor_surface_cli as cli
+
+    monkeypatch.setattr(cli, "STOP_DIR", tmp_path / "stops")
+    monkeypatch.setattr("equity_os.sourcing.transport.http_session.time.sleep", lambda _: None)
+    opener, ids = company_rig("APARINDS")
+
+    def run(frozen=None, budget=None):
+        opener.calls.clear()
+        file = None
+        if frozen is not None:
+            file = tmp_path / "frozen.txt"
+            file.write_text("\n".join(sorted(frozen)) + "\n")
+        args = Namespace(
+            command="vendor",
+            vendor_command="capture",
+            symbol=ids.nse_symbol,
+            surface=["screener:concall-summary"],
+            snapshot_root=tmp_path / "cli",
+            tijori_slug=None,
+            market=False,
+            frozen=file,
+            budget=budget,
+        )
+        code = cli.dispatch_vendor_command(
+            args,
+            opener_factory=lambda: opener,
+            pool_factory=pg_db.runtime_pool,
+            sessions_factory=lambda sites: {
+                site: SiteSession(site=site, session_cookie=SecretStr("fixture"), cookie_name="sid")
+                for site in sites
+            },
+        )
+        capsys.readouterr()
+        return code, set(opener.calls)
+
+    return run
+
+
+def test_frozen_set_and_budget_through_the_public_cli(summary_cli):
+    code, everything = summary_cli()
+    summaries = {u for u in everything if "/concalls/summary/" in u}
+    parents = everything - summaries
+    assert code == 0 and summaries and parents
+
+    assert summary_cli(frozen=everything) == (0, everything)
+
+    # A summary missing from, or an address extra to, the frozen set stops before any child.
+    for frozen in (everything - {min(summaries)}, everything | {"https://www.screener.in/x/"}):
+        code, calls = summary_cli(frozen=frozen)
+        assert code != 0 and calls == parents
+
+    # A budget below the set stops at the budget and never leaves the frozen set.
+    code, calls = summary_cli(frozen=everything, budget=len(parents) + 2)
+    assert code != 0 and len(calls) == len(parents) + 2 and calls <= everything

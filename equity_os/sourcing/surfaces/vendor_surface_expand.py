@@ -44,6 +44,7 @@ def parent_surface(spec: SurfaceSpec) -> str | None:
         "screener_schedules": "company-page",
         "screener_investors": "company-page",
         "screener_segments": "company-page",
+        "screener_concall_summaries": "company-page",
         "screener_compare_peers": "company-page",
         "tijori_op_metrics": "company-overview",
         "tijori_revenue_mix_items": "company-overview",
@@ -254,6 +255,17 @@ def screener_segments(body: Body, context: ParseContext) -> tuple[Request, ...]:
     return handlers(body, context, "showSegment")
 
 
+def screener_concall_summaries(body: Body, context: ParseContext) -> tuple[Request, ...]:
+    """Follow the Notes button of each concalls row in the verified page's documents section."""
+    assert context.parent is not None
+    spec = SurfaceSpec.model_validate(context.parent["spec"])
+    urls = body.tree().xpath('//*[@id="documents"]//*/@data-url')
+    ids = dict.fromkeys(
+        m[1] for u in urls if (m := re.fullmatch(r"/concalls/summary/([0-9]+)/", u))
+    )
+    return tuple(child(spec, context, concall_id=concall_id) for concall_id in ids)
+
+
 def tijori_op_metrics(body: Body, context: ParseContext) -> tuple[Request, ...]:
     """Follow the operating metric URLs in the overview."""
     assert context.parent is not None and context.ids is not None
@@ -354,6 +366,7 @@ EXPANSIONS: Mapping[str, Callable[[Body, ParseContext], tuple[Request, ...]]] = 
         screener_nested_schedules,
         screener_investors,
         screener_segments,
+        screener_concall_summaries,
         tijori_op_metrics,
         tijori_revenue_mix_items,
         tijori_popup_fields,
