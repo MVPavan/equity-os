@@ -28,6 +28,7 @@ from equity_os.contracts.publication.ledger import (
     VersionDraft,
     VersionStatus,
 )
+from equity_os.contracts.verification.vendor_first import AdmissionLabel
 from equity_os.publication.approval import lifecycle
 from equity_os.publication.checking.citations import _FIRST_SEEN, resolve_citation
 from equity_os.publication.checking.claim_check import check_claim
@@ -92,15 +93,17 @@ def _q3(pilot: Pilot) -> tuple[VersionDraft, int, VersionDraft]:
 
 
 def _cites_predecessor(claim: NumericClaim, predecessor: VersionDraft) -> bool:
-    """Whether a QoQ prior cites the predecessor's fact of its role, unlabelled."""
+    """Whether a QoQ prior cites the predecessor's fact of its role, under that fact's admission
+    label alone."""
     role = claim.claim_key.split(".")[1]
-    fact = _claims(predecessor)[f"fact.{role}"].citation
-    cited = claim.citation
+    stated = _claims(predecessor)[f"fact.{role}"]
+    fact, cited = stated.citation, claim.citation
     return (
         cited.kind is CitationKind.FIGURE
         and (cited.fact_origin, cited.fact_origin_id) == (fact.fact_origin, fact.fact_origin_id)
         and cited.interpretation_id is None
-        and claim.qualifiers == ()
+        and claim.qualifiers == tuple(q for q in stated.qualifiers if q in AdmissionLabel)
+        and claim.qualifiers != ()
     )
 
 
@@ -167,7 +170,8 @@ def test_without_the_predecessor_pins_qoq_priors_do_not_resolve(
     approved_q2: Pilot, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A draft pinning only its own comparison run leaves exactly the six predecessor-backed
-    QoQ priors ``UNRESOLVED``: its in-transaction check refuses it and no version is written."""
+    QoQ priors, and the stale probe ratios labelled by the predecessor's admissions,
+    ``UNRESOLVED``: its in-transaction check refuses it and no version is written."""
 
     def unpinned(pool: Any, prior: Prior, run: RunDraft, **kwargs: Any) -> int:
         return write_run_draft(pool, prior.model_copy(update={"pinned_run_ids": ()}), run, **kwargs)
@@ -180,6 +184,7 @@ def test_without_the_predecessor_pins_qoq_priors_do_not_resolve(
         pilot.run(Q3)
     failed = str(refused.value).split(": ", 1)[1].split(", ")
     expected = [f"cmp.{role}.qoq.prior: UNRESOLVED" for role in _roles(pilot)]
+    expected += [f"probe.{check}: UNRESOLVED" for check in ("R1", "R4", "R5")]
     assert sorted(failed) == sorted(expected)
     assert _rows(pilot)[-3:] == before
 

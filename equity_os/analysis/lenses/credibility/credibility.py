@@ -41,6 +41,7 @@ from equity_os.contracts.measurement.provenance import Provenance
 from equity_os.contracts.publication.ledger import NumericClaim, Rounding, VersionDraft
 from equity_os.contracts.verification.comparison import SelectionSource
 from equity_os.contracts.verification.config_versions import ConfigVersions
+from equity_os.contracts.verification.vendor_first import AdmissionLabel
 from equity_os.normalisation.derivation.formula import OperandValue
 from equity_os.normalisation.derivation.interval import truncate_value
 from equity_os.publication.checking.claim_check import CRORE, PERCENT
@@ -665,6 +666,7 @@ def _computed(
         precision=EXACT_PLACES,
         rounding=Rounding.ROUND_HALF_EVEN,
     ).model_copy(update={"qualifiers": (EXACT_DIGITS,), "epistemic_class": kind})
+    claim = binder.labelled(claim, (now[0], then[0]))
     return cite(claim, calculation_trace_id=binder.store(name, result)), result.exact
 
 
@@ -686,11 +688,13 @@ def bind_credibility(
     versions: ConfigVersions,
     registry: Mapping[tuple[str, str], Actual] = ACTUALS,
     declared: Sequence[str] = (),
+    admissions: Mapping[int, AdmissionLabel] | None = None,
 ) -> Built:
     """A stored or carried actual per registered window due, or a reason, and the built section.
-    ``declared`` names the run's comparator XBRLs, admitted even if no comparison could use one."""
+    ``declared`` names the run's comparator XBRLs, admitted even if no comparison could use one;
+    an actual whose operands ``admissions`` (the pinned runs' labels) holds carries their label."""
     start, stop = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
-    binder = _Binder(repo, entity_id, start, stop, versions)
+    binder = _Binder(repo, entity_id, start, stop, versions, admissions)
     own, comparators = admitted_xbrl(update)
     used = (source.file_sha256 for source, _ in comparators.values())
     sources = [(own, SelectionSource.PACKAGE_AS_REPORTED)]

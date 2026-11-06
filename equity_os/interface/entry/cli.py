@@ -126,6 +126,7 @@ from equity_os.publication.drafting.run_draft import (
     check_blobs,
     check_head,
     gate_lines,
+    pinned_labels,
     predecessor,
     preflight,
     recall,
@@ -373,6 +374,8 @@ def run_command(
             chosen = admit_roles(pool, store_id, run_id, config, entity_id, carried)
             check_sources(pool, manifest, chosen, config, xbrl, pdfs, versions)
             admitted = select_roles(pool, store_id, run_id, chosen) | dict(prior.carried_facts)
+            with pool.connection() as conn, conn.cursor() as cursor:
+                labels = pinned_labels(cursor, prior, run_id)
             bound: list[tuple[Line, ...]] = []
             probes: list[Probe] = []
             credibility: list[Built] = []
@@ -439,6 +442,7 @@ def run_command(
                             for kind, instance in zip(ComparatorKind, declared, strict=True)
                             if instance is not None
                         ],
+                        admissions=labels,
                     )
                 )
                 credibility.append(
@@ -450,6 +454,7 @@ def run_command(
                         entity_id=prior.entity_id,
                         versions=versions,
                         declared=xbrl[1:],
+                        admissions=labels,
                     )
                 )
 
@@ -461,7 +466,10 @@ def run_command(
             )
             # The store stamps the run's writes, so its derivation cutoff is the store's clock.
             update = result.update.model_copy(
-                update={"derivation_cutoff": repository.store_clock()}
+                update={
+                    "derivation_cutoff": repository.store_clock(),
+                    "predecessors": prior.admitted,
+                }
             )
             result = result.model_copy(
                 update={"update": update, "markdown": render_earnings_update(update)}

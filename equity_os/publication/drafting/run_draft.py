@@ -154,6 +154,10 @@ _ADMITTED: LiteralString = """SELECT a.store_id, a.interpretation_id, a.witness_
 JOIN eqos.fact_rows f ON f.origin = a.fact_origin AND f.origin_id = a.fact_origin_id
 WHERE a.fact_origin = %s AND a.fact_origin_id = %s AND a.run_id = ANY(%s)
 ORDER BY a.id DESC LIMIT 1"""
+# Each interpretation's latest admission label under a version's pinned runs (``latest``).
+_LABELS: LiteralString = """SELECT DISTINCT ON (interpretation_id) interpretation_id, label
+FROM eqos.fact_admissions WHERE run_id = ANY(%s)
+ORDER BY interpretation_id, overlay_position DESC, id DESC"""
 # The captures behind every operand of the given traces and of the traces they reach.
 _OPERAND_BLOBS: LiteralString = (
     "WITH RECURSIVE "
@@ -389,11 +393,8 @@ def write_run_draft(
             current is not None and store.sealed_digest(cursor, current) != prior.same_period_digest
         ):
             raise RunDraftError(f"{run.period}'s head changed: it is version {current}")
-        reworked = prior.rework
         carried = _carried(prior)
-        run_ids = {run.run_id, *prior.pinned_run_ids}
-        if reworked is not None:  # carried citations keep their head's comparison runs
-            run_ids.update(store.read_version(cursor, reworked.head).pinned_run_ids)
+        run_ids = pinned_runs(cursor, prior, run.run_id)
         body = _Body()
         for text, claim in _results(update, run.facts, entity_id):
             body.add(RESULTS, text, carried.get(claim.claim_key, claim))
@@ -455,9 +456,24 @@ def write_run_draft(
     return version_id
 
 
+def pinned_runs(cursor: Cursor[Any], prior: Prior, run_id: int) -> set[int]:
+    """The draft's pinned comparison runs: its own, its predecessor's and, in a rework, the
+    reworked head's, whose admissions carried citations keep."""
+    run_ids = {run_id, *prior.pinned_run_ids}
+    if prior.rework is not None:
+        run_ids.update(store.read_version(cursor, prior.rework.head).pinned_run_ids)
+    return run_ids
+
+
+def pinned_labels(cursor: Cursor[Any], prior: Prior, run_id: int) -> dict[int, AdmissionLabel]:
+    """Each interpretation's admission label under the draft's pinned runs."""
+    rows = cursor.execute(_LABELS, (list(pinned_runs(cursor, prior, run_id)),)).fetchall()
+    return {interpretation_id: AdmissionLabel(label) for interpretation_id, label in rows}
+
+
 def predecessor(prior: Prior, claims: tuple[NumericClaim, ...]) -> tuple[NumericClaim, ...]:
-    """``claims`` with each QoQ prior cited to the prior head's admitted ``fact.<role>``, keeping
-    only an admission label; refuses one whose key, value or file is not that fact's."""
+    """``claims`` with each QoQ prior cited to the prior head's admitted ``fact.<role>``, under
+    that fact's admission label; refuses one whose key, value or file is not that fact's."""
     facts = {c.claim_key: c for c in prior.facts if c.citation.fact_origin_id is not None}
     found = []
     for claim in claims:
@@ -477,8 +493,9 @@ def predecessor(prior: Prior, claims: tuple[NumericClaim, ...]) -> tuple[Numeric
                 fact_origin_id=fact.citation.fact_origin_id,
                 interpretation_id=None,
             )
-            labels = tuple(q for q in claim.qualifiers if q != FILED)
-            claim = cited.model_copy(update={"qualifiers": labels})
+            kept = [q for q in claim.qualifiers if q != FILED and q not in AdmissionLabel]
+            labels = [q for q in fact.qualifiers if q in AdmissionLabel]
+            claim = cited.model_copy(update={"qualifiers": tuple(kept + labels)})
         found.append(claim)
     return tuple(found)
 

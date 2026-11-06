@@ -63,6 +63,7 @@ from equity_os.contracts.publication.ledger import NumericClaim, Rounding
 from equity_os.contracts.verification.comparative import ComparatorKind
 from equity_os.contracts.verification.comparison import SelectionSource
 from equity_os.contracts.verification.config_versions import ConfigVersions
+from equity_os.contracts.verification.vendor_first import AdmissionLabel
 from equity_os.normalisation.dictionary.dictionary import load_dictionary
 from equity_os.publication.checking.claim_check import CRORE, PERCENT
 from equity_os.publication.drafting.display import FILED
@@ -459,13 +460,15 @@ def bind_probe(
     versions: ConfigVersions,
     fiscal_year_end_month: int,
     declared: Sequence[tuple[ComparatorKind, str, date]] = (),
+    admissions: Mapping[int, AdmissionLabel] | None = None,
 ) -> Probe:
     """The run's probe: the run's own statement, else its QoQ comparator's (stale), else none;
     a stored trace and claim per guarded-in check, a ``FILED`` figure per operand shown, and a
     prior claim on a matching package statement for each trend check. ``declared`` names the
-    run's comparator XBRLs and period ends, QoQ first, read even if no comparison could use one."""
+    run's comparator XBRLs and period ends, QoQ first, read even if no comparison could use one;
+    a ratio over operands ``admissions`` (the pinned runs' labels) admitted carries their label."""
     start, end = date.fromisoformat(update.period_start), date.fromisoformat(update.period_end)
-    binder = _Binder(repo, entity_id, start, end, versions)
+    binder = _Binder(repo, entity_id, start, end, versions, admissions)
     own, admitted = admitted_xbrl(update)
     comparators = {
         kind: (own.model_copy(update={"file_sha256": blob}), at) for kind, blob, at in declared
@@ -627,7 +630,8 @@ def _ratio(
         precision=binder.policy.scale[kind],
         rounding=Rounding.ROUND_HALF_EVEN,
     )
-    return cite(claim, calculation_trace_id=trace_id)
+    leaves = (operands[i][1] for side in OPERANDS[check_id] for i in side)
+    return cite(binder.labelled(claim, leaves), calculation_trace_id=trace_id)
 
 
 def _total(binder: _Binder, probe_key: str, leaves: Sequence[_Operand]) -> _Operand:

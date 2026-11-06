@@ -22,9 +22,9 @@ line's claims before any is bound.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import date
-from decimal import ROUND_HALF_EVEN, Context, Decimal, localcontext
+from decimal import ROUND_HALF_EVEN, Decimal
 from fractions import Fraction
 from functools import cache, partial
 from pathlib import Path
@@ -46,7 +46,6 @@ from equity_os.contracts.measurement.qualification import ScopedTier
 from equity_os.contracts.measurement.role import FactRole
 from equity_os.contracts.publication.ledger import NumericClaim, Rounding
 from equity_os.contracts.verification.comparative import (
-    PERCENT_CONTEXT_PRECISION,
     RUN_PERCENT_PLACES,
     TAXONOMY_DRIFT_PREFIX,
     ComparatorKind,
@@ -83,6 +82,7 @@ from equity_os.publication.drafting.earnings_update import (
     AdmittedFact,
     EarningsUpdate,
     RenderedFact,
+    predecessor_change,
 )
 from equity_os.publication.drafting.pnl_lines import (
     ETR_LABEL,
@@ -119,7 +119,6 @@ DISCLOSED = frozenset({OPEN_QUESTIONS, NOT_PERFORMED})
 _HUNDRED = Interval.exact(Fraction(100))
 _NEG_HUNDRED = Interval.exact(Fraction(-100))
 _CRORE_SCALE = UNITS[CRORE][2] or 1
-_PERCENT = Decimal(1).scaleb(-RUN_PERCENT_PLACES)  # a run's percent change, as comparatives
 # The code-side formulas carry no equivalence proof.
 _UNPROVEN = ScopedTier(
     tier=EvidenceTier.EQUIVALENCE_UNPROVEN, qualification_ref=None, condition_evidence=()
@@ -173,8 +172,10 @@ class _Binder:
         start: date,
         end: date,
         versions: ConfigVersions,
+        admissions: Mapping[int, AdmissionLabel] | None = None,
     ) -> None:
         self.repo, self.entity_id, self.start, self.end = repo, entity_id, start, end
+        self.admissions = admissions or {}
         self.context = (
             versions.dictionary,
             versions.mapping_set,
@@ -336,6 +337,15 @@ class _Binder:
         self.binds[name] = bind
         return claim
 
+    def labelled(self, claim: NumericClaim, operands: Iterable[OperandValue]) -> NumericClaim:
+        """``claim`` labelled with the weakest of its operands' admission labels under the pinned
+        runs (``admissions``); unlabelled when none is admitted."""
+        ids = [operand.interpretation_id for operand in operands]
+        found = [self.admissions[i] for i in ids if i is not None and i in self.admissions]
+        if not found:
+            return claim
+        return claim.model_copy(update={"qualifiers": (*claim.qualifiers, weakest(found).value)})
+
     def _compute(
         self,
         name: str,
@@ -452,19 +462,17 @@ def bind_computed(
                     Line(section=CHANGES, label=label, unavailable=change.unavailable_reason)
                 )
                 continue
-            assert change.prior_source is not None
             base = f"cmp.{fact.role.value}.{change.kind.value.lower()}"
             period = PeriodInterval.duration(change.period_start, change.period_end)
             prior_key = key.model_copy(update={"period": period})
+            qoq = change.kind is ComparatorKind.QOQ
+            admitted = (predecessors or {}).get(fact.role) if qoq else None
+            if admitted is not None:
+                change = predecessor_change(change, fact.value, admitted, unit)
             source, value = change.prior_source, change.prior_value
             absolute, percent = change.absolute_change, change.percent_change
-            admitted = (predecessors or {}).get(fact.role)
-            if admitted is not None and change.kind is ComparatorKind.QOQ:
-                source, value = admitted.provenance, admitted.value / _scale(prior_key)
-                absolute = fact.value - value
-                if percent is not None:
-                    with localcontext(Context(prec=PERCENT_CONTEXT_PRECISION)):
-                        percent = (absolute / value * 100).quantize(_PERCENT, ROUND_HALF_EVEN)
+            assert source is not None and value is not None and absolute is not None
+            if admitted is not None:
                 prior = binder.admission("prior", admitted, prior_key, value)
             else:
                 historical = SelectionSource.HISTORICAL_PACKAGE

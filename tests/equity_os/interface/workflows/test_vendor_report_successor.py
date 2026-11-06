@@ -5,10 +5,13 @@ Apar FY26_Q2's revenue is admitted from the vendors (row 1 of ``vendor_report_su
 rework that reruns only the revenue YoY line carries that revenue, without ``--full-successor``,
 and computes the rerun line from it. Once the rework is approved, FY26_Q3's revenue QoQ prior is
 the approved vendor-valued fact, not the filed comparator, and its changes are computed from the
-fact's interpretation. Values are read back from the run; none is written here.
+fact's interpretation; the emitted Markdown prints that prior from the fact's file, with its
+label. Values are read back from the run; none is written here.
 """
 
 from __future__ import annotations
+
+import re
 
 import pytest
 from evidence_support import ingest, policy
@@ -18,9 +21,10 @@ from vendor_report_support import compare, report, vendor_pilot
 
 from equity_os.contracts.measurement.role import FactRole
 from equity_os.contracts.publication.ledger import DecisionKind, NumericClaim, SubjectKind
-from equity_os.contracts.verification.vendor_first import AdmissionLabel
+from equity_os.contracts.verification.vendor_first import LABEL_TEXT, AdmissionLabel
 from equity_os.publication.approval import lifecycle
-from equity_os.publication.checking.claim_check import ClaimState
+from equity_os.publication.checking.claim_check import CRORE, ClaimState
+from equity_os.publication.drafting.earnings_update import _ROLE_LABELS, _format_value
 from equity_os.publication.drafting.run_draft import RUN_AUTHOR
 
 __all__ = ["dictionary", "ingest", "mapping_set", "policy"]
@@ -102,7 +106,21 @@ def test_vendor_fact_carries_through_rework_and_into_next_quarter(
     assert prior.value == fact.value and CHECKED in prior.qualifiers
     assert prior.citation.fact_origin_id == fact.citation.fact_origin_id
     (concept,) = [f.concept_qname for f in result.update.facts if f.role is FactRole.REVENUE]
-    (filed,) = [c.qoq.prior_value for c in result.update.comparatives if c.concept_qname == concept]
-    assert filed != prior.value  # the filed comparator differs: the vendor value is used
+    (qoq,) = [c.qoq for c in result.update.comparatives if c.concept_qname == concept]
+    assert qoq.prior_value != prior.value  # the filed comparator differs: the vendor value is used
+    assert qoq.prior_source is not None and prior.citation.source_sha256 is not None
+    changes = result.markdown.split("## 3. changes")[1].split("## 4.")[0]
+    (row,) = [
+        x for x in changes.splitlines() if x.startswith(f"| {_ROLE_LABELS[FactRole.REVENUE]} |")
+    ]
+    cell = row.split(" | ")[2]
+    match = re.match(r"(.+?)(\[\^\d+\]) \(([^)]+)\) \(", cell)
+    assert match is not None
+    shown, marker, label = match.groups()
+    assert shown == _format_value(prior.value, CRORE)  # compared, never printed
+    assert label == LABEL_TEXT[AdmissionLabel.CHECKED_AGAINST_FILING]
+    (note,) = [x for x in result.markdown.splitlines() if x.startswith(f"{marker}: ")]
+    assert prior.citation.source_sha256[:12] in note  # the claim's file, not the filed comparator
+    assert qoq.prior_source.file_sha256[:12] not in note
     assert vendor in _operands(pilot, claims[f"{QOQ}.abs"]) & _operands(pilot, claims[f"{QOQ}.pct"])
     assert _matched(pilot, result.draft_version_id)

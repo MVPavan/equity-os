@@ -52,8 +52,6 @@ UNITLESS = frozenset({ValueKind.COUNT, ValueKind.RATIO, ValueKind.DAYS})
 NO_CONTRACT = GuidanceContract(
     metric=None, scope=None, horizon=None, unit=None, constant_currency=None
 )
-# A required role's reported-value claim, which must state its admitted fact's label.
-REQUIRED_FACT = "fact."
 # The closed qualifier lexicon: each qualifier and the whole word that states it.
 QUALIFIER_WORDS = {"plus": re.compile(r"\bplus\b"), "about": re.compile(r"\babout\b")}
 
@@ -129,18 +127,11 @@ def check_claim(
 
 
 def _labelled(claim: NumericClaim, resolved: ResolvedCitation) -> bool:
-    """Whether the claim states its citation's admission label exactly (VENDOR-1 §6.10): at most
-    one label qualifier, the resolved one, and an unlabelled citation takes none. A required
-    fact must state its label, and a calculation an unchecked one; a calculation over filed
-    operands (``CHECKED_AGAINST_FILING`` when also admitted) may leave it unstated."""
+    """Whether the claim states exactly its citation's admission label (VENDOR-1 §6.10): the
+    resolved label alone, and none for an unlabelled citation."""
     stated = [qualifier for qualifier in claim.qualifiers if qualifier in AdmissionLabel]
     label = resolved.admission_label
-    if stated or label is None:
-        return stated == ([] if label is None else [label])
-    if claim.claim_key.startswith(REQUIRED_FACT):
-        return False
-    calculation = claim.citation.kind is CitationKind.CALCULATION
-    return not calculation or label is AdmissionLabel.CHECKED_AGAINST_FILING
+    return stated == ([] if label is None else [label])
 
 
 def _differs(claimed: tuple[object, ...], cited: tuple[object, ...]) -> bool:

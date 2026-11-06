@@ -15,9 +15,9 @@ claims stay out of scope rather than being fabricated here.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime
-from decimal import Context, Decimal, DecimalException, localcontext
+from decimal import ROUND_HALF_EVEN, Context, Decimal, DecimalException, localcontext
 from enum import StrEnum
 from typing import Final, assert_never
 
@@ -28,15 +28,18 @@ from equity_os.contracts.measurement.provenance import Provenance, SourceAnchorT
 from equity_os.contracts.measurement.role import FactRole as FactRole
 from equity_os.contracts.verification.comparative import (
     PERCENT_CONTEXT_PRECISION,
+    RUN_PERCENT_PLACES,
     TAXONOMY_DRIFT_PREFIX,
     ComparativeChange,
     ConceptComparative,
 )
 from equity_os.contracts.verification.vendor_first import LABEL_TEXT, AdmissionLabel, weakest
+from equity_os.publication.checking.claim_check import UNITS
 from equity_os.publication.drafting.management_ledger import LedgerStatus, ManagementLedger
 from equity_os.storage.facts.fact_store import FactRef
 
 _CRORE_UNIT = "INR crore"
+_PERCENT = Decimal(1).scaleb(-RUN_PERCENT_PLACES)  # a run's percent change, as comparatives
 _PER_SHARE_UNIT = "INR per share"
 _PERCENT_UNIT: Final = "percent"
 _SHA_PREFIX_LEN = 12
@@ -218,6 +221,8 @@ class EarningsUpdate(BaseModel):
     derivation_cutoff: datetime | None = None
     percent_places: int = 1
     diagnostic_label: str | None = None
+    # A role's QoQ prior the predecessor head admitted from the vendors (VENDOR-1 finding 3).
+    predecessors: Mapping[FactRole, AdmittedFact] = {}
 
 
 def _format_bounds(lower: Decimal, upper: Decimal) -> str:
@@ -288,6 +293,22 @@ def _qualifier(facts: Sequence[AdmittedFact | None]) -> str:
     return f" ({LABEL_TEXT[weakest(labels)]})" if labels else ""
 
 
+def predecessor_change(
+    change: ComparativeChange, current: Decimal, prior: AdmittedFact, unit: str
+) -> ComparativeChange:
+    """An available QoQ change against the predecessor head's admitted fact: its value in
+    ``unit`` and file, the changes computed from it."""
+    value = prior.value / (UNITS[unit][2] or 1)
+    absolute, percent = current - value, change.percent_change
+    if percent is not None:
+        with localcontext(Context(prec=PERCENT_CONTEXT_PRECISION)):
+            percent = (absolute / value * 100).quantize(_PERCENT, ROUND_HALF_EVEN)
+    update = {"prior_value": value, "prior_source": prior.provenance}
+    return change.model_copy(
+        update=update | {"absolute_change": absolute, "percent_change": percent}
+    )
+
+
 def _render_change(
     comparative: ConceptComparative,
     change: ComparativeChange,
@@ -295,10 +316,11 @@ def _render_change(
     places: int,
     current_markers: str,
     qualifier: str,
+    prior_qualifier: str = "",
 ) -> tuple[str, str | None]:
     """Render one prior value and its traced changes, or its explicit failure reason; the
-    current value is footnoted by ``current_markers`` and the change qualified by
-    ``qualifier``."""
+    current value is footnoted by ``current_markers``, the prior qualified by
+    ``prior_qualifier`` and the change by ``qualifier``."""
     period = _comparator_period_label(change.period_start, change.period_end)
     if not change.available:
         return f"not available ({period}; {change.unavailable_reason})", None
@@ -339,7 +361,8 @@ def _render_change(
         else ""
     )
     return (
-        f"{prior}{prior_marker} ({period}); Δ {delta}{endpoint_markers}; {percent}{qualifier}",
+        f"{prior}{prior_marker}{prior_qualifier} ({period}); "
+        f"Δ {delta}{endpoint_markers}; {percent}{qualifier}",
         f"{change.kind.value} {absolute_trace}{percent_trace}{drift_note}{qualifier}",
     )
 
@@ -351,8 +374,10 @@ def _render_comparatives(
     *,
     attempted: bool,
     places: int,
+    predecessors: Mapping[FactRole, AdmittedFact],
 ) -> list[str]:
-    """Render the section-3 table over every configured material concept."""
+    """Render the section-3 table over every configured material concept; a role's QoQ prior in
+    ``predecessors`` is that admitted fact, with its file and label."""
     if not comparatives:
         if attempted:
             return ["No prior-period comparator filings were available for this report."]
@@ -361,6 +386,7 @@ def _render_comparatives(
         ]
     labels = {fact.concept_qname: _ROLE_LABELS[fact.role] for fact in facts}
     admitted = {fact.concept_qname: fact.admitted for fact in facts}
+    priors = {fact.concept_qname: predecessors.get(fact.role) for fact in facts}
     lines = [
         "| P&L line | Current | QoQ prior / change | YoY prior / change |",
         "| --- | ---: | --- | --- |",
@@ -384,8 +410,18 @@ def _render_comparatives(
                 f"{_format_value(comparative.current_value, comparative.unit)}"
                 f"{current_markers}{qualifier}"
             )
+        qoq, prior = comparative.qoq, priors.get(comparative.concept_qname)
+        if prior is not None and qoq.available:
+            assert comparative.current_value is not None and comparative.unit is not None
+            qoq = predecessor_change(qoq, comparative.current_value, prior, comparative.unit)
         qoq_cell, qoq_trace = _render_change(
-            comparative, comparative.qoq, notes, places, current_markers, qualifier
+            comparative,
+            qoq,
+            notes,
+            places,
+            current_markers,
+            _qualifier([fact, prior]),
+            _qualifier([prior]),
         )
         yoy_cell, yoy_trace = _render_change(
             comparative, comparative.yoy, notes, places, current_markers, qualifier
@@ -501,6 +537,7 @@ def render_earnings_update(update: EarningsUpdate) -> str:
             notes,
             attempted=update.comparatives_attempted,
             places=update.percent_places,
+            predecessors=update.predecessors,
         )
     )
     lines.append("")
