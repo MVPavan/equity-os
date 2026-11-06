@@ -58,7 +58,11 @@ from equity_os.interface.commands.companies.onboard_cli import (
 )
 from equity_os.interface.entry.config import load_config
 from equity_os.interface.entry.watchlist_config import with_issuer_pdfs
-from equity_os.sourcing.exchange.results_filing import ResultsFiling, acquire_results
+from equity_os.sourcing.exchange.results_filing import (
+    ListingUnparsedError,
+    ResultsFiling,
+    acquire_results,
+)
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records.repository import EvidenceRepository
 from equity_os.verification.admission.admission import (
@@ -67,6 +71,7 @@ from equity_os.verification.admission.admission import (
     AdmissionRefusal,
     admit_run,
 )
+from equity_os.verification.comparison.engine_attempts import RunResolutionError
 from equity_os.verification.comparison.run import execute_run, request_for
 from equity_os.verification.comparison.run_config import (
     LoadedConfig,
@@ -149,12 +154,12 @@ def run_fallback(
     authorization, roots = AUTHORIZATION.format(run_id=run_id), (snapshot_root, raw_root)
     outcomes = []
     for group, refused in sorted(triggered.items()):
-        rerun, failure = None, None
-        filing, symbol = acquire_group(pool, SnapshotStore(snapshot_root), fetch, group)
-        if filing is not None and filing.pdf is None and pdf_config is not None:
-            failure = FallbackFailure.PDF_UNACQUIRED
-        elif filing is not None:
-            try:
+        rerun, filing, failure = None, None, None
+        try:
+            filing, symbol = acquire_group(pool, SnapshotStore(snapshot_root), fetch, group)
+            if filing is not None and filing.pdf is None and pdf_config is not None:
+                failure = FallbackFailure.PDF_UNACQUIRED
+            elif filing is not None:
                 report = ingest_group(
                     pool,
                     filing,
@@ -167,17 +172,28 @@ def run_fallback(
                     extractors,
                 )
                 failure = None if ingested(report) else FallbackFailure.EXTRACTION_FAILED
-            except IntakeError:
-                failure = FallbackFailure.INTAKE_REFUSED
-            except IngestError:
-                failure = FallbackFailure.EXTRACTION_FAILED
-        if filing is None or failure is not None:
+            if filing is not None and failure is None:
+                rerun = _rerun(
+                    pool, manifest, group, config_root, vendors, code_version, extractors
+                )
+        except IntakeError:
+            failure = FallbackFailure.INTAKE_REFUSED
+        except IngestError:
+            failure = FallbackFailure.EXTRACTION_FAILED
+        # A listing that does not parse, or a rerun that does not resolve, still ends the group
+        # with the stage's reason (§6.8: every processed group has a terminal outcome).
+        except ListingUnparsedError as error:
+            failure = FallbackFailure.LISTING_UNPARSED
+            _LOG.warning("fallback_stage_failed", reason=failure, error=str(error))
+        except RunResolutionError as error:
+            failure = FallbackFailure.RERUN_UNRESOLVED
+            _LOG.warning("fallback_stage_failed", reason=failure, error=str(error))
+        if rerun is None:
             outcome = FallbackOutcome.FILING_UNAVAILABLE
-            if filing is not None:
+            if failure is not None:
                 outcome = FallbackOutcome.FILING_UNRESOLVED
             cells: dict[str, Cell] = {i: (r.value, failure) for i, r in refused.items()}
         else:
-            rerun = _rerun(pool, manifest, group, config_root, vendors, code_version, extractors)
             admitted = admit_run(rerun, pool=pool, store_id=store_id, config_root=config_root)
             rows = {row.row_id: row for row in RunStore(pool).read_results(rerun)}
             read = all(_read(rows.values(), page) for page in vendors)

@@ -54,6 +54,12 @@ from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records.document_intake import RETENTION_SHARED
 
 PDF_DAYS = timedelta(days=7)
+_UNPARSED = "results listing of {symbol} unparsed: {error}"
+
+
+class ListingUnparsedError(ValueError):
+    """A retained results listing whose body is not well-formed JSON or carries a malformed
+    date."""
 
 
 class ResultsFiling(BaseModel):
@@ -77,7 +83,8 @@ def acquire_results(
     basis: Basis,
 ) -> ResultsFiling | None:
     """The results filing of one period end and basis; ``None`` when no single filing with an
-    instance is acquirable (a tie, a missing broadcast or a failed fetch)."""
+    instance is acquirable (a tie, a missing broadcast or a failed fetch). A retained listing
+    that does not parse raises ``ListingUnparsedError``."""
     legacy, integrated = (
         retain(conn, store, fetch, VerificationUnit.EXCHANGE, pair, listing_url(path, symbol, p))
         for pair, (path, p) in (
@@ -87,7 +94,10 @@ def acquire_results(
     )
     if legacy is None or integrated is None:
         return None
-    rows = listing_rows(cast(bytes, legacy.body), cast(bytes, integrated.body))
+    try:
+        rows = listing_rows(cast(bytes, legacy.body), cast(bytes, integrated.body))
+    except ValueError as error:  # json.JSONDecodeError and strptime's
+        raise ListingUnparsedError(_UNPARSED.format(symbol=symbol, error=error)) from error
     row = filing_for(rows, period_end, LISTING_BASIS[basis])
     if row is None or row.xbrl_url is None:
         return None
