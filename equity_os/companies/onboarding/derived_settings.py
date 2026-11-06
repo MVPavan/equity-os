@@ -1,7 +1,7 @@
 """Settings an onboarded issuer derives from its verified discovery evidence (plan D6 D5).
 
 ``derive`` reads only the anchors discovery verified: the filing window of the two NSE listings
-(basis status, D4.2 step 2) and the two qualifying consolidated XBRL instances (fiscal year end,
+(basis and basis status, D4.2 step 2) and its two qualifying XBRL instances (fiscal year end,
 rounding level, presentation currency, framework, document location). Each value becomes one
 row citing its unit's ``DISCOVERY`` input, valid from the earliest period end among the filings
 declaring it (C4), so a later change of value governs only the periods it was declared for.
@@ -19,7 +19,7 @@ import psycopg
 from pydantic import BaseModel, ConfigDict
 
 from equity_os.companies.identity.identity_seed import SettingKey
-from equity_os.companies.onboarding.discovery import FILINGS_CHECKED, Discovery
+from equity_os.companies.onboarding.discovery import FILINGS_CHECKED, XBRL_SOURCES, Discovery
 from equity_os.companies.onboarding.verification import financial_rule
 from equity_os.contracts.companies.basis_status import BasisStatus
 from equity_os.contracts.companies.onboarding import (
@@ -28,12 +28,12 @@ from equity_os.contracts.companies.onboarding import (
     VerificationUnit,
     as_of_for,
 )
+from equity_os.contracts.measurement.canonical import Basis
 from equity_os.contracts.measurement.observation import AccountingFramework
 from equity_os.contracts.sourcing.source_catalog import (
     NSE_INTEGRATED_LISTING,
     NSE_MASTER,
     NSE_RESULTS_LISTING,
-    NSE_XBRL_INSTANCE,
 )
 from equity_os.extraction.xbrl.xbrl_parser import iter_raw_facts
 from equity_os.extraction.xbrl.xbrl_taxonomies import _ALL_TAXONOMIES
@@ -53,7 +53,7 @@ class DerivedSettingsError(ValueError):
 
 
 class Filing(BaseModel):
-    """One verified consolidated filing: its period, NSE filed-at time and instance."""
+    """One verified filing: its period, NSE filed-at time and instance."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -76,10 +76,12 @@ class DerivedSetting(BaseModel):
 
 
 class DerivedSettings(BaseModel):
-    """Basis status and settings, with the verified filings (latest period first)."""
+    """The filings' basis, basis status and settings, with the verified filings (latest period
+    first)."""
 
     model_config = ConfigDict(frozen=True)
 
+    basis: Basis
     basis_status: BasisStatus
     filings: tuple[Filing, ...]
     settings: tuple[DerivedSetting, ...]
@@ -107,7 +109,7 @@ def derive(found: Discovery) -> DerivedSettings:
     instances = {
         c.request.url: c
         for c in found.captures
-        if (c.request.source_id, c.request.surface) == NSE_XBRL_INSTANCE
+        if (c.request.source_id, c.request.surface) == XBRL_SOURCES[window.basis]
     }
     filings = []
     for row in window.filings[:FILINGS_CHECKED]:
@@ -133,7 +135,8 @@ def derive(found: Discovery) -> DerivedSettings:
     )
     declared[SettingKey.DOCUMENT_LOCATION, location] = latest.period_end
     return DerivedSettings(
-        basis_status=BasisStatus.CONSOLIDATED_AND_STANDALONE,  # discovery refused any other
+        basis=window.basis,
+        basis_status=_BASIS_STATUS[window.basis],
         filings=tuple(filings),
         settings=tuple(
             DerivedSetting(
@@ -197,6 +200,11 @@ def _declared(filing: Filing) -> dict[SettingKey, str]:
     }
 
 
+# Standalone filings are selected only when the window holds no consolidated row (§6.2).
+_BASIS_STATUS = {
+    Basis.CONSOLIDATED: BasisStatus.CONSOLIDATED_AND_STANDALONE,
+    Basis.STANDALONE: BasisStatus.STANDALONE_ONLY,
+}
 _INSERT_BASIS: LiteralString = (
     "INSERT INTO eqos.entity_basis_status (entity_id, basis_status, evidence_input_id) "
     "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING"

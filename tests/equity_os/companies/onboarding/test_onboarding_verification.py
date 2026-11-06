@@ -498,7 +498,6 @@ REFUSALS = {
     "HDFCBANK": ("HDFCBANK", None, R.FINANCIAL_OR_UNKNOWN_SECTOR),
     "BAJFINANCE": ("BAJFINANCE", None, R.FINANCIAL_OR_UNKNOWN_SECTOR),
     "HDFCLIFE": ("HDFCLIFE", None, R.FINANCIAL_OR_UNKNOWN_SECTOR),
-    "NETWEB": ("NETWEB", None, R.STANDALONE_BASIS),
     "foreign_isin": (
         APAR,
         partial(edit, url_part="EQUITY_L", old=b",INE372A01015,", new=b",USZZ00000001,"),
@@ -515,8 +514,9 @@ def test_unsupported_issuers_get_a_reason_and_no_entity(
     case: str, cli: Callable[..., int], pg_db: PgTestDatabase, tmp_path: Path
 ) -> None:
     """Financial filings fail closed on the entry-point signal (bank filings name the issuer
-    in NameOfBank, so the sector rule must refuse them before any name check); standalone-only,
-    non-IN and single-period issuers are refused with the reason recorded and nothing else."""
+    in NameOfBank, so the sector rule must refuse them before any name check); non-IN and
+    single-period issuers are refused with the reason recorded and nothing else (a
+    standalone-only issuer now onboards: test_standalone_onboarding.py)."""
     symbol, change, reason = REFUSALS[case]
     served = world(symbol)
     if change:

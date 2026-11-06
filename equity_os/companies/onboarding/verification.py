@@ -27,9 +27,10 @@ from equity_os.contracts.companies.onboarding import (
     VerificationUnit,
 )
 from equity_os.contracts.measurement.canonical import Basis as PackageBasis
-from equity_os.contracts.measurement.observation import AccountingFramework, Scope
+from equity_os.contracts.measurement.observation import AccountingFramework
 from equity_os.contracts.sourcing.acquisition_outcome import OutcomeCode
 from equity_os.extraction.packages.member_identity import (
+    _BASIS_SCOPE,
     _NO_BASIS_DECLARATION,
     IssuerIdentifiers,
     integrated_ind_as,
@@ -168,21 +169,21 @@ def filing_identity(instance: RawXbrlInstance) -> FilingIdentity:
     )
 
 
-def instance_state(instance: RawXbrlInstance, period_end: date) -> Verdict:
-    """The instance's own declarations against its listing row: the consolidated file scope
-    and every declared reporting-period end (first-party ingest's own period predicate)."""
-    if instance.scope is not Scope.CONSOLIDATED:
-        return differs("instance scope", instance.scope.value, Scope.CONSOLIDATED.value)
+def instance_state(instance: RawXbrlInstance, period_end: date, basis: PackageBasis) -> Verdict:
+    """The instance's own declarations against its listing row: the file scope of the row's
+    basis and every declared reporting-period end (first-party ingest's own period predicate)."""
+    if instance.scope is not _BASIS_SCOPE[basis]:
+        return differs("instance scope", instance.scope.value, _BASIS_SCOPE[basis].value)
     period = verify_xbrl_period(instance, period_end)
     return VERIFIED if period.verified else conflict(period.reason or "")
 
 
 def ingest_identity_state(
-    instance: RawXbrlInstance, filing: FilingIdentity, expected: Expected
+    instance: RawXbrlInstance, filing: FilingIdentity, expected: Expected, basis: PackageBasis
 ) -> Verdict:
-    """First-party ingest's own identity predicate (``verify_xbrl_identity``, consolidated
-    basis) over the identifiers expected at the filed date (an unresolved issuer's scrip: the
-    filing's own, which ``exchange_state`` then checks). No context-bound report-nature
+    """First-party ingest's own identity predicate (``verify_xbrl_identity`` on ``basis``) over
+    the identifiers expected at the filed date (an unresolved issuer's scrip: the filing's own,
+    which ``exchange_state`` then checks). No context-bound report-nature
     declaration → UNVERIFIED (``BASIS_UNVERIFIED``); any other rejection is a contradiction."""
     identifiers = IssuerIdentifiers(  # ids are not read by the predicate
         entity_id=0,
@@ -191,7 +192,7 @@ def ingest_identity_state(
         bse_scrip=expected.scrip or _one(filing.scrip) or "",
         evidence_input_id=0,
     )
-    verdict = verify_xbrl_identity(instance, identifiers, basis=PackageBasis.CONSOLIDATED)
+    verdict = verify_xbrl_identity(instance, identifiers, basis=basis)
     if verdict.verified:
         return VERIFIED
     if verdict.reason == _NO_BASIS_DECLARATION.format(concept=instance.taxonomy.scope_concept):
@@ -279,9 +280,19 @@ def screener_candidate(search: bytes, symbol: str) -> Verdict | int:
     return int(ids[0])
 
 
-def screener_page_state(page: bytes, company_id: int, symbol: str, scrip: str) -> Verdict:
-    """The page's own company id and BSE/NSE codes equal the anchors; its consolidated basis
-    proven by the adapter's gate (marker plus warehouse id)."""
+def screener_topology(warehouse_id: int | None, basis: PackageBasis) -> BasisTopology:
+    """The verified page's warehouse id as the one basis the issuer publishes on Screener (a
+    standalone-only issuer has no consolidated page)."""
+    if basis is PackageBasis.STANDALONE:
+        return BasisTopology(standalone_warehouse_id=warehouse_id)
+    return BasisTopology(consolidated_warehouse_id=warehouse_id)
+
+
+def screener_page_state(
+    page: bytes, company_id: int, symbol: str, scrip: str, basis: PackageBasis
+) -> Verdict:
+    """The page's own company id and BSE/NSE codes equal the anchors; its ``basis`` proven by
+    the adapter's gate (warehouse id, plus the marker except on a standalone-only page)."""
     html = page.decode("utf-8", errors="replace")
     root = parse_document(html)
     try:
@@ -301,8 +312,8 @@ def screener_page_state(page: bytes, company_id: int, symbol: str, scrip: str) -
     if warehouse_id is None:
         return VerificationState.UNVERIFIED, OnboardingReason.BASIS_UNVERIFIED.value
     try:
-        topology = BasisTopology(consolidated_warehouse_id=warehouse_id)
-        read_page_evidence(html, basis_requested=Basis.CONSOLIDATED, topology=topology)
+        topology = screener_topology(warehouse_id, basis)
+        read_page_evidence(html, basis_requested=Basis(basis.value.lower()), topology=topology)
     except ScreenerSessionError:
         return VerificationState.UNVERIFIED, OnboardingReason.BASIS_UNVERIFIED.value
     return VERIFIED
@@ -318,9 +329,9 @@ def tijori_candidate(search: bytes) -> Verdict | str:
     return str(slugs[0])
 
 
-def tijori_page_state(page: bytes, slug: str, symbol: str) -> Verdict:
+def tijori_page_state(page: bytes, slug: str, symbol: str, basis: PackageBasis) -> Verdict:
     """The page's ``company_details.symbol`` equals the NSE symbol (its own gate classifies)
-    and it carries a consolidated table, the evidence ingest requires (D4.3)."""
+    and it carries a table of ``basis``, the evidence ingest requires (D4.3)."""
     record = classify_financials_body(page, expected_symbol=symbol, expected_company_id=None)
     if record.code is OutcomeCode.IDENTITY_MISMATCH:
         return conflict(f"Tijori page symbol is not {symbol}")
@@ -332,7 +343,7 @@ def tijori_page_state(page: bytes, slug: str, symbol: str) -> Verdict:
         tables = TijoriSource.parse_all_tables_bytes(page, slug=slug, expected_symbol=symbol)
     except TijoriError:
         tables = ()
-    if not any(table.scope is TijoriTableScope.CONSOLIDATED for table in tables):
+    if not any(table.scope is TijoriTableScope(basis.value.lower()) for table in tables):
         return VerificationState.UNVERIFIED, OnboardingReason.BASIS_UNVERIFIED.value
     return VERIFIED
 
@@ -353,8 +364,8 @@ def upstox_rows_state(instruments: bytes, isin: str, symbol: str, scrip: str) ->
     return VERIFIED
 
 
-def upstox_statement_state(statement: bytes, url: str) -> Verdict:
-    """The existing consolidated response gate: ``OK`` only (``OK_EMPTY`` → EMPTY_STATEMENT)."""
+def upstox_statement_state(statement: bytes, url: str, basis: PackageBasis) -> Verdict:
+    """The existing response gate on ``basis``: ``OK`` only (``OK_EMPTY`` → EMPTY_STATEMENT)."""
     document = read_income_statement(
         UpstoxFetch(
             raw_body=statement,
@@ -370,7 +381,7 @@ def upstox_statement_state(statement: bytes, url: str) -> Verdict:
                 retrieved_at=datetime.now(UTC),
             ),
         ),
-        requested_basis=StatementBasis.CONSOLIDATED,
+        requested_basis=StatementBasis(basis.value.lower()),
         requested_periodicity=StatementPeriodicity.QUARTERLY,
     )
     if document.outcome is AcquisitionOutcome.OK:

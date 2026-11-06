@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict
 
 from equity_os.companies.identity.identity_layers import latest_slice, resolve_owner
 from equity_os.companies.onboarding.verification import tijori_candidate, tijori_page_state
+from equity_os.contracts.measurement.canonical import Basis as PackageBasis
 from equity_os.contracts.measurement.evidence import CaptureReference
 from equity_os.contracts.sourcing.acquisition_outcome import OutcomeCode
 from equity_os.contracts.sourcing.snapshot import BodyCompleteness, CaptureRecord
@@ -657,7 +658,9 @@ def resolve_tijori_slug(
     ref, page = capture(fetcher, fetcher.store, pool, values, request, parse=False)
     with sanitized_reader_logs("tijori", spec.id):
         state = (
-            tijori_page_state(page.raw, slug, ids.nse_symbol)[0].value if page is not None else ""
+            tijori_page_state(page.raw, slug, ids.nse_symbol, PackageBasis.CONSOLIDATED)[0].value
+            if page is not None
+            else ""
         )
     values.record(
         ref,

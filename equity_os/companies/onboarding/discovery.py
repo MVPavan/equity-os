@@ -41,11 +41,11 @@ from equity_os.companies.onboarding.discovery_origins import (
     BSE_URL,
     INSTRUMENTS_URL,
     ORIGINS,
-    SCREENER_PAGE_URL,
-    STATEMENT_URL,
     TIJORI_PAGE_URL,
     TIJORI_SEARCH_URL,
+    screener_page_url,
     screener_search_url,
+    statement_url,
 )
 from equity_os.companies.onboarding.verification import (
     VERIFIED,
@@ -80,6 +80,7 @@ from equity_os.contracts.companies.onboarding import (
     VerificationUnit,
     as_of_for,
 )
+from equity_os.contracts.measurement.canonical import Basis
 from equity_os.contracts.measurement.evidence import CaptureReference
 from equity_os.contracts.sourcing.acquisition_outcome import OutcomeCode, OutcomeRecord
 from equity_os.contracts.sourcing.snapshot import (
@@ -96,6 +97,7 @@ from equity_os.contracts.sourcing.source_catalog import (
     NSE_MASTER,
     NSE_RESULTS_LISTING,
     NSE_XBRL_INSTANCE,
+    NSE_XBRL_STANDALONE,
     SCREENER_PAGE,
     SCREENER_SEARCH,
     TIJORI_PAGE,
@@ -145,6 +147,7 @@ _TIED = "two filings tie on the latest broadcast"
 _ABORT_HTTP = "{surface} returned {outcome}"
 _ABORT_AUTH = "{surface} is not authorised"
 _BAD_REPLAY = "replay generation {folder}: {why}"
+XBRL_SOURCES = {Basis.CONSOLIDATED: NSE_XBRL_INSTANCE, Basis.STANDALONE: NSE_XBRL_STANDALONE}
 
 
 class Recorded(BaseModel):
@@ -457,15 +460,15 @@ def discover(
     """Verify one NSE symbol's units in the D4.2 order."""
     run = _Run(symbol, fetch, table)
     try:
-        _anchors(run, conn, mapping_set)
-        _vendors(run)
+        _vendors(run, _anchors(run, conn, mapping_set))
     except _StopError:
         pass
     return run.result()
 
 
-def _anchors(run: _Run, conn: psycopg.Connection[Any], mapping_set: MappingSet) -> None:
-    """Master, stable-id resolution, filing window, the two instances, then BSE."""
+def _anchors(run: _Run, conn: psycopg.Connection[Any], mapping_set: MappingSet) -> Basis:
+    """Master, stable-id resolution, filing window, the two instances of the window's basis,
+    then BSE; returns that basis."""
     exchange, xbrl = VerificationUnit.EXCHANGE, VerificationUnit.XBRL_ENTITY
     rows = master_rows(run.anchor(exchange, NSE_MASTER, EQUITY_MASTER_URL), run.symbol)
     if not rows:
@@ -487,13 +490,12 @@ def _anchors(run: _Run, conn: psycopg.Connection[Any], mapping_set: MappingSet) 
     window = filing_window(listing_rows(*listings), as_of_for(master_retrieved))
     if window.tied:
         run.set(exchange, conflict(_TIED))
-    if not window.consolidated:
-        standalone = OnboardingReason.STANDALONE_BASIS
-        run.refuse(exchange, standalone if window.standalone else OnboardingReason.NO_IND_AS_FILING)
+    if not window.consolidated and not window.standalone:
+        run.refuse(exchange, OnboardingReason.NO_IND_AS_FILING)
     if len(window.filings) < FILINGS_CHECKED:
         run.refuse(exchange, OnboardingReason.INSUFFICIENT_FILINGS)
-    filings = window.filings[:FILINGS_CHECKED]
-    bodies = [run.anchor(xbrl, NSE_XBRL_INSTANCE, row.xbrl_url or "") for row in filings]
+    filings, basis = window.filings[:FILINGS_CHECKED], window.basis
+    bodies = [run.anchor(xbrl, XBRL_SOURCES[basis], row.xbrl_url or "") for row in filings]
     if not all(financial_rule(body) for body in bodies):
         run.refuse(xbrl, OnboardingReason.FINANCIAL_OR_UNKNOWN_SECTOR)
     try:
@@ -512,9 +514,9 @@ def _anchors(run: _Run, conn: psycopg.Connection[Any], mapping_set: MappingSet) 
         verdict
         for instance, row, (filing, expected) in zip(instances, filings, checked, strict=True)
         for verdict in (
-            instance_state(instance, row.period_end),
+            instance_state(instance, row.period_end, basis),
             xbrl_entity_state(filing, run.name, expected),
-            ingest_identity_state(instance, filing, expected),
+            ingest_identity_state(instance, filing, expected, basis),
         )
     ] + [framework_state(instance, body) for instance, body in zip(instances, bodies, strict=True)]
     run.set(xbrl, deciding(verdicts))
@@ -522,10 +524,11 @@ def _anchors(run: _Run, conn: psycopg.Connection[Any], mapping_set: MappingSet) 
     verdict, run.scrip = exchange_state(peer, run.isin, checked)
     run.set(exchange, verdict)
     _resolve(run, conn, run.scrip)
+    return basis
 
 
-def _vendors(run: _Run) -> None:
-    """Screener, Tijori and Upstox, each against the verified anchors."""
+def _vendors(run: _Run, basis: Basis) -> None:
+    """Screener, Tijori and Upstox, each against the verified anchors on ``basis``."""
     symbol, isin, scrip = run.symbol, run.isin or "", run.scrip or ""
     screener, tijori, upstox = (
         VerificationUnit.SCREENER,
@@ -538,8 +541,8 @@ def _vendors(run: _Run) -> None:
         found = screener_candidate(search, symbol)
         if not isinstance(found, int):
             return found
-        page = run.get(screener, SCREENER_PAGE, SCREENER_PAGE_URL.format(symbol=symbol))
-        return screener_page_state(page, found, symbol, scrip)
+        page = run.get(screener, SCREENER_PAGE, screener_page_url(symbol, basis))
+        return screener_page_state(page, found, symbol, scrip, basis)
 
     def tijori_check() -> Verdict:
         found = tijori_candidate(
@@ -548,15 +551,15 @@ def _vendors(run: _Run) -> None:
         if not isinstance(found, str):
             return found
         page = run.get(tijori, TIJORI_PAGE, TIJORI_PAGE_URL.format(slug=found))
-        return tijori_page_state(page, found, symbol)
+        return tijori_page_state(page, found, symbol, basis)
 
     def upstox_check() -> Verdict:
         rows = run.get(upstox, UPSTOX_INSTRUMENTS, INSTRUMENTS_URL)
         verdict = upstox_rows_state(rows, isin, symbol, scrip)
         if verdict != VERIFIED:
             return verdict
-        url = STATEMENT_URL.format(isin=isin)
-        return upstox_statement_state(run.get(upstox, UPSTOX_STATEMENT, url), url)
+        url = statement_url(isin, basis)
+        return upstox_statement_state(run.get(upstox, UPSTOX_STATEMENT, url), url, basis)
 
     run.vendor(screener, screener_check)
     run.vendor(tijori, tijori_check)

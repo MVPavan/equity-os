@@ -66,7 +66,11 @@ from equity_os.companies.onboarding.discovery import (
 )
 from equity_os.companies.onboarding.discovery_gate import IneligibleCaptureError
 from equity_os.companies.onboarding.discovery_origins import ORIGINS
-from equity_os.companies.onboarding.verification import outcome, tijori_candidate
+from equity_os.companies.onboarding.verification import (
+    outcome,
+    screener_topology,
+    tijori_candidate,
+)
 from equity_os.contracts.companies.onboarding import (
     ONBOARDING_VERSIONS,
     UNIT_SURFACES,
@@ -108,10 +112,7 @@ from equity_os.extraction.packages.first_party_ingest import ingest_first_party
 from equity_os.extraction.surfaces.vendor_ingest import VendorExtraction, VendorIngestRequest
 from equity_os.extraction.vendors.screener import vendor_screener
 from equity_os.extraction.vendors.screener.screener_financials_models import Section
-from equity_os.extraction.vendors.screener.screener_session_models import (
-    DEFAULT_USER_AGENT,
-    BasisTopology,
-)
+from equity_os.extraction.vendors.screener.screener_session_models import DEFAULT_USER_AGENT
 from equity_os.extraction.vendors.screener.screener_session_page import (
     parse_document,
     read_identity,
@@ -156,7 +157,7 @@ IMPLEMENTATION_PATHS = (
 HOLDOUT_RECORD = "tests/fundamentals/fixtures/data_foundation/stage4_holdout.yaml"
 TIMEOUT_SECONDS = 30
 RETRIEVAL_NAME = "retrieval-manifest.json"
-XBRL_KIND = "xbrl-consolidated"
+XBRL_KIND = "xbrl-{basis}"
 TIJORI_DISPLAY = Path("normalisation/mappings/tijori/v5/display.yaml")
 SCREENER_SECTIONS = (
     Section.QUARTERS,
@@ -395,7 +396,7 @@ def onboard(args: argparse.Namespace) -> Onboarded:
                 found = discover(args.symbol, fetch, conn, SURFACES, config.mapping_set)
             if outcome(found.states)[0] in _ADMITTED:
                 derived = derive(found)
-                package = package_manifest(args.symbol, authorization, derived.filings)
+                package = package_manifest(args.symbol, authorization, derived)
         finally:
             if acquisition is not None and log:
                 write_generation(folder, args.symbol, authorization, generation, log)
@@ -454,13 +455,13 @@ def _argv(args: argparse.Namespace) -> list[str]:
     ]
 
 
-def package_manifest(issuer: str, authorization: str, filings: Sequence[Filing]) -> bytes:
+def package_manifest(issuer: str, authorization: str, derived: DerivedSettings) -> bytes:
     """The XBRL-only ``retrieval-manifest.json`` of the verified filings, in the intake format
     (``quarter`` is the period end)."""
     entries = [
         {
             "quarter": filing.period_end.isoformat(),
-            "kind": XBRL_KIND,
+            "kind": _xbrl_kind(derived.basis),
             "url": filing.url,
             "filename": _filename(filing),
             "sha256": _sha256(filing.body),
@@ -468,7 +469,7 @@ def package_manifest(issuer: str, authorization: str, filings: Sequence[Filing])
             "filed_at_nse": filing.filed_at.strftime(NSE_FILED_AT_FORMAT),
             "retrieved_at": filing.retrieved_at.isoformat(),
         }
-        for filing in filings
+        for filing in derived.filings
     ]
     document = {"issuer": issuer, "authorization": authorization, "entries": entries}
     return json.dumps(document, indent=1).encode()
@@ -492,7 +493,7 @@ def _ingest(
     with pool.connection() as conn:
         derived_settings.write(conn, entity_id, derived, recorded.inputs)
         (key,) = conn.execute(_ENTITY_KEY_SQL, (entity_id,)).fetchone() or ("",)
-    repository = EvidenceRepository(pool)
+    repository, basis = EvidenceRepository(pool), derived.basis
     latest = derived.filings[0]
     period = latest.period_end
     month = int(derived.value(SettingKey.FISCAL_YEAR_END_MONTH, period))
@@ -506,10 +507,11 @@ def _ingest(
             inputs / RETRIEVAL_NAME,
             issuer=found.symbol,
             quarter=period.isoformat(),
-            kinds={Representation.XBRL: XBRL_KIND},
+            kinds={Representation.XBRL: _xbrl_kind(basis)},
             store_root=args.snapshot_root.absolute(),
             input_root=inputs.absolute(),
             issuer_config=None,
+            basis=basis,
         )
         report = ingest_first_party(
             intake=intake,
@@ -520,7 +522,7 @@ def _ingest(
             mapping_set=config.mapping_set,
             policy=config.normalisation_policy,
             entity_id=entity_id,
-            basis=Basis.CONSOLIDATED,
+            basis=basis,
             framework=AccountingFramework.IND_AS,
             family=FilingFamily.FINANCIAL_RESULTS,
             reporting_period_end=period,
@@ -528,14 +530,14 @@ def _ingest(
         )
     failed = [a.outcome for a in report.attempts if a.outcome is not ExtractionOutcome.COMPLETE]
     if report.package_id is None or failed:
-        raise OnboardingIngestError(_INGEST_FAILED.format(what=XBRL_KIND, outcome=failed))
+        raise OnboardingIngestError(_INGEST_FAILED.format(what=_xbrl_kind(basis), outcome=failed))
     stored = {
         (item.request.source_id, item.request.surface): (item.response.body or b"", ref)
         for item, (_, ref) in zip(found.captures, refs, strict=True)
     }
     verified = {u for u, (state, _) in found.states.items() if state is VerificationState.VERIFIED}
     for pair, representation, extract, version in _vendor_adapters(
-        args.config_root, found, stored, verified, month, recorded.inputs
+        args.config_root, found, stored, verified, month, recorded.inputs, basis
     ):
         ref = stored[pair][1]
         vendor = ingest_vendor_retained(
@@ -547,7 +549,7 @@ def _ingest(
                 representation=representation,
                 entity_id=entity_id,
                 period_end=period,
-                basis=Basis.CONSOLIDATED,
+                basis=basis,
                 framework=AccountingFramework.IND_AS,
             ),
             extract=extract,
@@ -564,11 +566,12 @@ def _ingest(
             raise OnboardingIngestError(
                 _INGEST_FAILED.format(what="/".join(pair), outcome=vendor.attempt.outcome)
             )
-    exclude_pdf(repository, entity_id, period, _sha256((folder / MANIFEST_NAME).read_bytes()))
-    return compare_command(key, period, args.config_root)
+    discovery_sha256 = _sha256((folder / MANIFEST_NAME).read_bytes())
+    exclude_pdf(repository, entity_id, period, discovery_sha256, basis)
+    return compare_command(key, period, args.config_root, basis)
 
 
-def compare_command(entity: str, period_end: date, config_root: Path) -> str:
+def compare_command(entity: str, period_end: date, config_root: Path, basis: Basis) -> str:
     """The ``compare run`` command under ``ONBOARDING_VERSIONS`` and onboarding's config root,
     shell-quoted (an entity key such as ``M&M`` stays one argument)."""
     vendors = [
@@ -580,7 +583,7 @@ def compare_command(entity: str, period_end: date, config_root: Path) -> str:
     return shlex.join(
         [
             *("eqos", "compare", "run", "--entity", entity),
-            *("--period-end", period_end.isoformat(), "--basis", "consolidated"),
+            *("--period-end", period_end.isoformat(), "--basis", basis.value.lower()),
             *("--mode", "as_known", "--config-root", str(config_root)),
             *("--dictionary", ONBOARDING_VERSIONS.dictionary),
             *("--mapping-set", ONBOARDING_VERSIONS.mapping_set, *vendors),
@@ -595,9 +598,10 @@ def _vendor_adapters(
     verified: set[VerificationUnit],
     month: int,
     inputs: Mapping[VerificationUnit, int],
+    basis: Basis,
 ) -> Iterator[tuple[tuple[str, str], Representation, Any, str]]:
-    """Each verified vendor unit's comparison capture and adapter, its binding read from the
-    verified bytes: Screener once per page section (as Stage 1), Tijori, Upstox."""
+    """Each verified vendor unit's comparison capture and adapter on ``basis``, its binding read
+    from the verified bytes: Screener once per page section (as Stage 1), Tijori, Upstox."""
     if VerificationUnit.SCREENER in verified:
         page = stored[SCREENER_PAGE][0].decode("utf-8", errors="replace")
         company_id, warehouse_id = read_identity(parse_document(page))
@@ -605,7 +609,7 @@ def _vendor_adapters(
             symbol=found.symbol,
             company_id=company_id,
             bse_code=found.scrip or "",
-            topology=BasisTopology(consolidated_warehouse_id=warehouse_id),
+            topology=screener_topology(warehouse_id, basis),
             identity_evidence_ref=_EVIDENCE_REF.format(id=inputs[VerificationUnit.SCREENER]),
             fiscal_year_end_month=month,
         )
@@ -613,7 +617,7 @@ def _vendor_adapters(
             yield (
                 SCREENER_PAGE,
                 Representation.HTML,
-                partial(_screener, binding=binding, section=section),
+                partial(_screener, binding=binding, section=section, basis=basis),
                 vendor_screener.EXTRACTOR_VERSION,
             )
     if VerificationUnit.TIJORI in verified:
@@ -628,7 +632,7 @@ def _vendor_adapters(
                 slug=str(slug), symbol=found.symbol, company_id=details[_TIJORI_COMPANY_ID]
             ),
             display=vendor_tijori.load_tijori_display(config_root / TIJORI_DISPLAY),
-            basis=Basis.CONSOLIDATED,
+            basis=basis,
         )
         yield (
             TIJORI_PAGE,
@@ -637,7 +641,7 @@ def _vendor_adapters(
             vendor_tijori.EXTRACTOR_VERSION,
         )
     if VerificationUnit.UPSTOX in verified:
-        upstox = partial(vendor_upstox.extract_upstox, basis=Basis.CONSOLIDATED)
+        upstox = partial(vendor_upstox.extract_upstox, basis=basis)
         yield (
             UPSTOX_STATEMENT,
             Representation.JSON,
@@ -654,6 +658,7 @@ def _screener(
     extractor_version: str,
     binding: ScreenerIssuerBinding,
     section: Section,
+    basis: Basis,
 ) -> VendorExtraction:
     """The Screener page adapter in the ``ingest_vendor`` shape (it reads no record)."""
     del record
@@ -661,14 +666,18 @@ def _screener(
         body,
         capture=capture,
         binding=binding,
-        basis=Basis.CONSOLIDATED,
+        basis=basis,
         section=section,
         extractor_version=extractor_version,
     )
 
 
 def exclude_pdf(
-    repository: EvidenceRepository, entity_id: int, period_end: date, discovery_sha256: str
+    repository: EvidenceRepository,
+    entity_id: int,
+    period_end: date,
+    discovery_sha256: str,
+    basis: Basis,
 ) -> None:
     """R-PDF (C1): a capture-less ``EXCLUDED_BY_RULE`` acquisition attempt, so the run imposes
     ``UNAVAILABLE`` on the PDF side rather than reading an absent member as ``NO_VALUE``."""
@@ -681,7 +690,7 @@ def exclude_pdf(
                 surface=FirstPartySurface.NSE_RESULTS_PDF.value,
                 entity_id=entity_id,
                 period_end=period_end,
-                basis=Basis.CONSOLIDATED,
+                basis=basis,
                 framework=AccountingFramework.IND_AS,
                 representation=Representation.PDF,
                 statement_family=None,
@@ -695,6 +704,11 @@ def exclude_pdf(
             )
         ]
     )
+
+
+def _xbrl_kind(basis: Basis) -> str:
+    """The package manifest's XBRL member kind on ``basis``."""
+    return XBRL_KIND.format(basis=basis.value.lower())
 
 
 def _filename(filing: Filing) -> str:

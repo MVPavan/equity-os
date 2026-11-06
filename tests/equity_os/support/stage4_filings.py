@@ -15,6 +15,7 @@ from lxml import etree  # type: ignore[import-untyped]
 
 from equity_os.companies.onboarding.verification import VERIFIED, instance_state
 from equity_os.contracts.companies.onboarding import ONBOARDING_VERSIONS
+from equity_os.contracts.measurement.canonical import Basis
 from equity_os.extraction.xbrl.xbrl_adapter import parse_instance
 from equity_os.extraction.xbrl.xbrl_parser import RawXbrlInstance
 from equity_os.normalisation.dictionary.dictionary import load_dictionary
@@ -179,6 +180,7 @@ def xbrl_admitted(instances: Iterable[tuple[bytes, date]]) -> bool:
     except UnsupportedSchemaError:
         return False
     return all(
-        instance_state(instance, end) == VERIFIED and historical_framework(instance)
+        instance_state(instance, end, Basis.CONSOLIDATED) == VERIFIED
+        and historical_framework(instance)
         for instance, end in parsed
     )

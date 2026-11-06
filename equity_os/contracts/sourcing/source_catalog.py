@@ -192,6 +192,7 @@ BUILTIN_SOURCES: SourceCatalog = SourceCatalog.of(
     _first_party("bse-summary"),
     _first_party("bse-results-pdf"),
     _first_party("nse-indas-xbrl-consolidated"),
+    _first_party("nse-indas-xbrl-standalone"),
     _first_party("nse-shareholding-xbrl"),
     _first_party("bse-announcements", is_namespace=True),
     _first_party("nse-announcements", is_namespace=True),
@@ -241,6 +242,7 @@ NSE_MASTER = ("nse", "EQUITY_L")
 NSE_RESULTS_LISTING = ("nse", "FINANCIAL_RESULTS_LISTING")
 NSE_INTEGRATED_LISTING = ("nse", "INTEGRATED_FILING_LISTING")
 NSE_XBRL_INSTANCE = ("nse-indas-xbrl-consolidated", "NSE_XBRL_INSTANCE")
+NSE_XBRL_STANDALONE = ("nse-indas-xbrl-standalone", "NSE_XBRL_INSTANCE")
 BSE_PEER_SEARCH = ("bse", "PEER_SMART_SEARCH")
 SCREENER_SEARCH = ("screener-subscriber", "SCREENER_SEARCH")
 SCREENER_PAGE = ("screener-subscriber", "SCREENER_FINANCIALS")
@@ -316,7 +318,10 @@ VENDOR_SURFACES: tuple[SurfaceAuthority, ...] = (
         _surface(*pair, representation, SourceRole.IDENTITY, authority)
         for pair, representation, authority in _IDENTITY_SURFACES
     ),
-    _surface(*NSE_XBRL_INSTANCE, Representation.XBRL, SourceRole.FIRST_PARTY, _EXCHANGE_RIGHTS),
+    *(
+        _surface(*pair, Representation.XBRL, SourceRole.FIRST_PARTY, _EXCHANGE_RIGHTS)
+        for pair in (NSE_XBRL_INSTANCE, NSE_XBRL_STANDALONE)
+    ),
     _surface(*SHP_XBRL, Representation.XBRL, SourceRole.FIRST_PARTY, _EXCHANGE_RIGHTS),
     *(
         _surface(*pair, Representation.HTML, SourceRole.INDEPENDENT_VENDOR, _SUBSCRIBER_RIGHTS)

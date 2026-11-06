@@ -64,6 +64,7 @@ from equity_os.companies.onboarding.discovery import (
     screener_search_url,
 )
 from equity_os.contracts.companies.onboarding import VerificationUnit
+from equity_os.contracts.measurement.canonical import Basis
 from equity_os.contracts.sourcing.source_catalog import VENDOR_SURFACES
 from equity_os.interface.commands.companies import onboard_cli
 from equity_os.interface.commands.companies.onboard_cli import RETRIEVAL_NAME
@@ -362,7 +363,9 @@ def test_a_reserved_character_symbol_stays_one_value_in_request_and_printed_comm
     does, keeps the entity and an alternate config root as single arguments."""
     query = parse_qs(urlsplit(screener_search_url("ZZ&A")).query)
     assert query == {"q": ["ZZ&A"], "v": ["3"], "fts": ["1"]}
-    command = onboard_cli.compare_command("ZZ&A", date(2026, 6, 30), Path("/zz alt/config"))
+    command = onboard_cli.compare_command(
+        "ZZ&A", date(2026, 6, 30), Path("/zz alt/config"), Basis.CONSOLIDATED
+    )
     argv = list(shlex.shlex(command, posix=True, punctuation_chars=True))  # ``&`` is a token
     assert argv[argv.index("--entity") + 1] == "ZZ&A"
     assert argv[argv.index("--config-root") + 1] == "/zz alt/config"

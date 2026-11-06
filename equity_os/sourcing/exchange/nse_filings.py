@@ -7,7 +7,9 @@ six latest calendar quarter-ends on or before ``as_of``; rows of both listings w
 a period end in the window, identical parsed rows counted once, collapse to the latest broadcast
 per ``(period_end, basis)``; a group holding a row with a missing or empty broadcast time is left
 out; a tie on the latest broadcast is reported.
-Qualifying filings are collapsed integrated ``Financials`` rows on the consolidated basis.
+Qualifying filings are collapsed integrated ``Financials`` rows on the window's basis: the
+consolidated basis when the window holds any consolidated row, else the standalone basis (spec
+2026-11-06-vendor-first §6.2).
 """
 
 from __future__ import annotations
@@ -21,12 +23,15 @@ from urllib.parse import urlencode
 
 from pydantic import BaseModel, ConfigDict
 
+from equity_os.contracts.measurement.canonical import Basis
+
 NSE_API = "https://www.nseindia.com/api"
 EQUITY_MASTER_URL = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
 LEGACY_LISTING = ("corporates-financial-results", "quarterly")
 INTEGRATED_LISTING = ("integrated-filing-results", "Quarterly")
 WINDOW_QUARTERS = 6
 CONSOLIDATED = "Consolidated"
+LISTING_BASIS = {Basis.CONSOLIDATED: CONSOLIDATED, Basis.STANDALONE: "Standalone"}
 FINANCIALS = "Integrated Filing- Financials"
 _DAY = "%d-%b-%Y"
 _MOMENT = "%d-%b-%Y %H:%M:%S"
@@ -46,17 +51,18 @@ class ListingRow(BaseModel):
     kind: str | None
     xbrl_url: str | None
 
-    @property
-    def qualifies(self) -> bool:
-        """An integrated Financials row on the consolidated basis."""
-        return self.integrated and self.kind == FINANCIALS and self.basis == CONSOLIDATED
+    def qualifies(self, basis: str) -> bool:
+        """An integrated Financials row on the listing ``basis``."""
+        return self.integrated and self.kind == FINANCIALS and self.basis == basis
 
 
 class FilingWindow(BaseModel):
-    """The collapsed window: qualifying filings (latest period first) and bases present."""
+    """The collapsed window: its basis, the qualifying filings on it (latest period first) and
+    the bases present."""
 
     model_config = ConfigDict(frozen=True)
 
+    basis: Basis
     filings: tuple[ListingRow, ...]
     consolidated: bool
     standalone: bool
@@ -93,12 +99,33 @@ def listing_rows(legacy: bytes, integrated: bytes) -> list[ListingRow]:
 
 
 def filing_window(rows: Sequence[ListingRow], as_of: date) -> FilingWindow:
-    """Collapse the rows in the window and keep the qualifying ones (D1.3)."""
+    """Collapse the rows in the window and keep the qualifying ones of its basis (D1.3)."""
     window = quarter_ends(as_of)
+    latest, tied = collapse([row for row in rows if row.period_end in window])
+    consolidated = any(row.basis == CONSOLIDATED for row in latest)
+    basis = Basis.CONSOLIDATED if consolidated else Basis.STANDALONE
+    listed = LISTING_BASIS[basis]
+    return FilingWindow(
+        basis=basis,
+        filings=tuple(
+            sorted(
+                (r for r in latest if r.qualifies(listed)),
+                key=lambda r: r.period_end,
+                reverse=True,
+            )
+        ),
+        consolidated=consolidated,
+        standalone=any(row.basis != CONSOLIDATED for row in latest),
+        tied=tied,
+    )
+
+
+def collapse(rows: Sequence[ListingRow]) -> tuple[list[ListingRow], bool]:
+    """The latest broadcast per ``(period_end, basis)``, identical rows counted once and groups
+    with a missing broadcast dropped, and whether any latest broadcast ties."""
     groups: dict[tuple[date, str], list[ListingRow]] = defaultdict(list)
     for row in dict.fromkeys(rows):  # an identical row listed twice is one filing
-        if row.period_end in window:
-            groups[row.period_end, row.basis].append(row)
+        groups[row.period_end, row.basis].append(row)
     latest: list[ListingRow] = []
     tied = False
     for group in groups.values():
@@ -108,14 +135,7 @@ def filing_window(rows: Sequence[ListingRow], as_of: date) -> FilingWindow:
         top = [row for row in group if row.broadcast == max(t for t in times if t)]
         tied = tied or len(top) > 1
         latest.append(top[0])
-    return FilingWindow(
-        filings=tuple(
-            sorted((r for r in latest if r.qualifies), key=lambda r: r.period_end, reverse=True)
-        ),
-        consolidated=any(row.basis == CONSOLIDATED for row in latest),
-        standalone=any(row.basis != CONSOLIDATED for row in latest),
-        tied=tied,
-    )
+    return latest, tied
 
 
 def quarter_ends(as_of: date) -> set[date]:

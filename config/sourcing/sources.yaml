@@ -35,6 +35,13 @@ sources:
   catalog: first_party/reconcilable
   surfaces:
     NSE_XBRL_INSTANCE: first_party
+- id: nse-indas-xbrl-standalone
+  role: first-party
+  status: active
+  note: a standalone-only issuer's results XBRL (spec 2026-11-06-vendor-first §6.2)
+  catalog: first_party/reconcilable
+  surfaces:
+    NSE_XBRL_INSTANCE: first_party
 - id: nse-shareholding-xbrl
   role: first-party
   status: active

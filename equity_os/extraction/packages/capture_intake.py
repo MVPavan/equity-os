@@ -19,10 +19,12 @@ from zoneinfo import ZoneInfo
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from equity_os.contracts.measurement.canonical import Representation
+from equity_os.contracts.measurement.canonical import Basis, Representation
 from equity_os.contracts.measurement.evidence import CaptureReference
 from equity_os.contracts.sourcing.snapshot import SnapshotError, SnapshotRights, canonical_sha256
 from equity_os.contracts.sourcing.source_catalog import (
+    NSE_XBRL_INSTANCE,
+    NSE_XBRL_STANDALONE,
     SourceCatalog,
     SourceClass,
     UnknownSourceError,
@@ -34,7 +36,11 @@ from equity_os.storage.raw_files.snapshot_store import (
     SnapshotStore,
 )
 
-NSE_XBRL_SOURCE_ID = "nse-indas-xbrl-consolidated"
+NSE_XBRL_SOURCE_ID = NSE_XBRL_INSTANCE[0]
+NSE_XBRL_SOURCES = {
+    Basis.CONSOLIDATED: NSE_XBRL_SOURCE_ID,
+    Basis.STANDALONE: NSE_XBRL_STANDALONE[0],
+}
 # Test-only first-party namespace for marked copies (plan Constraints). The CLI never
 # declares it, so a marked id there is undeclared and refused.
 MARKED_SOURCE_PREFIX = "marked-"
@@ -160,11 +166,12 @@ def retained_intake_from_manifest(
     issuer_config: Path | None,
     pdf_declaration: str = "results_pdf",
     rights: SnapshotRights | None = None,
+    basis: Basis = Basis.CONSOLIDATED,
 ) -> RetainedIntake:
     """Bind one package's members from the retrieval manifest; nothing is staged here.
 
     ``pdf_declaration`` names the issuer-config block that pins the PDF member; ``rights``
-    defaults to the manifest's recorded authority.
+    defaults to the manifest's recorded authority; ``basis`` selects the XBRL source.
     """
     manifest_bytes = manifest_path.read_bytes()
     manifest = json.loads(manifest_bytes)
@@ -180,7 +187,7 @@ def retained_intake_from_manifest(
         bindings.append(
             RetainedCaptureBinding(
                 representation=representation,
-                source_id=_source_id(representation, entry["sha256"], results_pdf),
+                source_id=_source_id(representation, basis, entry["sha256"], results_pdf),
                 relative_path=Path(folder) / entry["filename"],
                 expected_sha256=entry["sha256"],
                 filed_at_raw=entry["filed_at_nse"],
@@ -210,9 +217,10 @@ def authorise(
     """The binding's surface when the catalog authorises it, else ``None``.
 
     Authorised iff the source resolves to a reconcilable first-party declaration and the
-    (representation, source) pair is in the decision-12 table: the builtin NSE XBRL source
-    for XBRL, the issuer config's declared results PDF (``results_pdf_source_id``) for PDF,
-    or a declared marked copy of either. A first-party source of the other surface, or any
+    (representation, source) pair is in the decision-12 table: a builtin NSE XBRL source of
+    either basis for XBRL (extraction checks the instance's own scope against the requested
+    basis), the issuer config's declared results PDF (``results_pdf_source_id``) for PDF, or a
+    declared marked copy of either. A first-party source of the other surface, or any
     other first-party PDF, is not authorised.
     """
     try:
@@ -222,11 +230,13 @@ def authorise(
     if descriptor.source_class is not SourceClass.FIRST_PARTY or not descriptor.may_reconcile:
         return None
     permitted = (
-        NSE_XBRL_SOURCE_ID
+        set(NSE_XBRL_SOURCES.values())
         if binding.representation is Representation.XBRL
-        else results_pdf_source_id
+        else {results_pdf_source_id}
     )
-    if binding.source_id != permitted and not binding.source_id.startswith(MARKED_SOURCE_PREFIX):
+    if binding.source_id not in permitted and not binding.source_id.startswith(
+        MARKED_SOURCE_PREFIX
+    ):
         return None
     return SURFACE_OF[binding.representation]
 
@@ -310,12 +320,20 @@ def _results_pdf(issuer_config: Path, declaration: str) -> _ResultsPdf:
     return _ResultsPdf.model_validate(raw[declaration])
 
 
+def xbrl_source_id(basis: Basis) -> str:
+    """The NSE results XBRL source of one basis."""
+    return NSE_XBRL_SOURCES[basis]
+
+
 def _source_id(
-    representation: Representation, manifest_sha256: str, results_pdf: _ResultsPdf | None
+    representation: Representation,
+    basis: Basis,
+    manifest_sha256: str,
+    results_pdf: _ResultsPdf | None,
 ) -> str:
     """The source id a member is registered under."""
     if representation is Representation.XBRL:
-        return NSE_XBRL_SOURCE_ID
+        return xbrl_source_id(basis)
     if results_pdf is None:
         raise IntakeError(_NO_ISSUER_CONFIG)
     if results_pdf.sha256 != manifest_sha256:
