@@ -8,7 +8,7 @@
 | R2-03 (P1) allowlist | `retention_classes` (0027 `classify_capture`, `AFTER INSERT ON capture_refs`) is added to every row that can register a new capture: grounding, onboarding, evidence ingest. Conditional `calculation_traces`, `calculation_trace_operands` and `construction_traces` (`put_interpretations`) are added to onboarding and evidence ingest. Reingest stays sequence-only for existing captures. `capture_states` is dropped, because registration writes none. A trigger reconciliation over migrations 0001–0049 is stated under the table. |
 | R3-01 (P2) ledger check | Task 3 freezes and reviews the evidence-backed ledger, recording its sha256. Task 6 runs the mechanical comparison against the implemented v5 rules and must pass before Task 10. Expected outcomes are read from the frozen ledger, never regenerated. A mismatch stops work until a reviewed ledger or branch amendment. |
 | Notes | The Interactions line now says FIVE-1 never edits this plan. Task 13's commands carry every argument, filled into `commands.txt` before Task 8's exact-command test and before sealing. The frozen ledger stays independent of the implementation (Task 6). |
-| PDF-fix renumbering (orchestrator, binding) | The base is `main` after `eqos-djv`, `eqos-ghv`, `eqos-dol` and `eqos-n21` (`f75892e8`): dictionary v4, mapping set v10, `pdf/v3`, `constructions/v3`, `pdf-occurrences/5`. Phase 3 now creates dictionary **v5** (v4 plus issuer applicability and bank rows), first-party set **v11**, vendor set **v12**, **`pdf/v4/`** (a copy of `pdf/v3` plus `results_layout_banking.yaml`) and PDF extractor **`pdf-occurrences/6`**. Phase 3 creates no constructions version; one, if needed, would be `constructions/v4`. Unchanged: `xbrl/v6`, `statement_anchors/v3`, `screener/v5`, `tijori/v6`, formula set label `v4` (unused; v4 declares formula set v2). |
+| PDF-fix renumbering (orchestrator, binding) | The base is `main` after `eqos-djv`, `eqos-ghv`, `eqos-dol` and `eqos-n21` (`f75892e8`): dictionary v4, mapping set v10, `pdf/v3`, `constructions/v3`, `pdf-occurrences/5`. Phase 3 now creates dictionary **v5** (v4 plus issuer applicability and bank rows), first-party set **v11**, vendor set **v12**, **`pdf/v4/results_layout_banking.yaml`** (alone; v11 keeps listing `pdf/v3/results_layout.yaml`) and PDF extractor **`pdf-occurrences/6`**. Phase 3 creates no constructions version; one, if needed, would be `constructions/v4`. Unchanged: `xbrl/v6`, `statement_anchors/v3`, `screener/v5`, `tijori/v6`, formula set label: v4 declares formula set v3 after the rebase (v4 adds rows, not formula-set changes, unless the rebase worker finds one is needed). |
 
 **Status:** fix round 3 after Sol plan review 3 (`CHANGES REQUIRED`: R2-03, R2-04, R3-01, notes),
 renumbered after the results-PDF fixes, over round 2's R2-01–R2-05 and round 1's F01–F26 and
@@ -18,7 +18,7 @@ A1–A6; for Sol re-review. **Bead:** `eqos-awnc`. **Prerequisite:** FIVE-1 Task
 (A6), §6.6 (A3), §1–§4 (owner order; decision 2: ICICIBANK's analysis basis is standalone) and §6.8
 step 1. Code facts read at `517198f6`, rechecked for round 3 at `f19d2d54`.
 **Base (orchestrator ruling):** `main` after the results-PDF fixes land (branch tip `f75892e8`):
-dictionary v4 (v2 plus `current_tax_excl_earlier_years`, formula set v2), mapping set v10 (v9 with
+dictionary v4 (v3 plus `current_tax_excl_earlier_years`; orchestrator ruling 2026-11-06: the PDF fixes rebase v4 on v3 before landing, so the lineage drops nothing), mapping set v10 (v9 with
 `pdf/v3` and `constructions/v3`), `PDF_EXTRACTOR_VERSION = "pdf-occurrences/5"`, and
 `PILOT_VERSIONS` at dictionary v4 and mapping set v10. Task 4 starts from that tip and Task 10
 confirms these values there; any other value stops work for an amendment. Phase 1 Task 10
@@ -222,7 +222,7 @@ new code is refused by version, never recomputed (historical replay needs the ol
 | `equity_os/verification/comparison/engine_issuer_context.py` | create | 7 | `issuer_context(settings, entity_id, period_end, cutoff)` |
 | `equity_os/verification/comparison/{engine,engine_vendor_context,run_family,fact_view}.py` | modify | 7 | pass the context where keys, packages and lookups are chosen (engine net ≤ +10) |
 | `evidence_cli.py`, `vendor_reingest.py`, `verification/admission/fallback.py` | modify | 7 (+12 `vendor_reingest`) | entity framework, framework evidence and source; reingest's Screener binding via `verification.screener_topology` with the entity's basis status (R2-04); display from the set (12) |
-| `config/normalisation/mappings/xbrl/v6/*`, `statement_anchors/v3.yaml` (B8), `pdf/v4/*` (`pdf/v3/results_layout.yaml` copied plus `results_layout_banking.yaml`) and `config/runs/icicibank-<period>.yaml` (B7a), `mappings/v11.yaml` | create | 8 | bank first-party entries and set |
+| `config/normalisation/mappings/xbrl/v6/*`, `statement_anchors/v3.yaml` (B8), `pdf/v4/results_layout_banking.yaml` (v11 also lists the unchanged `pdf/v3/results_layout.yaml`) and `config/runs/icicibank-<period>.yaml` (B7a), `mappings/v11.yaml` | create | 8 | bank first-party entries and set |
 | `equity_os/extraction/xbrl/xbrl_taxonomies.py` | modify | 8 (B3b) | evidenced `TaxonomySpec` |
 | `equity_os/normalisation/mapping/mapping.py` | modify | 12 | optional `display_file` set key |
 | `config/normalisation/mappings/{screener/v5,tijori/v6}/financials_banking.yaml`, `tijori/v6/display.yaml`, `mappings/v12.yaml` | create | 12 | bank vendor supplements and set |
@@ -560,9 +560,8 @@ only for lines the retained filing carries, each `meaning` citing the record. No
 rows and their formulas declare `NON_FINANCIAL`. Nothing is deleted or weakened for absence (F12):
 period requirements and `when_statement_present` rules stay as in v4; an absent statement is a
 capability `UNSUPPORTED` line whose expected result the unchanged rule decides, not a removed row;
-no Apar rule changes. No unevidenced bank concept is added. v5 follows v4's lineage (orchestrator
-ruling): dictionary v3's shareholding `INSTANT` requirement is not carried, since it changes only
-the shareholding family, outside this acceptance.
+no Apar rule changes. No unevidenced bank concept is added. v5 follows v4's lineage, which includes
+v3's shareholding rows (orchestrator ruling: v4 = v3 plus the PDF current-tax row).
 
 Verification: unit: shared × both → rule decides; bank × `NON_FINANCIAL` → `NOT_APPLICABLE` by
 `ISSUER_RULE_ID`; v4 × `BANK` → unchanged; v5 × `None` → `IssuerContextMissingError`. Tree diff:
@@ -643,9 +642,8 @@ v11.
 
 Files:
 - Create: `config/normalisation/mappings/xbrl/v6/*`, `mappings/v11.yaml` (v10's files and keys
-  plus the changes below); B8 `statement_anchors/v3.yaml`; B7a `pdf/v4/` (`results_layout.yaml`
-  byte-identical to `pdf/v3`'s, plus `results_layout_banking.yaml`; v11 lists `pdf/v4/*` in place
-  of `pdf/v3/results_layout.yaml`), `config/runs/icicibank-<period>.yaml`
+  plus the changes below); B8 `statement_anchors/v3.yaml`; B7a `pdf/v4/results_layout_banking.yaml`
+  only (v11 lists `pdf/v3/results_layout.yaml` unchanged plus this file; no copy), `config/runs/icicibank-<period>.yaml`
 - Modify: B3b `xbrl_taxonomies.py`
 - Test: `test_bank_mapping.py` (`retained`)
 
