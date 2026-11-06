@@ -186,13 +186,113 @@ is unconditional; only the cells below vary.
 | | | **B10b** other concepts | Task 5 reads the evidenced concepts for the `BANK` form |
 | | | **B10c** absent | stop: onboarding would be blocked, not accepted |
 
+## Resolved branches (Task 3; draft for Sol review, eqos-awnc)
+
+Fixed from `docs/evidence/vendor-first/icicibank-grounding.md` (gen-1). `[Bx.yy]` are its Task 2
+locators; `[T3.nn]` are the rows Task 3 added. The locator check
+(`scratchpad/vendor-first/live-p3-1/locators_t3.py`) passes 209 of 209, none `NOT_ASSESSED`.
+
+**The table gives B1c, a stop.** The framework is declared only in the results PDFs (B1′ P), and
+B7 fails on both PDFs because neither prints `Scrip Symbol :` [B7.15, B7.16]. "With B1′ P → B1c"
+then applies. Every arm below is conditional on amendment A7, which proposes an evidenced PDF
+identity rule. With A7, B1 is B1b. **If Sol rejects A7, B1c stands and the phase halts at Task 3.**
+The missing evidence would then be a PDF association with the issuer that the current contract
+accepts.
+
+| Branch | Arm | Evidence | Consequence |
+|---|---|---|---|
+| B1 | **B1b `INDIAN_GAAP`** (under A7; B1c without it) | No instance declares a framework [B1.01–B1.04]. All four PDF basis declarations agree [B1.05, B1.06, B1.09, B1.10]: "Accounting Standards prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949, the circulars, guidelines and directions issued by the Reserve Bank of India … and other accounting principles generally accepted in India". The releases call this "Indian GAAP" [B1.07, B1.11]. No `IND_AS` phrase occurs [B1.13–B1.18]. The new phrase matches all four as a token run [T3.15–T3.18]. | Task 4: `AccountingFramework.INDIAN_GAAP = "INDIAN_GAAP"`. 0050 also widens the four `framework` CHECKs (0001: `filing_packages`, `acquisition_attempts`, `interpretations`, `results`); without that, no bank package, attempt, interpretation or result row can be written. Task 5: `FRAMEWORK_DECLARATIONS[INDIAN_GAAP] = ("prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949",)`. The comment cites T3.15–T3.18. Task 9 applies A7's spec wording. |
+| B1′ | **P** | The declaration is in the PDFs only [B1.05, B1.09; B1.01–B1.04]. The basis association is the declaration's own subject, "The standalone financial results have been prepared" [B1.05, B1.09]. The period association is page 1, "for the quarter and six months ended September 30, 2026" and "for the quarter ended June 30, 2026" [B7.01, B7.09]. | Task 5's P arm and Task 7's P paths, as written. Identity is A7. |
+| B2 | **B2a** | Each of the four instances' namespace forms is exactly `{Banking}` [B2.01–B2.08]. | Task 5 maps `Banking` → `BANK`. |
+| B3 | **B3a** | Facts are in the registered `http://www.sebi.gov.in/xbrl/2026-01-31/in-capmkt` [B3.01, B3.06, B3.11, B3.16]. Its scope and period concepts are used at `OneD` [B3.02–B3.20]. | **Parser:** no change; no `TaxonomySpec` and no `xbrl_taxonomies.py` edit (B3b struck). |
+| B4 | **B4b** | The name is `NameOfBank` [B4.04, B4.10, B4.16, B4.22], not `NameOfTheCompany` [B4.05, B4.11, B4.17, B4.23]. Q1 contexts use scheme `http://www.sebi.gov.in/in-capmkt/Symbol` with `ICICIBANK` [B4.18, B4.24]. That equals the instance's own `Symbol` fact [B4.14, B4.20] and the master symbol [B4.25]. The Q2 contexts use the seeded ScripCode scheme [B4.06, B4.12]. | Ruling below. Task 5: `filing_identity` reads `NameOfBank` for the `BANK` form. `xbrl_identity.py` gains `SEBI_SYMBOL_ENTITY_SCHEME = "http://www.sebi.gov.in/in-capmkt/Symbol"`. `verify_xbrl_identity` and `xbrl_entity_state` map it to the NSE symbol set, as they map `NSE_ENTITY_SCHEME`. |
+| B5 | **B5a** | Both bases are listed for both periods [B5.01–B5.04]. | Discovery selects standalone. The basis status is `CONSOLIDATED_AND_STANDALONE`. |
+| B6 | **B6a** | Every collapsed row is `Integrated Filing- Financials` [B5.01–B5.04]. | No change; B6b struck. |
+| B7 | **B7b** for the package; identity, period and basis association pass under A7 | Neither PDF prints the marker [B7.15, B7.16]. Each cites "ICICI Bank Limited (NSE: ICICIBANK, BSE: 532174, NYSE: IBN)" [T3.09, T3.10] and no other exchange code [T3.11, T3.12]. The statement page's text layer is OCR-corrupted: "Operotinq expenses le)+(f)", "Tax expense !a)+(h)" [T3.19, T3.20]; "Operatinq expenses (e)+(f)" [T3.21]. Statement-line parsing on it is not evidenced. | XBRL-only package and staged inputs. The PDF is retained as the `REPORTING_FRAMEWORK` setting's evidence input. Its statement claims read `NOT_ASSESSED`; it is not a member. No `config/runs/icicibank-<period>.yaml`, no `pdf/v4/`, no `--member pdf`. The PDF extractor still bumps in Task 5, because `member_identity.py` changes. |
+| B8 | P&L present, **anchors do not match**; BS and CF present at the acceptance period, absent at Q1; segment present | P&L concepts at `OneD` and `FourD` [B8.17–B8.19, B8.27; T3.01, T3.02]. The v2 PL fields are absent [B8.21, B8.22]. BS fits v2 through `Assets` [B8.29]; CF fits [B8.31, B8.32]; segment fits [B8.20]. Q1 has no BS or CF [B8.40–B8.43, B8.51–B8.54]. | **Anchor:** Task 8 creates `statement_anchors/v3.yaml` with one PL anchor: `schema_identity` of the 2026-01-31 in-capmkt namespace, `native_fields: [InterestEarned, ProfitLossFromOrdinaryActivitiesBeforeTax]`, `DURATION_ENDING_AT_PERIOD_END` [B8.18, B8.19]. v11 lists it beside v2, and it joins the XBRL extractor pin. Q1's absent BS and CF are capability `UNSUPPORTED`, with rules unchanged. The acceptance period is 2026-09-30 (Evidence pins), where all four statements are present. |
+| B10 | **B10a** | `LevelOfRounding`, `DescriptionOfPresentationCurrency`, `DateOfStartOfFinancialYear` and `DateOfEndOfFinancialYear` are at `OneD` in all four instances [B10.01–B10.16]. `OneD` declares the reporting-period end [B3.04, B3.09, B3.14, B3.19]. | **B10:** no change; B10b struck. That `_declared` reads a `Banking` instance at all is Task 5's form change, not B10. |
+| B9 | pending | — | Task 12. |
+
+**B4 ruling: B4b, not B4c.** Two places decide identity schemes, both from the seeded constants
+of `extraction/xbrl/xbrl_identity.py:7–13`:
+- `member_identity.verify_xbrl_identity`, which maps scheme to expected ids through
+  `expected_by_scheme` at `:129–133` and rejects any other scheme as `_UNKNOWN_SCHEME`;
+- `onboarding/verification.xbrl_entity_state`, whose `by_scheme` at `:227–230` does the same.
+
+Today both would refuse the Q1 instances. The scheme is not an unknown identity. Every identifier
+under it is the instance's own `Symbol` value and the master's symbol [B4.20, B4.24, B4.25]. It
+sits under the SEBI `in-capmkt` identifier host whose `ScripCode` scheme is already seeded. So it
+is an evidenced alias of the NSE-symbol identity, not a new identifier. B4c would apply if any
+identifier under it differed from the seed.
+`ACCEPTED_NSE_ENTITY_SCHEMES` and `validate_nse_entity_identities` are left unchanged. They are
+used only by `sourcing/exchange/xbrl_source.py` and `interface/workflows/comparatives.py`, which
+are off the onboarding and ingest paths.
+**Pins:** `xbrl_identity.py` is hashed by `SHP_EXTRACTOR_SOURCES` (`run_config.py`), and
+`member_identity.py` by the XBRL, PDF and SHP extractors. All three bump once in Task 5, so B4b
+adds no bump.
+
+### Amendment A7 (proposed): PDF identity by the issuer's own exchange-code citation
+
+**Rule.** `verify_pdf_identity(pdf, identifiers)` works in two steps.
+1. Page 1's `Scrip Symbol :` line decides as today when it is present.
+2. Otherwise, the PDF verifies only when both hold:
+   - its text cites the seeded NSE symbol as `NSE: <symbol>` and the seeded BSE scrip as
+     `BSE: <scrip>`;
+   - every `NSE:` and `BSE:` code citation in the document, found by the pattern
+     `\b(NSE|BSE)\s*:\s*([A-Za-z0-9&-]+)`, names exactly those two identifiers.
+
+Citing only one of the two codes, or citing any other code, rejects. A page without a text layer
+never verifies. The rule uses only the seeded identifiers, so the same code works unchanged for a
+second issuer. An issuer whose PDF has neither form still refuses.
+
+**Evidence.**
+- The Q2 PDF p26 and the Q1 PDF p22, the news release bound into the results document, read
+  "The Board of Directors of ICICI Bank Limited (NSE: ICICIBANK, BSE: 532174, NYSE: IBN)"
+  [T3.09, T3.10].
+- No other `NSE:`/`BSE:` code occurs in either document [T3.11, T3.12]. The only other "BSE"
+  token is the addressee "BSE Limited" on p1, which has no colon and so no code.
+- The period association is page 1 [B7.01, B7.09]. The basis association is the declaration's
+  subject [B1.05, B1.09]. These satisfy B1′ P's "identity, period and basis association" without
+  B7a's statement parsing.
+
+**Provenance rejected.** The other candidate was the PDF's own announcement-listing row. Each
+results PDF's row reads symbol `ICICIBANK`, ISIN `INE090A01013`, "Outcome of Board Meeting"
+[T3.13, T3.14]. That ISIN differs from the master's and every instance's `INE090A01021`
+[B4.25, B4.01]. A provenance rule would rest on a conflicting identifier. The listing is also
+requested for the symbol, so its symbol field restates the query and is not independent
+evidence. The CIN on p1 ("CIN:L65190GJ1994PLC021012") is not a seeded identifier.
+
+**Implementation.** Task 5, in `member_identity.verify_pdf_identity`, through constants beside
+`PDF_SYMBOL_MARKER`. Discovery's P-arm check and `_read_xbrl`'s ingest re-check call it unchanged.
+**Tests** (Task 5; unit, matching logic):
+- both retained ICICIBANK PDFs verify (`retained`);
+- a synthetic page citing the seeded codes plus `NSE: OTHER` rejects;
+- the seeded `NSE:` code without `BSE:` rejects;
+- a page-1 marker naming another symbol rejects, even when the citation matches;
+- Apar's retained PDFs verify through the marker as before (existing suite).
+
+**Pins:** `member_identity.py` is content-pinned by the XBRL, PDF and SHP extractors
+(`run_config.py`, `EXTRACTOR_SOURCES` and `SHP_EXTRACTOR_SOURCES`). All three already bump once
+in Task 5, so A7 adds no version. A7 landing after Task 10 would bump again (F08 rule).
+**Spec wording for Task 9** (`docs/specs/2026-11-06-vendor-first.md` §8):
+- intro, after "`UNKNOWN`": "; Phase 3 adds `INDIAN_GAAP`".
+- step 2, first sentence: "Add the framework value the filing evidences, only if no existing
+  value fits: ICICIBANK's results PDFs declare preparation under 'Accounting Standards prescribed
+  under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation
+  Act, 1949, the circulars, guidelines and directions issued by the Reserve Bank of India … and
+  other accounting principles generally accepted in India' ('Indian GAAP'), recorded as
+  `INDIAN_GAAP`."
+- steps 2 and 4 paragraph, after "a Banking form alone is not a substitute for that declaration.":
+  "A results PDF is associated with the issuer by its page-1 `Scrip Symbol :` line or, absent that
+  line, by citing the issuer's own NSE symbol and BSE scrip with no other exchange code cited."
+
 ## Version and pin inventory (F08, F09, F11)
 
 | Pin | Bytes changed by | Consequence |
 |---|---|---|
-| `XBRL_EXTRACTOR_VERSION` (hashes `member_identity.py`, `first_party_extract.py`, `xbrl_taxonomies.py`) | Task 5; Task 8 on B3b | bumped once in Task 5 (F08 rule below) |
+| `XBRL_EXTRACTOR_VERSION` (hashes `member_identity.py`, `first_party_extract.py`, `xbrl_taxonomies.py`) | Task 5; ~~Task 8 on B3b~~ | bumped once in Task 5 (F08 rule below) |
 | `PDF_EXTRACTOR_VERSION` (hashes `member_identity.py`, `first_party_extract.py`) | Task 5 | `pdf-occurrences/5` (the base) → `/6` once, in Task 5 (F08 rule below) |
-| `SHP_EXTRACTOR_VERSION` (hashes `member_identity.py`) | Task 5 | bumped in Task 5 |
+| `SHP_EXTRACTOR_VERSION` (hashes `member_identity.py`, `xbrl_identity.py`) | Task 5 (B4b edits both) | bumped in Task 5 |
 | Screener financials extractor (`vendor_screener.EXTRACTOR_VERSION`; hashes `screener_session_models.py`, `screener_session_page.py`) | Task 5 (`BasisTopology.consolidated_published`, R2-04) | `screener-v1` → `screener-v2` in Task 5 |
 | Screener shareholding extractor (`vendor_shareholding.SCREENER_VERSION`; hashes the same two files and `vendor_shareholding.py`) | Task 5 (same edit; the constant's bump edits `vendor_shareholding.py`) | `screener-shp-v2` → `screener-shp-v3` in Task 5; stored Screener SHP pins stay; a later SHP run re-ingests (Apar follow-up, Interactions) |
 | Tijori shareholding extractor (`vendor_shareholding.TIJORI_VERSION`; hashes `vendor_shareholding.py`; `run_config.py:132–139`) | Task 5 (the `SCREENER_VERSION` edit changes this file's bytes, R4-02) | `tijori-shp-v2` → `tijori-shp-v3` in Task 5; stored pins stay; a later Tijori SHP run re-ingests (Apar follow-up) |
@@ -326,7 +426,7 @@ from rehearsal output; each listed table's own sequence may advance, no other.
 
 | Command | Tables allowed to change |
 |---|---|
-| `db migrate` (0050) | migration ledger; the `settings_records` and `evidence_inputs` CHECKs |
+| `db migrate` (0050) | migration ledger; the `settings_records` and `evidence_inputs` CHECKs; the `framework` CHECKs of `filing_packages`, `acquisition_attempts`, `interpretations` and `results` (B1b) |
 | `onboard --ground` replay | captures: `capture_refs`, `capture_addresses`, `retention_classes` (trigger; `nse-grounding` `NSE_XBRL_INSTANCE` → `EXCHANGE_REFETCHABLE`, `NSE_RESULTS_DOCUMENT` → `COVERED` by `base_class`) |
 | `onboard` replay | identity: `reporting_entities`, `securities`, `listings`, `identifier_relationships`, `identity_events`, `identity_event_edges`, `namespace_verifications`; onboarding: `onboarding_records`, `settings_records`, `evidence_inputs`, `evidence_input_captures`, `entity_basis_status`; captures as above (new exchange and vendor captures); package: `filing_packages`, `package_members`, `package_statements`, `package_statement_evidence`, `segment_members`, `segment_member_evidence`; extraction: `occurrences`, `interpretations`, `interpretation_operands`, `interpretation_condition_evidence`, `acquisition_attempts`; vendor: `vendor_values`, `vendor_outcomes`, `vendor_parser_versions`, `vendor_basis_bindings`; `version_pins`; conditional: `calculation_traces`, `calculation_trace_operands`, `construction_traces` (`put_interpretations`, when a v11/v12 construction or Screener construction fires at ingest) |
 | `evidence ingest` | package and extraction tables as above; `version_pins`; conditional: captures as above (a staged member not yet registered; a registered one advances only the `capture_refs` sequence), `calculation_traces`, `calculation_trace_operands`, `construction_traces` (`put_interpretations`) |
@@ -438,8 +538,11 @@ Files:
 - Modify: `identity_seed.py`, B1b `observation.py`, `vendor_first.py` (`IssuerClass.NON_FINANCIAL`)
 - Test: the migration suite (upgrade from 0049; the CHECKs reject an unknown key and kind)
 
-Approach: 0050 replaces the two CHECKs with their lists plus the new values (as 0022 did); no
-table, no backfill. Existing 0049 untouched.
+Approach: 0050 replaces the two CHECKs with their lists plus the new values (as 0022 did), and
+(B1b, Task 3) the four 0001 `framework` CHECKs (`filing_packages`, `acquisition_attempts`,
+`interpretations`, `results`) with their list plus `INDIAN_GAAP`; no table, no backfill. Existing
+0049 untouched. The migration test also shows each widened CHECK accepts `INDIAN_GAAP` and still
+rejects an unknown framework.
 
 Verification: `scripts/verify.sh` migration tests on `eqos_test_*`; mypy, ruff.
 
@@ -454,12 +557,15 @@ HDFCLIFE (insurer) still end `UNSUPPORTED`; Apar onboards as before under `ONBOA
 
 Files:
 - Create: `bank_onboarding.py`, `config/companies/basis_decisions/icicibank.yaml`
-- Modify: `verification.py` (`financial_rule` → `issuer_form`; B4b), `member_identity.py` (bank form
-  in `verify_xbrl_framework`; PDF framework evidence; B1b phrases), `discovery.py` (classification
+- Modify: `verification.py` (`financial_rule` → `issuer_form`; B4b: `NameOfBank` for `BANK`, the
+  `in-capmkt/Symbol` scheme in `xbrl_entity_state`), `xbrl_identity.py` (B4b:
+  `SEBI_SYMBOL_ENTITY_SCHEME`), `member_identity.py` (bank form in `verify_xbrl_framework`; PDF
+  framework evidence; B1b `INDIAN_GAAP` phrase; B4b scheme in `verify_xbrl_identity`; A7 in
+  `verify_pdf_identity`), `discovery.py` (classification
   across filings, analysis-basis selection, bank sources, bank PDF acquisition via `results_pdfs`
   under the first-party documents surface), `nse_filings.py` (`filing_window(rows, as_of,
-  basis=None)`; B6b), `derived_settings.py` (framework and `ISSUER_CLASS` from the forms;
-  `ANALYSIS_BASIS`; basis status from listed bases; B10b), `source_catalog.py` and
+  basis=None)`; ~~B6b~~), `derived_settings.py` (framework and `ISSUER_CLASS` from the forms;
+  `ANALYSIS_BASIS`; basis status from listed bases; ~~B10b~~), `source_catalog.py` and
   `capture_intake.py` (`XBRL_SOURCES[(IssuerClass, Basis)]`, `xbrl_source_id(issuer_class,
   basis)`, `nse-grounding` refused), `contracts/companies/onboarding.py`
   (`BANK_ONBOARDING_VERSIONS = ConfigVersions(dictionary="v5", mapping_set="v11")`),
@@ -509,10 +615,10 @@ Approach (F04, F05, F19, F20):
   `None` and behave as today.
 - Staged inputs (R2-02): `stage_inputs` replaces onboarding's temporary staging for every issuer.
   It writes, deterministically from retained bytes, `<raw-root>/inputs/<SYMBOL>/<period-end>/`:
-  `xbrl/` originals, on B7a `pdf/` original, and `retrieval-manifest.json` from `package_manifest`
-  extended with the PDF kind, sha256 and filed time (B7b: XBRL only). On B7a it requires
-  `config/runs/<symbol>-<period>.yaml` (refused if absent) and passes it with both member kinds to
-  `retained_intake_from_manifest`. Acquisition and replay write identical files; Task 13 ingests
+  `xbrl/` originals, ~~on B7a `pdf/` original,~~ and `retrieval-manifest.json` from
+  `package_manifest` ~~extended with the PDF kind, sha256 and filed time~~ (B7b, taken: XBRL only).
+  ~~On B7a it requires `config/runs/<symbol>-<period>.yaml` (refused if absent) and passes it with
+  both member kinds to `retained_intake_from_manifest`.~~ Acquisition and replay write identical files; Task 13 ingests
   from this directory. Grounding captures are never staged.
 - Binding: reading 3; checked before any settings write.
 - Screener basis binding (R2-04). Today a standalone topology carries only
@@ -577,10 +683,12 @@ Pins: the version-pin suite passes with `screener-v2`, `screener-shp-v3`, `tijor
 holds a pre-Phase-3 pin of each, the old pin stays and the new version records its own pin. No
 alias.
 Staged inputs: the replay's `inputs/` files equal a second replay's on a fresh database (path,
-sha256); Apar's staged XBRL-only layout ingests as before. P arm (if taken), through package
+sha256); Apar's staged XBRL-only layout ingests as before. P arm (taken), through package
 ingest: onboarding ingests the PDF-only-declared instance; the reuse check passes with the same
 evidence; a contradictory PDF refuses at ingest; other evidence yields a new context, not reuse;
-an existing-enum framework case. Unit (`issuer_form`, `issuer_class`): the four retained forms; NBFC under Ind AS → `None`;
+an existing-enum framework case. B4b: the Q1 standalone instance (`in-capmkt/Symbol` scheme)
+verifies in discovery and at ingest; the same scheme with another identifier refuses. A7: the
+unit cases under amendment A7. Unit (`issuer_form`, `issuer_class`): the four retained forms; NBFC under Ind AS → `None`;
 mixed forms → `None`; Apar's legacy provenance → `NON_FINANCIAL`; a cutoff before a new entity's
 setting → `None` (no fallback); a superseding setting wins from its `valid_from`.
 
@@ -673,8 +781,8 @@ rows `NOT_APPLICABLE` by `ISSUER_RULE_ID`, a v5 group without class refused; res
 bank or non-bank groups run first; an entity whose framework setting changes at a `valid_from`
 between two periods gets each period's framework; a run pinned at the old semantics version is
 refused by `require_pins`. Bank fallback: a triggered ICICIBANK cell acquires under the bank source
-and ingests with the bank framework; a listing without the period ends `FILING_UNAVAILABLE`; B7a: the
-PDF member joins with the issuer config; P arm: fallback and `evidence ingest` verify the instance
+and ingests with the bank framework; a listing without the period ends `FILING_UNAVAILABLE`; ~~B7a: the
+PDF member joins with the issuer config;~~ P arm (taken): fallback and `evidence ingest` verify the instance
 with the setting's PDF evidence, and refuse when that evidence contradicts it. Reingest (before
 Task 10), through public `eqos vendor reingest --basis standalone`. It runs over registered
 captures of Task 5's five page shells, each with the entity and watchlist entry its case names.
@@ -695,15 +803,16 @@ setting, never a default.
 
 ## Task 8: First-party bank mappings, mapping set v11
 
-Goal: ICICIBANK's retained XBRL (and, B7a, PDF) interprets every ledger `VALUE` line `MAPPED`
-under v11 with verified meaning; other lines `UNMAPPED`; Apar interprets identically under v10 and
+Goal: ICICIBANK's retained XBRL ~~(and, B7a, PDF)~~ interprets every ledger `VALUE` line `MAPPED`
+under v11 with verified meaning; every key a ledger `REFUSED` line names stays unmapped; other lines `UNMAPPED`; Apar interprets identically under v10 and
 v11.
 
 Files:
 - Create: `config/normalisation/mappings/xbrl/v6/*`, `mappings/v11.yaml` (v10's files and keys
-  plus the changes below); B8 `statement_anchors/v3.yaml`; B7a `pdf/v4/results_layout_banking.yaml`
-  only (v11 lists `pdf/v3/results_layout.yaml` unchanged plus this file; no copy), `config/runs/icicibank-<period>.yaml`
-- Modify: B3b `xbrl_taxonomies.py`
+  plus the changes below); B8 `statement_anchors/v3.yaml` (the PL anchor in Resolved branches);
+  ~~B7a `pdf/v4/results_layout_banking.yaml` only (v11 lists `pdf/v3/results_layout.yaml` unchanged
+  plus this file; no copy), `config/runs/icicibank-<period>.yaml`~~
+- Modify: ~~B3b `xbrl_taxonomies.py`~~ (none: B3a)
 - Test: `test_bank_mapping.py` (`retained`)
 
 Approach (F10, F22):
@@ -715,20 +824,21 @@ Approach (F10, F22):
 3. Unmatched QNames get bank entries with `evidence_ref` (capture sha256, QName, context; PDF page
    and label). Elements whose meaning the filing does not evidence stay unmapped, reason in the
    header.
-4. B3b/B8: the evidenced `TaxonomySpec` and anchors, included in v11 and the XBRL extractor pin.
-5. B7a: the issuer config's `pdf_parse` with the PDF sha256; the PDF's identity, period, basis and
-   framework gates pass on the actual layout.
+4. ~~B3b~~/B8: ~~the evidenced `TaxonomySpec` and~~ the v3 anchors, included in v11 and the XBRL
+   extractor pin.
+5. ~~B7a: the issuer config's `pdf_parse` with the PDF sha256; the PDF's identity, period, basis and
+   framework gates pass on the actual layout.~~
 
 Verification: per ledger `VALUE` line, code compares the interpretation's canonical key, value,
 sign, period, interval and provenance with the retained fact; `statements_present`, reporting kind
 and period shape as the record states; Apar's retained packages give equal interpretations per
-canonical key, value and status under v10 and v11; B7a: a PDF ingest of the retained PDF yields
-`MAPPED` occurrences, not only a text layer. Task 13's intake (R2-02, R4-01, before Task 10):
+canonical key, value and status under v10 and v11; ~~B7a: a PDF ingest of the retained PDF yields
+`MAPPED` occurrences, not only a text layer.~~ Task 13's intake (R2-02, R4-01, before Task 10):
 onboarding replay over the Task 2 bodies (Task 5's test folder) stages `inputs/`. Then Task 13
 command 1 runs as the string from `commands.txt` with every argument filled (Task 13). The one
 change is `--mapping-set v11`, the set this task produces, in place of `v12`, which does not exist
 until Task 12. It runs over that directory, on the same database and on a fresh one after a second
-replay. It must build the package with the XBRL and (B7a) PDF members and the issuer config, with
+replay. It must build the package with the XBRL ~~and (B7a) PDF members and the issuer config~~ member, with
 every member `COMPLETE` and the staged members equal across both runs. Task 12's gate rerun later
 runs the literal v12 string.
 

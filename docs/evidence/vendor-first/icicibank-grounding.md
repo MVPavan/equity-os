@@ -386,7 +386,7 @@ Structure JSON sha256 `568044728a220584a29300eee1a4ed490d5080302a6261c77263ebb05
 
 ## Locators
 
-One row per locator, tab-separated: id, kind, capture sha256, basis, period, where (QName@contextRef, page, namespace, listing key or search pattern), expected (value, quote, or `*` for presence without a value). `scratchpad/vendor-first/live-p3-1/locators.py` resolves every row in the retained blob under `data/raw/snapshots/v1` after checking the blob's sha256; `*-absent` rows assert that the concept, pattern or phrase does not occur. Result on 2026-11-06: 161 of 161 `OK`, none `NOT_ASSESSED`, exit 0.
+One row per locator, tab-separated: id, kind, capture sha256, basis, period, where (QName@contextRef, page, namespace, listing key or search pattern), expected (value, quote, or `*` for presence without a value). `scratchpad/vendor-first/live-p3-1/locators.py` resolves every row in the retained blob under `data/raw/snapshots/v1` after checking the blob's sha256; `*-absent` rows assert that the concept, pattern or phrase does not occur. Result on 2026-11-06: 161 of 161 `OK`, none `NOT_ASSESSED`, exit 0. Task 3 appended rows `T3.01`–`T3.48` (cited by the Ledger and Evidence pins below and by the plan's Resolved branches). They add four kinds, resolved by `scratchpad/vendor-first/live-p3-1/locators_t3.py`, which runs `locators.py`'s kinds unchanged: `xbrl-concept-set` (the exact set of numeric concepts with an undimensioned fact at a context), `pdf-codes` (the set of every `NSE:`/`BSE:` code citation in a PDF), `announcement` (an announcements-listing row's symbol, ISIN and category, by attachment URL) and `pdf-tokens` (a phrase as a lowercase alphanumeric token run, as `member_identity` matches declarations). Result on 2026-11-06 over all rows: 209 of 209 `OK`, none `NOT_ASSESSED`, exit 0.
 
 ```locators
 B1.01	xbrl-text-absent	615348fca1872145ef64f390d725bc196359c61dec88ddf49f8ab8deb920dc5d	Consolidated	2026-09-30	accounting standard|in accordance with|GAAP|\bInd ?AS\b|AS 25	-
@@ -550,4 +550,641 @@ B10.13	xbrl-fact	39677b484f433a34be77c8a1bd241a0d9b66bf17cfd4eedc54ce0dfbaefc62d
 B10.14	xbrl-fact	39677b484f433a34be77c8a1bd241a0d9b66bf17cfd4eedc54ce0dfbaefc62d5	Standalone	2026-06-30	DescriptionOfPresentationCurrency@OneD	INR
 B10.15	xbrl-fact	39677b484f433a34be77c8a1bd241a0d9b66bf17cfd4eedc54ce0dfbaefc62d5	Standalone	2026-06-30	DateOfStartOfFinancialYear@OneD	2026-04-01
 B10.16	xbrl-fact	39677b484f433a34be77c8a1bd241a0d9b66bf17cfd4eedc54ce0dfbaefc62d5	Standalone	2026-06-30	DateOfEndOfFinancialYear@OneD	2027-03-31
+T3.01	xbrl-concept-set	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	OneD	AdditionalTier1Ratio,AmountOfRelatedPartyTransactionDuringTheReportingPeriod,BasicEarningsPerShareAfterExtraordinaryItems,BasicEarningsPerShareBeforeExtraordinaryItems,CET1Ratio,DilutedEarningsPerShareAfterExtraordinaryItems,DilutedEarningsPerShareBeforeExtraordinaryItems,EmployeesCost,ExceptionalItems,ExpenditureExcludingProvisionsAndContingencies,ExtraordinaryItems,FaceValueOfEquityShareCapital,GrossNonPerformingAssets,Income,InterSegmentRevenue,InterestEarned,InterestExpended,InterestOnBalancesWithReserveBankOfIndiaAndOtherInterBankFunds,InterestOrDiscountOnAdvancesOrBills,NonPerformingAssets,OperatingExpenses,OperatingProfitBeforeProvisionAndContingencies,OtherIncome,OtherInterest,OtherOperatingExpenses,PaidUpValueOfEquityShareCapital,PercentageOfGrossNpa,PercentageOfNpa,PercentageOfShareHeldByGovernmentOfIndia,ProfitLossAfterTaxesMinorityInterestAndShareOfProfitLossOfAssociates,ProfitLossForThePeriod,ProfitLossFromOrdinaryActivitiesAfterTax,ProfitLossFromOrdinaryActivitiesBeforeTax,ProvisionsOtherThanTaxAndContingencies,ReturnOnAssets,RevenueOnInvestments,SegmentProfitBeforeTax,SegmentProfitLossBeforeTaxAndFinanceCosts,SegmentRevenue,SegmentRevenueFromOperations,TaxExpense
+T3.02	xbrl-concept-set	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	FourD	AdditionalTier1Ratio,AdjustmentsForDecreaseIncreaseInInventories,AdjustmentsForDecreaseIncreaseInOtherCurrentAssets,AdjustmentsForDecreaseIncreaseInTradeReceivables,AdjustmentsForDepreciationAndAmortisationExpense,AdjustmentsForDividendIncome,AdjustmentsForFinanceCosts,AdjustmentsForImpairmentLossReversalOfImpairmentLossRecognisedInProfitOrLoss,AdjustmentsForIncreaseDecreaseInOtherCurrentLiabilities,AdjustmentsForIncreaseDecreaseInTradePayables,AdjustmentsForProvisions,AdjustmentsForReconcileProfitLoss,AdjustmentsForSharebasedPayments,AdjustmentsForUnrealisedForeignExchangeLossesGains,AdjustmentsForWorkingCapital,AdjustmentsToProfitLoss,BasicEarningsPerShareAfterExtraordinaryItems,BasicEarningsPerShareBeforeExtraordinaryItems,CET1Ratio,CashAdvancesAndLoansMadeToOtherPartiesClassifiedAsInvestingActivities,CashFlowsFromLosingControlOfSubsidiariesOrOtherBusinessesClassifiedAsInvestingActivities,CashFlowsFromUsedInFinancingActivities,CashFlowsFromUsedInFinancingActivitiesBeforeExtraordinaryItems,CashFlowsFromUsedInInvestingActivities,CashFlowsFromUsedInInvestingActivitiesBeforeExtraordinaryItems,CashFlowsFromUsedInOperatingActivities,CashFlowsFromUsedInOperatingActivitiesBeforeExtraordinaryItems,CashFlowsFromUsedInOperations,CashFlowsUsedInObtainingControlOfSubsidiariesOrOtherBusinessesClassifiedAsInvestingActivities,CashPaymentForInvestmentInPartnershipFirmOrAssociationOfPersonsOrLimitedLiabilityPartnerships,CashPaymentsForFutureContractsForwardContractsOptionContractsAndSwapContractsClassifiedAsInvestingActivities,CashReceiptsFromFutureContractsForwardContractsOptionContractsAndSwapContractsClassifiedAsInvestingActivities,CashReceiptsFromRepaymentOfAdvancesAndLoansMadeToOtherPartiesClassifiedAsInvestingActivities,CashReceiptsFromShareOfProfitsOfPartnershipFirmOrAssociationOfPersonsOrLimitedLiabilityPartnerships,DilutedEarningsPerShareAfterExtraordinaryItems,DilutedEarningsPerShareBeforeExtraordinaryItems,DividendsPaidClassifiedAsFinancingActivities,DividendsReceivedClassifiedAsInvestingActivities,DividendsReceivedClassifiedAsOperatingActivities,EffectOfExchangeRateChangesOnCashAndCashEquivalents,EmployeesCost,ExceptionalItems,ExpenditureExcludingProvisionsAndContingencies,ExtraordinaryItems,FaceValueOfEquityShareCapital,GrossNonPerformingAssets,Income,IncomeTaxesPaidRefundClassifiedAsFinancingActivities,IncomeTaxesPaidRefundClassifiedAsInvestingActivities,IncomeTaxesPaidRefundClassifiedAsOperatingActivities,IncreaseDecreaseInCashAndCashEquivalents,IncreaseDecreaseInCashAndCashEquivalentsBeforeEffectOfExchangeRateChanges,InterSegmentRevenue,InterestEarned,InterestExpended,InterestOnBalancesWithReserveBankOfIndiaAndOtherInterBankFunds,InterestOrDiscountOnAdvancesOrBills,InterestPaidClassifiedAsFinancingActivities,InterestPaidClassifiedAsOperatingActivities,InterestReceivedClassifiedAsInvestingActivities,InterestReceivedClassifiedAsOperatingActivities,NonPerformingAssets,OperatingExpenses,OperatingProfitBeforeProvisionAndContingencies,OtherAdjustmentsForNoncashItems,OtherAdjustmentsForWhichCashEffectsAreInvestingOrFinancingCashFlow,OtherAdjustmentsToReconcileProfitLoss,OtherCashPaymentsToAcquireEquityOrDebtInstrumentsOfOtherEntitiesClassifiedAsInvestingActivities,OtherCashPaymentsToAcquireInterestsInJointVenturesClassifiedAsInvestingActivities,OtherCashReceiptsFromSalesOfEquityOrDebtInstrumentsOfOtherEntitiesClassifiedAsInvestingActivities,OtherCashReceiptsFromSalesOfInterestsInJointVenturesClassifiedAsInvestingActivities,OtherIncome,OtherInflowsOutflowsOfCashClassifiedAsFinancingActivities,OtherInflowsOutflowsOfCashClassifiedAsInvestingActivities,OtherInflowsOutflowsOfCashClassifiedAsOperatingActivities,OtherInterest,OtherOperatingExpenses,PaidUpValueOfEquityShareCapital,PaymentForExtraordinaryItemsClassifiedAsFinancingActivities,PaymentForExtraordinaryItemsClassifiedAsInvestingActivities,PaymentForExtraordinaryItemsClassifiedAsOperatingActivities,PercentageOfGrossNpa,PercentageOfNpa,PercentageOfShareHeldByGovernmentOfIndia,ProceedsFromBorrowingsClassifiedAsFinancingActivities,ProceedsFromExtraordinaryItemsClassifiedAsFinancingActivities,ProceedsFromExtraordinaryItemsClassifiedAsInvestingActivities,ProceedsFromExtraordinaryItemsClassifiedAsOperatingActivities,ProceedsFromGovernmentGrantsClassifiedAsInvestingActivities,ProceedsFromIssuingDebenturesNotesBondsEtc,ProceedsFromIssuingOtherEquityInstruments,ProceedsFromIssuingShares,ProceedsFromSalesOfIntangibleAssetsClassifiedAsInvestingActivities,ProceedsFromSalesOfTangibleAssetsClassifiedAsInvestingActivities,ProfitBeforeExtraordinaryItemsAndTax,ProfitLossAfterTaxesMinorityInterestAndShareOfProfitLossOfAssociates,ProfitLossForThePeriod,ProfitLossFromOrdinaryActivitiesAfterTax,ProfitLossFromOrdinaryActivitiesBeforeTax,ProvisionsOtherThanTaxAndContingencies,PurchaseOfIntangibleAssetsClassifiedAsInvestingActivities,PurchaseOfTangibleAssetsClassifiedAsInvestingActivities,RepaymentsOfBorrowingsClassifiedAsFinancingActivities,ReturnOnAssets,RevenueOnInvestments,SegmentProfitBeforeTax,SegmentProfitLossBeforeTaxAndFinanceCosts,SegmentRevenue,SegmentRevenueFromOperations,ShareOfProfitAndLossFromPartnershipFirmOrAssociationOfPersonsOrLimitedLiabilityPartnerships,TaxExpense
+T3.03	xbrl-concept-set	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	OneI	Advances,Assets,BalancesWithBanksAndMoneyAtCallAndShortNotice,Borrowings,Capital,CapitalAndLiabilities,CashAndBalancesWithReserveBankOfIndia,CashAndCashEquivalentsCashFlowStatement,Deposits,FixedAssets,Investments,NetSegmentAssets,NetSegmentLiabilities,OtherAssets,OtherLiabilitiesAndProvisions,ReservesAndSurplus,SegmentAssets,SegmentLiabilities,UnAllocableAssets,UnAllocableLiabilities
+T3.04	xbrl-concept-set	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	PY_I	CashAndCashEquivalentsCashFlowStatement
+T3.05	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	DescriptionOfReportableSegment@OneReportable11D	Retail
+T3.06	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	DescriptionOfReportableSegment@OneReportable12D	Wholesale
+T3.07	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	DescriptionOfReportableSegment@OneReportable13D	Treasury
+T3.08	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	DescriptionOfReportableSegment@OneReportable14D	Other Banking
+T3.09	pdf	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	both	2026-09-30	26	ICICI Bank Limited (NSE: ICICIBANK, BSE: 532174, NYSE: IBN)
+T3.10	pdf	1b3599e2a01fc9b77f913fef7a3068bca6ec43c722010a1c1bc4c01c55033c03	both	2026-06-30	22	ICICI Bank Limited (NSE: ICICIBANK, BSE: 532174, NYSE: IBN)
+T3.11	pdf-codes	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	both	2026-09-30	*	NSE:ICICIBANK|BSE:532174
+T3.12	pdf-codes	1b3599e2a01fc9b77f913fef7a3068bca6ec43c722010a1c1bc4c01c55033c03	both	2026-06-30	*	NSE:ICICIBANK|BSE:532174
+T3.13	announcement	f5a17c905a2d09146fb4b333f877cb18803f485b0b4ee090c5a50357f3c1c025	both	2026-09-30	https://nsearchives.nseindia.com/corporate/ICICI2022_17102026152039_NSEBSE17102026.pdf	ICICIBANK|INE090A01013|Outcome of Board Meeting
+T3.14	announcement	5009c79950c4fc32884018bb15017393dda14c88167d6aefb44df0648869e477	both	2026-06-30	https://nsearchives.nseindia.com/corporate/ICICI2022_18072026142245_NSEBSE_18072026_.pdf	ICICIBANK|INE090A01013|Outcome of Board Meeting
+T3.15	pdf-tokens	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	Standalone	2026-09-30	7	prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949
+T3.16	pdf-tokens	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	Consolidated	2026-09-30	16	prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949
+T3.17	pdf-tokens	1b3599e2a01fc9b77f913fef7a3068bca6ec43c722010a1c1bc4c01c55033c03	Standalone	2026-06-30	6	prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949
+T3.18	pdf-tokens	1b3599e2a01fc9b77f913fef7a3068bca6ec43c722010a1c1bc4c01c55033c03	Consolidated	2026-06-30	13	prescribed under Section 133 of the Companies Act, 2013, the relevant provisions of the Banking Regulation Act, 1949
+T3.19	pdf	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	Standalone	2026-09-30	3	Operotinq expenses le)+(f)
+T3.20	pdf	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	Standalone	2026-09-30	3	Tax expense !a)+(h)
+T3.21	pdf	1b3599e2a01fc9b77f913fef7a3068bca6ec43c722010a1c1bc4c01c55033c03	Standalone	2026-06-30	3	Operatinq expenses (e)+(f)
+T3.22	pdf	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	Standalone	2026-09-30	3	Current tax
+T3.23	pdf	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	Standalone	2026-09-30	3	Deferred tax
+T3.24	pdf	b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1	Standalone	2026-09-30	3	ACTIVITIES BEFORE TAX (9)-(10)
+T3.25	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentRevenue@FourReportable11D	*
+T3.26	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentRevenue@FourReportable12D	*
+T3.27	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentRevenue@FourReportable13D	*
+T3.28	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentRevenue@FourReportable14D	*
+T3.29	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentRevenue@OneReportable11D	*
+T3.30	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentRevenue@OneReportable12D	*
+T3.31	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentRevenue@OneReportable13D	*
+T3.32	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentRevenue@OneReportable14D	*
+T3.33	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentProfitLossBeforeTaxAndFinanceCosts@FourReportable21D	*
+T3.34	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentProfitLossBeforeTaxAndFinanceCosts@FourReportable22D	*
+T3.35	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentProfitLossBeforeTaxAndFinanceCosts@FourReportable23D	*
+T3.36	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentProfitLossBeforeTaxAndFinanceCosts@FourReportable24D	*
+T3.37	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentProfitLossBeforeTaxAndFinanceCosts@OneReportable21D	*
+T3.38	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentProfitLossBeforeTaxAndFinanceCosts@OneReportable22D	*
+T3.39	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentProfitLossBeforeTaxAndFinanceCosts@OneReportable23D	*
+T3.40	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentProfitLossBeforeTaxAndFinanceCosts@OneReportable24D	*
+T3.41	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentAssets@OneReportable31I	*
+T3.42	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentAssets@OneReportable32I	*
+T3.43	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentAssets@OneReportable33I	*
+T3.44	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentAssets@OneReportable34I	*
+T3.45	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentLiabilities@OneReportable41I	*
+T3.46	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentLiabilities@OneReportable42I	*
+T3.47	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentLiabilities@OneReportable43I	*
+T3.48	xbrl-fact	a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3	Standalone	2026-09-30	SegmentLiabilities@OneReportable44I	*
 ```
+
+## Ledger
+
+VENDOR-1 Phase 3 Task 3 (F12, F13, R2-05). **Draft for Sol review; not frozen.** Its sha256 is
+recorded here and in the plan only after `APPROVE`. Written from the evidence above alone: every
+line cites a locator, and nothing in it is read from code behaviour. It rests on the plan's
+Resolved branches, including amendment A7 (B1b `INDIAN_GAAP`); if A7 is rejected the phase halts
+at B1c and this ledger is void.
+
+**Scope.** The acceptance run: family `FINANCIAL_RESULTS`, entity ICICIBANK, issuer class `BANK`,
+framework `INDIAN_GAAP`, basis `STANDALONE` (owner decision 2), period end 2026-09-30, whose fiscal
+periods are the quarter and the half-year; the instance files both (`OneD` [B3.10], `FourD`
+2026-04-01 to 2026-09-30 [B8.24]). The first-party side is the XBRL-only package of instance
+`a2d49864…` (B7b). Keys are dictionary v4's rows plus the six bank rows below, as v5 will hold them.
+
+**Dictionary v4 baseline.** v4 is v3 plus `current_tax_excl_earlier_years` (plan base ruling).
+v4 is not on `main` at this draft: its rows are read from branch `fix-results-pdf-data-quality`
+(`f75892e8`) plus v3's three shareholding basket rows (`derived.yaml`), which that branch's v4
+(still on v2) lacks. If the landed v4's row set differs, this ledger is amended before Task 6.
+
+**Columns.** *Period*: `Q` the quarter 2026-07-01..2026-09-30 (`OneD`), `H1` the half-year
+2026-04-01..2026-09-30 (`FourD`), `I` the instant 2026-09-30 (`OneI`; `cf_cash_opening` reads
+`PY_I`, 2026-03-31). A dimensioned row has one line per evidenced member. *Capability*: the
+statement's capability for that period kind and basis. *Expected result*:
+
+- `VALUE <QName@contextRef>`: the first-party side carries that filed fact. `VALUE computed`: a
+  formula row whose operands are all `VALUE` lines here; code computes it.
+- `NOT_APPLICABLE <rule>`: `ISSUER_RULE_ID` for a row v5 restricts to `NON_FINANCIAL` (ruled
+  below), or the unchanged v4 rule named.
+- `REFUSED <reason>`: the row applies and the first-party side has no value, for the reason
+  given: `R-NF` the pinned instance files no element with the row's meaning at that context (the
+  context's complete numeric concept set is `T3.01`–`T3.04`); `R-PDF` v4 names no XBRL element for
+  the row and the package is XBRL-only (B7b); `R-QCF` the filing has no quarter cash-flow column
+  (cash-flow concepts are filed at `FourD` only, `T3.01`, `T3.02`); `R-SIGN` the bank element
+  `ExceptionalItems` is filed but its sign is not evidenced as v4's "positive is a gain" (the
+  statement prints "ACTIVITIES BEFORE TAX (9)-(10)", `T3.24`, the opposite sense), so it is not
+  mapped; `R-CON` v4's construction needs `share_of_profit_associates_jv`, which is not filed;
+  `R-OP` a formula operand is a `REFUSED` line.
+- `no key`: a dimensioned row with no member the package evidences enumerates no key.
+
+**Issuer applicability (v5), by row.** A row is restricted to `NON_FINANCIAL` when its meaning is
+a line of the non-financial layout with no bank meaning (spec §8 step 3: revenue from operations,
+materials, inventories, working capital). The bank layout is evidenced by the pinned instance's
+concept sets `T3.01`–`T3.03`: the bank P&L (interest earned, other income, interest expended,
+operating expenses, provisions and contingencies) and the bank balance sheet (capital, reserves
+and surplus, deposits, borrowings, other liabilities and provisions, cash and balances with RBI,
+balances with banks, investments, advances, fixed assets, other assets), with no current or
+non-current classification.
+
+- `NON_FINANCIAL` only: P&L `sales`, `other_operating_income`, `revenue_from_operations`,
+  `excise_duty`, `total_income` (defined as revenue from operations plus other income),
+  `cost_of_materials_consumed`, `purchases_of_stock_in_trade`, `changes_in_inventories`,
+  `finance_costs` (a bank's interest cost is the bank row `interest_expended`), `other_expenses`,
+  `other_expenses_detail` and `total_expenses` (residual and total of that layout); every balance-sheet
+  row classified current or non-current, plus `inventories`, the trade receivable and payable rows,
+  the MSME dues rows and `other_bank_balances`; every `cf_wc_*` cash-flow row and
+  `cf_adj_provisions_current`/`_noncurrent`; and the formulas built on them (`opex_excl_finance_and_da`,
+  `ebitda_excl_other_income`, `opm_pct`, `pbdt_vendor`, `pbt_margin_pct`, `material_cost_pct`,
+  `employee_cost_pct`, `cfo_to_op_pct`, `receivable_days`, `net_current_assets`, `cf_wc_total`,
+  `net_profit_margin_pct`, `gross_margin_pct`).
+- Shared (both classes): every other v4 row, including the Ind AS-only lines (OCI, comprehensive
+  income, regulatory deferral, discontinued operations): their meaning is not sector-specific, and
+  they refuse here because the filing carries none, not by issuer rule.
+- `BANK` only: the six rows below.
+
+**Shared rows valued from a bank element** (the bank QName differs from v4's; the meaning holds):
+`profit_before_tax` ← `ProfitLossFromOrdinaryActivitiesBeforeTax` (standalone: no associates
+line); `profit_for_period` ← `ProfitLossForThePeriod`; `employee_benefits_expense` ←
+`EmployeesCost`; `eps_basic`/`eps_diluted` ← `Basic`/`DilutedEarningsPerShareAfterExtraordinaryItems`
+(EPS on the period's whole profit); `equity_share_capital` ← `Capital`; `other_equity` ←
+`ReservesAndSurplus` (the only non-capital equity line, `T3.03`); `total_equity_and_liabilities`
+← `CapitalAndLiabilities`. Every other `VALUE` line is v4's own element, filed at that context.
+Task 8 maps nothing a `REFUSED` line names, and none of the other filed bank lines (no row).
+
+**Bank rows Task 6 adds** (spec §8 step 3 list; names from the record): `interest_earned`
+(`InterestEarned`, P&L, duration), `interest_expended` (`InterestExpended`), `provisions_and_contingencies`
+(`ProvisionsOtherThanTaxAndContingencies`, "Provisions (other than tax) and contingencies"),
+`deposits` (`Deposits`, balance sheet, instant), `advances` (`Advances`) and `bank_investments`
+(`Investments`, "investments as a bank line"). Each declares `BANK` and the v4 family defaults of
+its statement.
+
+**Segments.** Members, from `DescriptionOfReportableSegment` [T3.05–T3.08]: `retail` (member 1),
+`wholesale` (2), `treasury` (3), `other_banking` (4). For `segment_assets`, `segment_liabilities`
+and `segment_capital_employed` the key's `elimination_basis` member is the one Task 8's mapping
+evidences; the ledger check (Task 6) decides applicability only, which does not depend on it.
+
+**Excluded families.** `SHAREHOLDING` (`shareholding.yaml`'s four rows): not enumerated by a
+`FINANCIAL_RESULTS` run; no shareholding filing is in Phase 3 scope. The three shareholding
+basket formulas in `derived.yaml` enumerate no key here (`no key` lines). No other family exists.
+
+**Admissible cells (rehearsal, §6.5).** The 120 reported `VALUE` lines. Each is expected to admit
+with label `CHECKED_AGAINST_FILING` under row 1, 2 or 5; which row depends on Task 12's vendor
+sides (B9) and is recorded at Task 13. A row 0a refusal of one of them is a deviation that blocks
+Task 13 until reviewed. Not admissible: the 9 `VALUE computed` lines (derived figures are
+calculated by code from admitted facts, §6.4 T1 rule 1); every `REFUSED` line (no row 3 for
+`BANK`, so row 4 or 6 refuses); every `NOT_APPLICABLE` and `no key` line.
+
+**Counts.** 457 lines: `VALUE` 129 (120 filed, 9 computed); `NOT_APPLICABLE` 128 (127
+`ISSUER_RULE_ID`, 1 `results.annual_disclosure`); `REFUSED` 194 (`R-NF` 93, `R-QCF` 76, `R-PDF`
+18, `R-OP` 3, `R-SIGN` 2, `R-CON` 2); `no key` 6. Capability: 357 `SUPPORTED` lines, 94
+`UNSUPPORTED: no quarter cash-flow statement` (76 of them `R-QCF`, 18 `ISSUER_RULE_ID`), 6 `—` (`no key`); no balance sheet, cash-flow (half-year) or segment
+capability is unsupported at this period (B8).
+
+| # | Key | Period | Capability | Expected result | Locator |
+|---|---|---|---|---|---|
+| L001 | `sales` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L002 | `sales` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L003 | `other_operating_income` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L004 | `other_operating_income` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L005 | `revenue_from_operations` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L006 | `revenue_from_operations` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L007 | `excise_duty` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L008 | `excise_duty` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L009 | `other_income` | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `OtherIncome@OneD` | T3.01 |
+| L010 | `other_income` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `OtherIncome@FourD` | T3.02 |
+| L011 | `total_income` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L012 | `total_income` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L013 | `cost_of_materials_consumed` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L014 | `cost_of_materials_consumed` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L015 | `purchases_of_stock_in_trade` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L016 | `purchases_of_stock_in_trade` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L017 | `changes_in_inventories` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L018 | `changes_in_inventories` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L019 | `employee_benefits_expense` | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `EmployeesCost@OneD` | T3.01 |
+| L020 | `employee_benefits_expense` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `EmployeesCost@FourD` | T3.02 |
+| L021 | `finance_costs` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L022 | `finance_costs` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L023 | `depreciation_amortisation` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L024 | `depreciation_amortisation` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L025 | `other_expenses` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L026 | `other_expenses` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L027 | `other_expenses_detail` | — | — | no key: no evidenced member | T3.01 |
+| L028 | `total_expenses` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L029 | `total_expenses` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L030 | `profit_before_exceptional_items_and_tax` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L031 | `profit_before_exceptional_items_and_tax` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L032 | `exceptional_items_before_tax` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-SIGN | T3.01 |
+| L033 | `exceptional_items_before_tax` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-SIGN | T3.02 |
+| L034 | `profit_before_tax` | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `ProfitLossFromOrdinaryActivitiesBeforeTax@OneD` | T3.01 |
+| L035 | `profit_before_tax` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `ProfitLossFromOrdinaryActivitiesBeforeTax@FourD` | T3.02 |
+| L036 | `share_of_profit_associates_jv` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L037 | `share_of_profit_associates_jv` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L038 | `profit_before_tax_incl_associates` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-CON | T3.01 |
+| L039 | `profit_before_tax_incl_associates` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-CON | T3.02 |
+| L040 | `current_tax` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L041 | `current_tax` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L042 | `current_tax_excl_earlier_years` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L043 | `current_tax_excl_earlier_years` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L044 | `deferred_tax` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L045 | `deferred_tax` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L046 | `tax_earlier_years` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L047 | `tax_earlier_years` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L048 | `tax_expense` | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `TaxExpense@OneD` | T3.01 |
+| L049 | `tax_expense` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `TaxExpense@FourD` | T3.02 |
+| L050 | `profit_continuing_after_tax` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L051 | `profit_continuing_after_tax` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L052 | `profit_discontinued_before_tax` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L053 | `profit_discontinued_before_tax` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L054 | `tax_discontinued` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L055 | `tax_discontinued` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L056 | `profit_discontinued_after_tax` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L057 | `profit_discontinued_after_tax` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L058 | `regulatory_deferral_net_movement` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L059 | `regulatory_deferral_net_movement` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L060 | `profit_for_period` | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `ProfitLossForThePeriod@OneD` | T3.01 |
+| L061 | `profit_for_period` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `ProfitLossForThePeriod@FourD` | T3.02 |
+| L062 | `profit_attributable_owners` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L063 | `profit_attributable_owners` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L064 | `profit_attributable_nci` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L065 | `profit_attributable_nci` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L066 | `oci_not_reclassified_items` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L067 | `oci_not_reclassified_items` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L068 | `oci_not_reclassified_items_detail` | — | — | no key: no evidenced member | T3.01 |
+| L069 | `oci_not_reclassified_tax` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L070 | `oci_not_reclassified_tax` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L071 | `oci_reclassified_items` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L072 | `oci_reclassified_items` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L073 | `oci_reclassified_items_detail` | — | — | no key: no evidenced member | T3.01 |
+| L074 | `oci_reclassified_tax` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L075 | `oci_reclassified_tax` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L076 | `oci_net` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L077 | `oci_net` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L078 | `total_comprehensive_income` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L079 | `total_comprehensive_income` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L080 | `tci_attributable_owners` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L081 | `tci_attributable_owners` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L082 | `tci_attributable_nci` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L083 | `tci_attributable_nci` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L084 | `oci_attributable_owners` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L085 | `oci_attributable_owners` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L086 | `oci_attributable_nci` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L087 | `oci_attributable_nci` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L088 | `paid_up_equity_capital` | I 2026-09-30 | SUPPORTED | VALUE `PaidUpValueOfEquityShareCapital@OneD` | T3.01 |
+| L089 | `face_value_per_share` | I 2026-09-30 | SUPPORTED | VALUE `FaceValueOfEquityShareCapital@OneD` | T3.01 |
+| L090 | `reserves_excl_revaluation` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `results.annual_disclosure` | T3.03 |
+| L091 | `eps_basic` | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `BasicEarningsPerShareAfterExtraordinaryItems@OneD` | T3.01 |
+| L092 | `eps_basic` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `BasicEarningsPerShareAfterExtraordinaryItems@FourD` | T3.02 |
+| L093 | `eps_basic_continuing` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L094 | `eps_basic_continuing` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L095 | `eps_basic_discontinued` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L096 | `eps_basic_discontinued` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L097 | `eps_diluted` | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `DilutedEarningsPerShareAfterExtraordinaryItems@OneD` | T3.01 |
+| L098 | `eps_diluted` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `DilutedEarningsPerShareAfterExtraordinaryItems@FourD` | T3.02 |
+| L099 | `eps_diluted_continuing` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L100 | `eps_diluted_continuing` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L101 | `eps_diluted_discontinued` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L102 | `eps_diluted_discontinued` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L103 | `ppe` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L104 | `right_of_use_assets` | I 2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L105 | `cwip` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L106 | `goodwill` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L107 | `other_intangible_assets` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L108 | `intangibles_under_development` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L109 | `investment_property` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L110 | `biological_assets` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L111 | `investments_equity_method` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L112 | `noncurrent_investments` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L113 | `trade_receivables_noncurrent` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L114 | `loans_noncurrent` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L115 | `other_noncurrent_financial_assets` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L116 | `derivative_financial_assets_noncurrent` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L117 | `noncurrent_financial_assets` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L118 | `deferred_tax_assets_net` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L119 | `noncurrent_tax_assets` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L120 | `other_noncurrent_assets` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L121 | `noncurrent_assets_total` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L122 | `inventories` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L123 | `current_investments` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L124 | `trade_receivables_current` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L125 | `cash_and_cash_equivalents` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L126 | `other_bank_balances` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L127 | `loans_current` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L128 | `other_current_financial_assets` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L129 | `derivative_financial_assets_current` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L130 | `current_financial_assets` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L131 | `current_tax_assets` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L132 | `other_current_assets` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L133 | `assets_held_for_sale` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L134 | `regulatory_deferral_debit` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L135 | `current_assets_total` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L136 | `total_assets` | I 2026-09-30 | SUPPORTED | VALUE `Assets@OneI` | T3.03 |
+| L137 | `equity_share_capital` | I 2026-09-30 | SUPPORTED | VALUE `Capital@OneI` | T3.03 |
+| L138 | `other_equity` | I 2026-09-30 | SUPPORTED | VALUE `ReservesAndSurplus@OneI` | T3.03 |
+| L139 | `equity_attributable_owners` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L140 | `non_controlling_interest_bs` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L141 | `total_equity` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L142 | `borrowings_noncurrent` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L143 | `lease_liabilities_noncurrent` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L144 | `other_noncurrent_financial_liabilities` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L145 | `derivative_financial_liabilities_noncurrent` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L146 | `noncurrent_financial_liabilities` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L147 | `provisions_noncurrent` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L148 | `deferred_tax_liabilities_net` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L149 | `other_noncurrent_liabilities` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L150 | `deferred_government_grants_current` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L151 | `deferred_government_grants_noncurrent` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L152 | `noncurrent_liabilities_total` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L153 | `borrowings_current` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L154 | `lease_liabilities_current` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L155 | `trade_payables_msme` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L156 | `trade_payables_msme_noncurrent` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L157 | `trade_payables_others` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L158 | `trade_payables_current` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L159 | `trade_payables_noncurrent` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L160 | `other_current_financial_liabilities` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L161 | `derivative_financial_liabilities_current` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L162 | `current_financial_liabilities` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L163 | `other_current_liabilities` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L164 | `provisions_current` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L165 | `current_tax_liabilities` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L166 | `liabilities_held_for_sale` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L167 | `regulatory_deferral_credit` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L168 | `current_liabilities_total` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.03 |
+| L169 | `total_liabilities` | I 2026-09-30 | SUPPORTED | REFUSED R-NF | T3.03 |
+| L170 | `total_equity_and_liabilities` | I 2026-09-30 | SUPPORTED | VALUE `CapitalAndLiabilities@OneI` | T3.03 |
+| L171 | `cf_profit_before_tax` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L172 | `cf_profit_before_tax` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L173 | `cf_adj_depreciation` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L174 | `cf_adj_depreciation` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `AdjustmentsForDepreciationAndAmortisationExpense@FourD` | T3.02 |
+| L175 | `cf_adj_gain_loss_sale_ppe` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L176 | `cf_adj_gain_loss_sale_ppe` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L177 | `cf_adj_finance_costs` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L178 | `cf_adj_finance_costs` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `AdjustmentsForFinanceCosts@FourD` | T3.02 |
+| L179 | `cf_adj_interest_income` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L180 | `cf_adj_interest_income` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L181 | `cf_adj_dividend_income` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L182 | `cf_adj_dividend_income` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `AdjustmentsForDividendIncome@FourD` | T3.02 |
+| L183 | `cf_adj_unrealised_fx` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L184 | `cf_adj_unrealised_fx` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `AdjustmentsForUnrealisedForeignExchangeLossesGains@FourD` | T3.02 |
+| L185 | `cf_adj_share_based_payments` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L186 | `cf_adj_share_based_payments` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `AdjustmentsForSharebasedPayments@FourD` | T3.02 |
+| L187 | `cf_adj_impairment` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L188 | `cf_adj_impairment` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `AdjustmentsForImpairmentLossReversalOfImpairmentLossRecognisedInProfitOrLoss@FourD` | T3.02 |
+| L189 | `cf_adj_fair_value` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L190 | `cf_adj_fair_value` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L191 | `cf_adj_profit_sale_investments` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L192 | `cf_adj_profit_sale_investments` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L193 | `cf_adj_provisions_current` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L194 | `cf_adj_provisions_current` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L195 | `cf_adj_provisions_noncurrent` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L196 | `cf_adj_provisions_noncurrent` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L197 | `cf_adj_associates_undistributed` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L198 | `cf_adj_associates_undistributed` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L199 | `cf_adj_other_noncash` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L200 | `cf_adj_other_noncash` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `OtherAdjustmentsForNoncashItems@FourD` | T3.02 |
+| L201 | `cf_adj_other_investing_financing` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L202 | `cf_adj_other_investing_financing` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `OtherAdjustmentsForWhichCashEffectsAreInvestingOrFinancingCashFlow@FourD` | T3.02 |
+| L203 | `cf_adj_other_reconcile` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L204 | `cf_adj_other_reconcile` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `OtherAdjustmentsToReconcileProfitLoss@FourD` | T3.02 |
+| L205 | `cf_wc_trade_receivables_current` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L206 | `cf_wc_trade_receivables_current` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L207 | `cf_wc_trade_receivables_noncurrent` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L208 | `cf_wc_trade_receivables_noncurrent` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L209 | `cf_wc_trade_and_other_receivables` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L210 | `cf_wc_trade_and_other_receivables` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L211 | `cf_wc_inventories` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L212 | `cf_wc_inventories` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L213 | `cf_wc_trade_payables_current` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L214 | `cf_wc_trade_payables_current` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L215 | `cf_wc_trade_payables_noncurrent` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L216 | `cf_wc_trade_payables_noncurrent` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L217 | `cf_wc_trade_and_other_payables` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L218 | `cf_wc_trade_and_other_payables` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L219 | `cf_wc_other_current_assets` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L220 | `cf_wc_other_current_assets` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L221 | `cf_wc_other_noncurrent_assets` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L222 | `cf_wc_other_noncurrent_assets` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L223 | `cf_wc_other_current_liabilities` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L224 | `cf_wc_other_current_liabilities` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L225 | `cf_wc_other_noncurrent_liabilities` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L226 | `cf_wc_other_noncurrent_liabilities` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L227 | `cf_wc_other_financial_assets_current` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L228 | `cf_wc_other_financial_assets_current` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L229 | `cf_wc_other_financial_assets_noncurrent` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L230 | `cf_wc_other_financial_assets_noncurrent` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L231 | `cf_wc_other_financial_liabilities_current` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L232 | `cf_wc_other_financial_liabilities_current` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L233 | `cf_wc_other_financial_liabilities_noncurrent` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L234 | `cf_wc_other_financial_liabilities_noncurrent` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L235 | `cf_wc_other_bank_balances` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.01 |
+| L236 | `cf_wc_other_bank_balances` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | T3.02 |
+| L237 | `cf_adjustments_total` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L238 | `cf_adjustments_total` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `AdjustmentsForReconcileProfitLoss@FourD` | T3.02 |
+| L239 | `cf_cash_generated_from_operations` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L240 | `cf_cash_generated_from_operations` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `CashFlowsFromUsedInOperations@FourD` | T3.02 |
+| L241 | `cf_interest_paid_operating` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L242 | `cf_interest_paid_operating` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `InterestPaidClassifiedAsOperatingActivities@FourD` | T3.02 |
+| L243 | `cf_interest_received_operating` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L244 | `cf_interest_received_operating` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `InterestReceivedClassifiedAsOperatingActivities@FourD` | T3.02 |
+| L245 | `cf_dividends_received_operating` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L246 | `cf_dividends_received_operating` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `DividendsReceivedClassifiedAsOperatingActivities@FourD` | T3.02 |
+| L247 | `cf_income_taxes_paid` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L248 | `cf_income_taxes_paid` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `IncomeTaxesPaidRefundClassifiedAsOperatingActivities@FourD` | T3.02 |
+| L249 | `cf_income_taxes_paid_investing` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L250 | `cf_income_taxes_paid_investing` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `IncomeTaxesPaidRefundClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L251 | `cf_income_taxes_paid_financing` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L252 | `cf_income_taxes_paid_financing` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `IncomeTaxesPaidRefundClassifiedAsFinancingActivities@FourD` | T3.02 |
+| L253 | `cf_other_operating` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L254 | `cf_other_operating` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `OtherInflowsOutflowsOfCashClassifiedAsOperatingActivities@FourD` | T3.02 |
+| L255 | `cfo` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L256 | `cfo` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `CashFlowsFromUsedInOperatingActivities@FourD` | T3.02 |
+| L257 | `cf_capex_ppe` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L258 | `cf_capex_ppe` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L259 | `cf_sale_ppe` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L260 | `cf_sale_ppe` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L261 | `cf_purchase_intangible_assets` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L262 | `cf_purchase_intangible_assets` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `PurchaseOfIntangibleAssetsClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L263 | `cf_sale_intangible_assets` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L264 | `cf_sale_intangible_assets` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `ProceedsFromSalesOfIntangibleAssetsClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L265 | `cf_purchase_intangibles_under_development` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L266 | `cf_purchase_intangibles_under_development` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L267 | `cf_sale_intangibles_under_development` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L268 | `cf_sale_intangibles_under_development` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L269 | `cf_purchase_goodwill` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L270 | `cf_purchase_goodwill` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L271 | `cf_sale_goodwill` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L272 | `cf_sale_goodwill` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L273 | `cf_purchase_investment_property` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L274 | `cf_purchase_investment_property` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L275 | `cf_sale_investment_property` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L276 | `cf_sale_investment_property` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L277 | `cf_purchase_biological_assets` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L278 | `cf_purchase_biological_assets` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L279 | `cf_sale_biological_assets` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L280 | `cf_sale_biological_assets` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L281 | `cf_purchase_other_long_term_assets` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L282 | `cf_purchase_other_long_term_assets` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L283 | `cf_sale_other_long_term_assets` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L284 | `cf_sale_other_long_term_assets` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L285 | `cf_purchase_equity_debt_instruments` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L286 | `cf_purchase_equity_debt_instruments` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `OtherCashPaymentsToAcquireEquityOrDebtInstrumentsOfOtherEntitiesClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L287 | `cf_sale_equity_debt_instruments` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L288 | `cf_sale_equity_debt_instruments` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `OtherCashReceiptsFromSalesOfEquityOrDebtInstrumentsOfOtherEntitiesClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L289 | `cf_purchase_jv_interests` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L290 | `cf_purchase_jv_interests` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `OtherCashPaymentsToAcquireInterestsInJointVenturesClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L291 | `cf_sale_jv_interests` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L292 | `cf_sale_jv_interests` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `OtherCashReceiptsFromSalesOfInterestsInJointVenturesClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L293 | `cf_investments_net` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L294 | `cf_investments_net` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L295 | `cf_obtaining_control_subsidiaries` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L296 | `cf_obtaining_control_subsidiaries` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `CashFlowsUsedInObtainingControlOfSubsidiariesOrOtherBusinessesClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L297 | `cf_losing_control_subsidiaries` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L298 | `cf_losing_control_subsidiaries` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `CashFlowsFromLosingControlOfSubsidiariesOrOtherBusinessesClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L299 | `cf_loans_advances_made` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L300 | `cf_loans_advances_made` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `CashAdvancesAndLoansMadeToOtherPartiesClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L301 | `cf_loans_advances_repaid` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L302 | `cf_loans_advances_repaid` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `CashReceiptsFromRepaymentOfAdvancesAndLoansMadeToOtherPartiesClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L303 | `cf_derivative_payments_investing` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L304 | `cf_derivative_payments_investing` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `CashPaymentsForFutureContractsForwardContractsOptionContractsAndSwapContractsClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L305 | `cf_derivative_receipts_investing` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L306 | `cf_derivative_receipts_investing` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `CashReceiptsFromFutureContractsForwardContractsOptionContractsAndSwapContractsClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L307 | `cf_interest_received_investing` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L308 | `cf_interest_received_investing` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `InterestReceivedClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L309 | `cf_dividends_received_investing` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L310 | `cf_dividends_received_investing` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `DividendsReceivedClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L311 | `cf_partnership_investment` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L312 | `cf_partnership_investment` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `CashPaymentForInvestmentInPartnershipFirmOrAssociationOfPersonsOrLimitedLiabilityPartnerships@FourD` | T3.02 |
+| L313 | `cf_partnership_profit_share` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L314 | `cf_partnership_profit_share` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `CashReceiptsFromShareOfProfitsOfPartnershipFirmOrAssociationOfPersonsOrLimitedLiabilityPartnerships@FourD` | T3.02 |
+| L315 | `cf_government_grants` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L316 | `cf_government_grants` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `ProceedsFromGovernmentGrantsClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L317 | `cf_other_investing` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L318 | `cf_other_investing` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `OtherInflowsOutflowsOfCashClassifiedAsInvestingActivities@FourD` | T3.02 |
+| L319 | `cfi` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L320 | `cfi` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `CashFlowsFromUsedInInvestingActivities@FourD` | T3.02 |
+| L321 | `cf_proceeds_shares` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L322 | `cf_proceeds_shares` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L323 | `cf_proceeds_other_equity_instruments` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L324 | `cf_proceeds_other_equity_instruments` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `ProceedsFromIssuingOtherEquityInstruments@FourD` | T3.02 |
+| L325 | `cf_proceeds_stock_options` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L326 | `cf_proceeds_stock_options` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L327 | `cf_payments_redeem_own_shares` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L328 | `cf_payments_redeem_own_shares` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L329 | `cf_payments_other_equity_instruments` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L330 | `cf_payments_other_equity_instruments` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L331 | `cf_proceeds_ownership_changes_subsidiaries` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L332 | `cf_proceeds_ownership_changes_subsidiaries` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L333 | `cf_payments_ownership_changes_subsidiaries` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L334 | `cf_payments_ownership_changes_subsidiaries` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L335 | `cf_proceeds_borrowings` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L336 | `cf_proceeds_borrowings` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `ProceedsFromBorrowingsClassifiedAsFinancingActivities@FourD` | T3.02 |
+| L337 | `cf_short_term_borrowings_net` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L338 | `cf_short_term_borrowings_net` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L339 | `cf_proceeds_debentures` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L340 | `cf_proceeds_debentures` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `ProceedsFromIssuingDebenturesNotesBondsEtc@FourD` | T3.02 |
+| L341 | `cf_repayment_borrowings` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L342 | `cf_repayment_borrowings` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `RepaymentsOfBorrowingsClassifiedAsFinancingActivities@FourD` | T3.02 |
+| L343 | `cf_lease_payments` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L344 | `cf_lease_payments` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L345 | `cf_dividends_paid` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L346 | `cf_dividends_paid` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `DividendsPaidClassifiedAsFinancingActivities@FourD` | T3.02 |
+| L347 | `cf_interest_paid_financing` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L348 | `cf_interest_paid_financing` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `InterestPaidClassifiedAsFinancingActivities@FourD` | T3.02 |
+| L349 | `cf_other_financing` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L350 | `cf_other_financing` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `OtherInflowsOutflowsOfCashClassifiedAsFinancingActivities@FourD` | T3.02 |
+| L351 | `cff` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L352 | `cff` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `CashFlowsFromUsedInFinancingActivities@FourD` | T3.02 |
+| L353 | `cf_net_change_before_fx` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L354 | `cf_net_change_before_fx` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `IncreaseDecreaseInCashAndCashEquivalentsBeforeEffectOfExchangeRateChanges@FourD` | T3.02 |
+| L355 | `cf_fx_effect` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L356 | `cf_fx_effect` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `EffectOfExchangeRateChangesOnCashAndCashEquivalents@FourD` | T3.02 |
+| L357 | `cf_net_change` | Q 2026-07-01..2026-09-30 | UNSUPPORTED: no quarter cash-flow statement | REFUSED R-QCF | T3.01 |
+| L358 | `cf_net_change` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `IncreaseDecreaseInCashAndCashEquivalents@FourD` | T3.02 |
+| L359 | `cf_cash_opening` | I 2026-09-30 | SUPPORTED | VALUE `CashAndCashEquivalentsCashFlowStatement@PY_I` | T3.04 |
+| L360 | `cf_cash_closing` | I 2026-09-30 | SUPPORTED | VALUE `CashAndCashEquivalentsCashFlowStatement@OneI` | T3.03 |
+| L361 | `segment_revenue` [segment=retail] | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `SegmentRevenue@OneReportable11D` | T3.29, T3.05 |
+| L362 | `segment_revenue` [segment=wholesale] | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `SegmentRevenue@OneReportable12D` | T3.30, T3.06 |
+| L363 | `segment_revenue` [segment=treasury] | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `SegmentRevenue@OneReportable13D` | T3.31, T3.07 |
+| L364 | `segment_revenue` [segment=other_banking] | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `SegmentRevenue@OneReportable14D` | T3.32, T3.08 |
+| L365 | `segment_revenue` [segment=retail] | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `SegmentRevenue@FourReportable11D` | T3.25, T3.05 |
+| L366 | `segment_revenue` [segment=wholesale] | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `SegmentRevenue@FourReportable12D` | T3.26, T3.06 |
+| L367 | `segment_revenue` [segment=treasury] | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `SegmentRevenue@FourReportable13D` | T3.27, T3.07 |
+| L368 | `segment_revenue` [segment=other_banking] | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `SegmentRevenue@FourReportable14D` | T3.28, T3.08 |
+| L369 | `segment_revenue_total` | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `SegmentRevenue@OneD` | T3.01 |
+| L370 | `segment_revenue_total` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `SegmentRevenue@FourD` | T3.02 |
+| L371 | `inter_segment_revenue` | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `InterSegmentRevenue@OneD` | T3.01 |
+| L372 | `inter_segment_revenue` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `InterSegmentRevenue@FourD` | T3.02 |
+| L373 | `segment_revenue_from_operations` | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `SegmentRevenueFromOperations@OneD` | T3.01 |
+| L374 | `segment_revenue_from_operations` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `SegmentRevenueFromOperations@FourD` | T3.02 |
+| L375 | `segment_result` [segment=retail] | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `SegmentProfitLossBeforeTaxAndFinanceCosts@OneReportable21D` | T3.37, T3.05 |
+| L376 | `segment_result` [segment=wholesale] | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `SegmentProfitLossBeforeTaxAndFinanceCosts@OneReportable22D` | T3.38, T3.06 |
+| L377 | `segment_result` [segment=treasury] | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `SegmentProfitLossBeforeTaxAndFinanceCosts@OneReportable23D` | T3.39, T3.07 |
+| L378 | `segment_result` [segment=other_banking] | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `SegmentProfitLossBeforeTaxAndFinanceCosts@OneReportable24D` | T3.40, T3.08 |
+| L379 | `segment_result` [segment=retail] | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `SegmentProfitLossBeforeTaxAndFinanceCosts@FourReportable21D` | T3.33, T3.05 |
+| L380 | `segment_result` [segment=wholesale] | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `SegmentProfitLossBeforeTaxAndFinanceCosts@FourReportable22D` | T3.34, T3.06 |
+| L381 | `segment_result` [segment=treasury] | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `SegmentProfitLossBeforeTaxAndFinanceCosts@FourReportable23D` | T3.35, T3.07 |
+| L382 | `segment_result` [segment=other_banking] | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `SegmentProfitLossBeforeTaxAndFinanceCosts@FourReportable24D` | T3.36, T3.08 |
+| L383 | `segment_result_total` | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `SegmentProfitLossBeforeTaxAndFinanceCosts@OneD` | T3.01 |
+| L384 | `segment_result_total` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `SegmentProfitLossBeforeTaxAndFinanceCosts@FourD` | T3.02 |
+| L385 | `segment_finance_costs` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L386 | `segment_finance_costs` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L387 | `segment_unallocable_net` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.01 |
+| L388 | `segment_unallocable_net` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-NF | T3.02 |
+| L389 | `segment_other_elimination` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L390 | `segment_other_elimination` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L391 | `segment_profit_before_tax` | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `SegmentProfitBeforeTax@OneD` | T3.01 |
+| L392 | `segment_profit_before_tax` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `SegmentProfitBeforeTax@FourD` | T3.02 |
+| L393 | `segment_assets` [segment=retail] | I 2026-09-30 | SUPPORTED | VALUE `SegmentAssets@OneReportable31I` | T3.41, T3.05 |
+| L394 | `segment_assets` [segment=wholesale] | I 2026-09-30 | SUPPORTED | VALUE `SegmentAssets@OneReportable32I` | T3.42, T3.06 |
+| L395 | `segment_assets` [segment=treasury] | I 2026-09-30 | SUPPORTED | VALUE `SegmentAssets@OneReportable33I` | T3.43, T3.07 |
+| L396 | `segment_assets` [segment=other_banking] | I 2026-09-30 | SUPPORTED | VALUE `SegmentAssets@OneReportable34I` | T3.44, T3.08 |
+| L397 | `segment_assets_total` | I 2026-09-30 | SUPPORTED | VALUE `SegmentAssets@OneI` | T3.03 |
+| L398 | `segment_unallocable_assets` | I 2026-09-30 | SUPPORTED | VALUE `UnAllocableAssets@OneI` | T3.03 |
+| L399 | `segment_assets_net` | I 2026-09-30 | SUPPORTED | VALUE `NetSegmentAssets@OneI` | T3.03 |
+| L400 | `inter_segment_assets` | I 2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L401 | `segment_liabilities` [segment=retail] | I 2026-09-30 | SUPPORTED | VALUE `SegmentLiabilities@OneReportable41I` | T3.45, T3.05 |
+| L402 | `segment_liabilities` [segment=wholesale] | I 2026-09-30 | SUPPORTED | VALUE `SegmentLiabilities@OneReportable42I` | T3.46, T3.06 |
+| L403 | `segment_liabilities` [segment=treasury] | I 2026-09-30 | SUPPORTED | VALUE `SegmentLiabilities@OneReportable43I` | T3.47, T3.07 |
+| L404 | `segment_liabilities` [segment=other_banking] | I 2026-09-30 | SUPPORTED | VALUE `SegmentLiabilities@OneReportable44I` | T3.48, T3.08 |
+| L405 | `segment_liabilities_total` | I 2026-09-30 | SUPPORTED | VALUE `SegmentLiabilities@OneI` | T3.03 |
+| L406 | `segment_unallocable_liabilities` | I 2026-09-30 | SUPPORTED | VALUE `UnAllocableLiabilities@OneI` | T3.03 |
+| L407 | `segment_liabilities_net` | I 2026-09-30 | SUPPORTED | VALUE `NetSegmentLiabilities@OneI` | T3.03 |
+| L408 | `inter_segment_liabilities` | I 2026-09-30 | SUPPORTED | REFUSED R-PDF | — |
+| L409 | `interest_earned` (new, BANK) | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `InterestEarned@OneD` | T3.01 |
+| L410 | `interest_earned` (new, BANK) | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `InterestEarned@FourD` | T3.02 |
+| L411 | `interest_expended` (new, BANK) | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `InterestExpended@OneD` | T3.01 |
+| L412 | `interest_expended` (new, BANK) | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `InterestExpended@FourD` | T3.02 |
+| L413 | `provisions_and_contingencies` (new, BANK) | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE `ProvisionsOtherThanTaxAndContingencies@OneD` | T3.01 |
+| L414 | `provisions_and_contingencies` (new, BANK) | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE `ProvisionsOtherThanTaxAndContingencies@FourD` | T3.02 |
+| L415 | `deposits` (new, BANK) | I 2026-09-30 | SUPPORTED | VALUE `Deposits@OneI` | T3.03 |
+| L416 | `advances` (new, BANK) | I 2026-09-30 | SUPPORTED | VALUE `Advances@OneI` | T3.03 |
+| L417 | `bank_investments` (new, BANK) | I 2026-09-30 | SUPPORTED | VALUE `Investments@OneI` | T3.03 |
+| L418 | `opex_excl_finance_and_da` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L419 | `opex_excl_finance_and_da` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L420 | `ebitda_excl_other_income` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L421 | `ebitda_excl_other_income` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L422 | `opm_pct` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L423 | `opm_pct` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L424 | `pbdt_vendor` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L425 | `pbdt_vendor` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L426 | `pbt_margin_pct` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L427 | `pbt_margin_pct` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L428 | `effective_tax_rate_pct` | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE computed | — |
+| L429 | `effective_tax_rate_pct` | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE computed | — |
+| L430 | `material_cost_pct` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L431 | `material_cost_pct` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L432 | `employee_cost_pct` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L433 | `employee_cost_pct` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L434 | `cfo_to_op_pct` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L435 | `cfo_to_op_pct` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L436 | `receivable_days` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L437 | `receivable_days` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L438 | `liabilities_incl_nci` | I 2026-09-30 | SUPPORTED | REFUSED R-OP (total_liabilities) | — |
+| L439 | `net_current_assets` | I 2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L440 | `shares_outstanding` | I 2026-09-30 | SUPPORTED | VALUE computed | — |
+| L441 | `cf_wc_total` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L442 | `cf_wc_total` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L443 | `segment_capital_employed` [segment=retail] | I 2026-09-30 | SUPPORTED | VALUE computed | T3.41, T3.45 |
+| L444 | `segment_capital_employed` [segment=wholesale] | I 2026-09-30 | SUPPORTED | VALUE computed | T3.42, T3.46 |
+| L445 | `segment_capital_employed` [segment=treasury] | I 2026-09-30 | SUPPORTED | VALUE computed | T3.43, T3.47 |
+| L446 | `segment_capital_employed` [segment=other_banking] | I 2026-09-30 | SUPPORTED | VALUE computed | T3.44, T3.48 |
+| L447 | `segment_revenue_members_total` [segment=reportable_segments_total] | Q 2026-07-01..2026-09-30 | SUPPORTED | VALUE computed | T3.25–T3.32 |
+| L448 | `segment_revenue_members_total` [segment=reportable_segments_total] | H1 2026-04-01..2026-09-30 | SUPPORTED | VALUE computed | T3.25–T3.32 |
+| L449 | `net_profit_margin_pct` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L450 | `net_profit_margin_pct` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L451 | `gross_margin_pct` | Q 2026-07-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L452 | `gross_margin_pct` | H1 2026-04-01..2026-09-30 | SUPPORTED | NOT_APPLICABLE `ISSUER_RULE_ID` | — |
+| L453 | `other_income_incl_exceptional` | Q 2026-07-01..2026-09-30 | SUPPORTED | REFUSED R-OP (exceptional_items_before_tax) | — |
+| L454 | `other_income_incl_exceptional` | H1 2026-04-01..2026-09-30 | SUPPORTED | REFUSED R-OP (exceptional_items_before_tax) | — |
+| L455 | `shp_public_shareholding_plus_employee_trust_pct` | — | — | no key: no shareholding member in a results package | — |
+| L456 | `shp_non_institutions_plus_employee_trust_pct` | — | — | no key: no shareholding member in a results package | — |
+| L457 | `shp_institutions_domestic_plus_foreign_pct` | — | — | no key: no shareholding member in a results package | — |
+
+## Evidence pins
+
+VENDOR-1 Phase 3 Task 3 (F16). Task 11 checks that discovery's selected filings equal these
+before its rehearsal; any difference stops Task 11 for re-grounding and a Task 3 amendment.
+
+- **Issuer.** ICICIBANK, ISIN `INE090A01021` [B4.25], BSE scrip `532174` [B4.09].
+- **Period ends.** 2026-09-30, the acceptance period (Task 13 `<PE>`; a half-year package,
+  quarter Q2 of the year ending 2027-03-31 [B10.08]); 2026-06-30, onboarding's second filing.
+- **Analysis basis.** `STANDALONE`, owner decision 2 (spec §2). Basis status
+  `CONSOLIDATED_AND_STANDALONE` (B5a) [B5.01–B5.04].
+- **Framework.** `INDIAN_GAAP` (B1b, amendment A7), evidenced by each period's results PDF.
+
+| Period end | Basis | Instance sha256 | Role |
+|---|---|---|---|
+| 2026-09-30 | Standalone | `a2d498641dc7516679efeb4fae21bbc0c97a3220ead3fa229d669997fbcb64d3` | acceptance package member; onboarding filing |
+| 2026-06-30 | Standalone | `39677b484f433a34be77c8a1bd241a0d9b66bf17cfd4eedc54ce0dfbaefc62d5` | onboarding filing |
+| 2026-09-30 | Consolidated | `615348fca1872145ef64f390d725bc196359c61dec88ddf49f8ab8deb920dc5d` | listing evidence for basis status only; never a member |
+| 2026-06-30 | Consolidated | `ded5800004dd276f7b81110c4be9ed449eb2c7281ee3bb3e67519cf6448a4cb4` | listing evidence for basis status only; never a member |
+
+| Period end | Results PDF sha256 | Filed | Role |
+|---|---|---|---|
+| 2026-09-30 | `b28a719174d31592413f317e9baf527e4dd127f18b2468179d9cc0bfa74fabd1` | 2026-10-17 15:21:44+05:30 | framework evidence (B1′ P, A7); not a package member (B7b) |
+| 2026-06-30 | `1b3599e2a01fc9b77f913fef7a3068bca6ec43c722010a1c1bc4c01c55033c03` | 2026-07-18 14:23:53+05:30 | framework evidence (B1′ P, A7); not a package member (B7b) |
+
+The grounding captures are retention-only (`nse-grounding`): onboarding acquires its own copies
+under first-party sources, and the pins are byte identities those copies must match.
