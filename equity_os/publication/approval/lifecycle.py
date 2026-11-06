@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import partial
+from pathlib import PurePosixPath
 from typing import Any, LiteralString
 
 from psycopg import Cursor
@@ -45,6 +46,7 @@ from equity_os.publication.checking.citations import (
 from equity_os.publication.checking.claim_check import check_claim
 from equity_os.publication.checking.numeral_scan import scan_section
 from equity_os.publication.drafting.display import content_hash
+from equity_os.publication.revision.import_mapping import UPDATE_FILES, ledger_contracts
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records import store
 from equity_os.verification.review_queue.queue import (
@@ -263,7 +265,8 @@ def check_version(
 ) -> Validation:
     """Every claim's state and the sections' version-level states at ``boundary``, in the
     caller's transaction under its subject lock; nothing is written. A drafted quote claim is
-    compared with the contract a sealed import binds to its quote (plan D4, M9)."""
+    compared with the contract a sealed import binds to its quote (plan D4, M9); an imported
+    update's, absent ``bound``, with its own management ledger's, as at its import."""
     bound = bound or {}
     draft = store.read_version(cursor, version_id)
     row = cursor.execute(_ENTITY, (draft.report_id,)).fetchone()
@@ -272,6 +275,10 @@ def check_version(
     quotes = {c.claim_key for c in draft.claims if c.citation.kind is CitationKind.SOURCE_QUOTE}
     if bound and (not imported or bound.keys() - quotes):
         raise DecisionRefusedError(_UNBINDABLE.format(version_id=version_id))
+    own = {PurePosixPath(path).name: body for path, body in draft.import_sources}
+    if not bound and own.keys() >= set(UPDATE_FILES):
+        (ledger,) = (body for name, body in own.items() if name not in UPDATE_FILES)
+        bound = ledger_contracts(ledger)
     resolved = {
         claim.claim_key: _bind(
             resolve_citation(

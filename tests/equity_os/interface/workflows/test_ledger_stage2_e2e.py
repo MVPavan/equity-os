@@ -17,6 +17,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import date, datetime
 from decimal import Decimal
+from functools import partial
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -68,7 +69,7 @@ from equity_os.interface.commands.sourcing.screener_cli_dispatch import EXIT_OK
 from equity_os.interface.entry.cli import main
 from equity_os.publication.approval import lifecycle, panel
 from equity_os.publication.drafting.display import content_hash
-from equity_os.publication.revision.import_mapping import UPDATE_FILES
+from equity_os.publication.revision.import_mapping import UPDATE_FILES, ledger_contracts
 from equity_os.storage.backup.backup import verify_set, write_backup
 from equity_os.storage.database.settings import PgRole
 from equity_os.storage.memory.pg_store import PgMemoryStore
@@ -318,6 +319,45 @@ def stage2_state(
                 cursor, version_id, mode=RunMode.AS_KNOWN, boundary=now, **paths
             )
         assert checked.claim_states == ((claim.claim_key, ClaimState.QUOTE_MEANING_MISMATCH),)
+
+        # 3a''. An import sealed once its quote's capture exists: a later check, which supplies
+        # no bound map (``ledger check``), binds the contract the first validation bound.
+        claim = corrective(first["id"])
+        with panel_pool.connection() as conn, conn.transaction(force_rollback=True):
+            cursor = conn.cursor()
+            source = store.read_version(cursor, imported[first["id"]][0])
+            report = store.create_report(
+                cursor, entity_id=entity_id, period="FY99_Q2", kind=ReportKind.EARNINGS_UPDATE
+            )
+            version_id = store.create_version(
+                cursor,
+                source.model_copy(
+                    update={
+                        "report_id": report,
+                        "knowledge_cutoff": cutoff,
+                        "claims": (claim,),
+                        "sections": (section(claim),),
+                        "content_hash": content_hash((section(claim),), (claim,)),
+                    }
+                ),
+            )
+            store.insert_decision(
+                cursor,
+                subject_kind=SubjectKind.REPORT_VERSION,
+                subject_id=version_id,
+                kind=DecisionKind.IMPORT_SEAL,
+                predecessor_id=None,
+                sealed_digest=store.sealed_digest(cursor, version_id),
+            )
+            ((now,),) = cursor.execute(_NOW).fetchall()
+            (body,) = (b for p, b in source.import_sources if Path(p).name not in UPDATE_FILES)
+            bound = {claim.claim_key: ledger_contracts(body)[claim.claim_key]}
+            check = partial(
+                lifecycle.check_version, cursor, version_id, mode=RunMode.AS_KNOWN, boundary=now
+            )
+            expected = ((claim.claim_key, ClaimState(first["claims"][0]["state"])),)
+            assert check(bound=bound, **paths).claim_states == expected
+            assert check(**paths).claim_states == expected
 
         # 3b. One corrective per quarter, submitted and approved by the panel.
         correctives: dict[str, int] = {}
