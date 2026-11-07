@@ -454,3 +454,23 @@ Format per entry:
 - Why it matters: a test can look like it sets a field and test nothing.
 - Apply: check field names against the model when constructing contracts in tests; a test that
   sets a field must assert an effect of it.
+
+## Failing tests print licensed vendor data unless the module and its source both hide it  (2026-11-07)
+- Observed: VENDOR-1 P2 closing reviews found three disclosure paths, one after another:
+  - pytest's assertion rewriting prints operands, such as retained bodies, parsed cells and call
+    arguments, both in `-vv` and in `-rA` summaries;
+  - tracebacks print test source, so literal expectations copied from captures appear in both
+    `--tb=short` and long tracebacks;
+  - those literals also sat in committed files, public since 2026-10-28 (`eqos-tlpf`).
+
+  Fixing assertions one at a time missed sites twice.
+- Why it matters: vendor values and text are licensed. Green tests never exercise their failure
+  output, so the leak shows only when a test regresses.
+- Apply: a test module that reads retained vendor data needs both of these:
+  - put `PYTEST_DONT_REWRITE` in its module docstring;
+  - compare retained expectations by sha256 of their canonical string form, never as literals.
+
+  Support helpers (`tests/equity_os/support/*`) are not rewritten (pytest `_should_rewrite`: no
+  `pytest_plugins` or `register_assert_rewrite` here). Prove a change with a synthetic sentinel
+  built at runtime, under `-vv -rA --tb=short`, against a module without the marker as the
+  control.

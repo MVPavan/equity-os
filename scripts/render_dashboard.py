@@ -61,7 +61,7 @@ HAND = {
     "V1.T13": ("open", "Live: migrate, re-interpret, re-ingest Apar"),
     "V1.T14": ("open", "Apar re-measurement"),
     # docs/specs/2026-11-06-vendor-first.md §3 and §7–§9.
-    "V1.P2": ("in_progress", "VENDOR-1 Phase 2: vendor text (concall summaries, numeral rule)"),
+    "V1.P2": ("closed", "VENDOR-1 Phase 2: vendor text (concall summaries, numeral rule)"),
     "V1.P3": ("in_progress", "VENDOR-1 Phase 3: banks (ICICIBANK)"),
     "FIVE": ("open", "Five-company test: APARINDS, ICICIBANK, LAURUSLABS, MTARTECH, NETWEB"),
     # bd eqos-msq notes: daily intake paused at the owner's request, 2026-11-05.

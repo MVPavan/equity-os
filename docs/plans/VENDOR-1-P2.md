@@ -1,5 +1,13 @@
 # VENDOR-1 Phase 2 Implementation Plan
 
+**Done 2026-11-07:** implementation approved by gpt-6.1-sol, after phase-review rounds 1–3, a
+fresh closing review and closing re-reviews 1–3, the last returning APPROVE. The gate at
+`0587e876` exited 2 with ROUTE CONTRACT; its only failures are the Stage 4 protected-data tests,
+which pass on main, and the leak check passes. Screener text is complete and Tijori text is
+deferred (`eqos-p7a7`).
+Follow-ups: `eqos-ykr1`, `eqos-21ev`, `eqos-wmu4`, `eqos-agvg`, `eqos-tlpf`. Test modules that read
+retained vendor data carry `PYTEST_DONT_REWRITE` and compare retained expectations by digest.
+
 **Status:** approved, gpt-6.1-sol plan review 3 (APPROVE, 2026-11-06). Implementation notes from
 that review:
 - An imported successor that inherits S still refuses atomically when S > its own K.

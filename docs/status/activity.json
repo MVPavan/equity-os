@@ -1,14 +1,18 @@
 {
   "now": {
-    "title": "VENDOR-1 Phase 2: Screener concall summaries as guidance text",
-    "detail": "Phase 1 code is approved and main is pushed to GitHub (a2b8bd8c). Phase 2 fix round 1 landed; Sol's round 2 resolved findings 1-8 and 10 and left one test-only finding (assertions that could print vendor text on failure), now fixed and in Sol's round-3 check. The gate's pasted-capture rail now checks every added line, with the owner's two exceptions (eqos-ju19)."
+    "title": "VENDOR-1: Phase 1 live (Apar) next; Phase 2 done",
+    "detail": "VENDOR-1 Phase 2 (Screener concall summaries as guidance text) is approved by Sol after the phase review, a fresh closing review and three closing re-reviews; the gate at 0587e876 shows only the expected Stage 4 protected-data failures. Next is Phase 1's live work on Apar, then Phase 3 (banks) and the five-company test. The legacy-lane retirement plan is approved and waits until after the five-company test."
   },
   "next": [
-    "VENDOR-1 P2: Sol round 3, Phase 2 gate at the new tip, fresh closing review",
     "VENDOR-1 P1 live: migrate, re-interpret and re-ingest Apar (Task 13), re-measure (Task 14)",
-    "Plan the retirement of the legacy lanes (legacy SQLite, standalone Screener/Tijori commands, Lane B)"
+    "Then the PDF fixes and version bump, Phase 3 Tasks 4-11, FIVE-1 Task 4, the five-company test",
+    "Owner: committed tests held literal vendor values, public since 2026-10-28 (eqos-tlpf); history decision"
   ],
   "log": [
+    {
+      "date": "2026-11-07",
+      "text": "VENDOR-1 Phase 2 approved by Sol. The closing review found vendor text could bypass its guidance block (renamed, moved or deleted) and empty extractions could revive late claims; both fixed. Test modules that read retained vendor data no longer print it on failure (PYTEST_DONT_REWRITE plus digest comparisons, 69 literals replaced). LEGACY-1 retirement plan approved (eqos-3vd1), to run after the five-company test."
+    },
     {
       "date": "2026-11-07",
       "text": "Owner decisions applied: lines that are only a quoted digest, and docs/evidence quotes of public NSE/BSE filings, are exempt from the pasted-capture rail, whose 500-line cap was removed (eqos-ju19); the history of 39ffae57 is kept; legacy lanes will be retired; main pushed. VENDOR-1 Phase 2 fix round 1 landed and Sol's round 2 left one finding, fixed. 81 clean worktrees removed."
