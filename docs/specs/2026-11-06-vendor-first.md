@@ -143,6 +143,14 @@ column. Nothing is defaulted; a missing input refuses the group.
 `compare_cli.py` defaults `--vendor` to empty. Change: financial-results runs include Screener and
 Tijori by default, including fallback reruns (§6.8).
 
+**Vendor captures serve every period they evidence (amended 2026-11-07, P1 Task 14 rehearsal;
+owner order 2026-11-05).** A vendor page captured once holds many periods. A run's group reads,
+per requested vendor surface, every attempt available under its cutoff, mode and pinned
+extractor that is filed under the group's period end or whose capture holds an occurrence at it
+(`occurrences.valid_time` = the period end or instant). Among those, the latest decides, as for
+one period end (data spec §2: no fallback to an older capture). A vendor side is `NO_ATTEMPT`
+only when no such attempt exists.
+
 ### 6.4 Predicates
 
 Policy file `config/verification/vendor_first/policy/v1.yaml`, pinned through `eqos.version_pins`
@@ -368,13 +376,16 @@ Every renderer reading `read_selected` prints the label text beside the number (
    suggest another precision gets the rule's.
 3. **Three-way coverage.** The command computes the expected set from reviewed mappings with full
    keys (entity, canonical id, period, basis, framework, dimensions); a fresh run has a three-way
-   comparison for each member, and a dimensioned key that cannot be enumerated refuses
+   comparison for each member, including members in periods evidenced only by a capture filed
+   under another period end, and a dimensioned key that cannot be enumerated refuses
    explicitly. The report states the measured count.
 4. **Standalone-only onboarding.** A fixture whose listings hold only standalone rows onboards with
    standalone filings verified, basis status `STANDALONE_ONLY` and a standalone package; a
    consolidated vendor table is not paired with its standalone filing, and its consolidated cells
    are `NOT_APPLICABLE`. Apar onboards as before.
-5. **Runs.** An ordinary `eqos compare run` with no vendor flags has Screener and Tijori sides. A
+5. **Runs.** An ordinary `eqos compare run` with no vendor flags has Screener and Tijori sides for
+   every period a retained capture evidences, whatever period end the capture's attempt is filed
+   under. A
    case with vendor captures and no filing package, occurrence or interpretation produces a
    complete run and a row-3 admission under a pinned eligibility fixture.
 6. **Admission.** One case per row of §6.5, including: failed filing plus agreeing vendors refuses

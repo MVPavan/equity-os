@@ -330,7 +330,8 @@ default applies to financial-results runs only, including fallback reruns.
 
 Run status (finding 3). With no package, `select_key` already gives first-party sides `NO_VALUE`
 with `NO_ELIGIBLE_PACKAGE`, which `operational_failures` does not count. The one new absence is a
-vendor side with `NO_ATTEMPT` (no capture of that surface for the company-period), which defaults
+vendor side with `NO_ATTEMPT` (no available attempt of that surface filed under the period end, and no
+available capture of it evidencing the period; Task 5b), which defaults
 now make common: `operational_failures` stops counting it. Everything else stays a failure:
 a failed acquisition or extraction attempt (`engine_attempts._imposed`),
 `NOT_EXTRACTED_UNDER_PINS`, `NOT_INTERPRETED_UNDER_PINS`, on either role. No live run holds a
@@ -350,6 +351,64 @@ Dependencies: Task 2.
 Risks: default vendors change new run requests, so a new run without flags differs from an old
 one; stored runs keep their own identity and replay unchanged, which the existing replay tests
 show.
+
+## Task 5b: Vendor captures serve every period they evidence
+
+Approved: gpt-6.1-sol, plan re-review 2, 2026-11-07.
+
+Goal: a run loads every available capture of a requested vendor surface that evidences its
+period, whatever period end its attempt is filed under (spec §6.3 amendment, §6.11 #3, #5).
+
+Files:
+- Modify: `storage/records/repository_rows.py` (`ATTEMPTS_EVIDENCING`),
+  `storage/records/repository.py` (`list_attempts(..., evidenced=)`, +2 to 800),
+  `verification/comparison/resolve_loader.py` (`_period_attempts`, `_witness`),
+  `verification/comparison/vendor_sides.py` (`_evidenced`, `_latest`, docstrings),
+  `verification/comparison/run.py` (`_retained` keyed by the candidate relation, R13; its call).
+  Net about +31 lines.
+- Test: `tests/equity_os/verification/comparison/test_vendor_only_run.py` (the cross-period
+  test; the witness test, parametrised `AS_KNOWN` / `RETROSPECTIVE`; `_compare` gains
+  `*args`), `tests/equity_os/storage/retention/test_retention_refetch.py` (the R13 test)
+
+Interfaces:
+- Produces: `EvidenceRepository.list_attempts(entity_id, period_end, *, evidenced: bool =
+  False)`. With `evidenced`, it returns every attempt of the entity whose capture has an
+  occurrence with `valid_time = period_end`.
+- Consumes: unchanged `attempt_available`, `_latest`'s ordering and section rule.
+
+Approach: the rule of spec §6.3 (amended 2026-11-07); among several evidencing captures the
+existing `_latest` rule decides. The loader adds requested-vendor evidencing attempts
+for the group's own end only (not the nine-month companion, not comparatives). For each
+evidencing attempt filed elsewhere, it loads one witness occurrence per (capture, end). The
+engine reads evidence from loaded occurrences only, so replay reproduces it. The R13 guard
+keys a retained capture under its filed end plus the scope ends its loaded occurrences
+evidence, and an expired one under every scope end (its occurrences are withheld), so it
+refuses whenever the latest candidate may read an expired capture.
+
+Verification: each of the three new tests fails before and passes after. The scoped suites are
+green: `verification/comparison/`, `verification/admission/`, `test_data_stage1_e2e.py`,
+`test_shareholding_filing.py`, `test_vendor_retained.py` and `test_retention_refetch.py`.
+Replay of stored runs is unchanged (the existing replay assertions). mypy, ruff and the 800-line
+ceiling pass.
+
+Dependencies: Task 5 (landed). Re-runs: Task 12's gate on the new tip, then Task 14 from
+step 2. Task 13 is not rerun.
+
+Risks:
+- `repository.py` sits at the 800-line ceiling afterwards. Any further addition must move code
+  out first.
+- `ATTEMPTS_EVIDENCING` scans the entity's attempts with an `EXISTS` on
+  `occurrences(capture_ref_id)`, which the unique key indexes. That is cheap at today's size.
+  **Inferred**; not measured.
+- The R13 guard is exact for one scope end, the only shape production builds. In a multi-end
+  scope it can over-refuse, never under-refuse (`r13_probe.out`: 0 under-refusals in 9,275
+  cases). The precision fix is deferred to bead `eqos-t9m5` ("R13 guard: key expired vendor
+  captures by the ends their raw occurrences evidence, not every scope end (multi-end
+  over-refusal only)"), not this task.
+- The two-end scope in the R13 test has no production caller. **Inferred** to execute; if it
+  refuses for another reason, the implementer reports it rather than reshaping the test.
+
+Hours: 3 (Opus).
 
 ## Task 6: Policy, predicates and run pins
 
@@ -871,6 +930,21 @@ Dependencies: Task 13.
 
 Risks: live runs are permanent. If coverage is thin (few three-way cells), the report says so;
 nothing is tuned to raise it.
+
+**Re-rehearsal after Task 5b (2026-11-07).** Attempt 3's rehearsal ran at `805c875f`, before
+Task 5b. Its runs 6–12 saw no vendor sides, so its coverage (expected 0) proved nothing. After
+Task 5b lands and Task 12's gate passes on the new tip, Task 14 restarts from live protocol
+step 2: a new backup and rehearsal, `commands.txt` re-frozen at the new HEAD (`live.sh` checks
+HEAD), and the twin again.
+
+- The command list and allowed sets are unchanged: Task 5b adds no new write kind. Runs now
+  cite vendor attempts, captures, occurrences and interpretations as `run_inputs`, and may write
+  new calculation traces. Both are already allowed.
+- Expected `COVERAGE` per quarter is the Task 5b amendment's computed table (its §7, computed by
+  code on the rehearsal copy): expected = three-way = 5 for 2024-09-30, 2024-12-31, 2025-06-30,
+  2025-09-30, 2025-12-31 and 2026-06-30, 17 for 2025-03-31 and 2026-03-31 (64 in all), with 0
+  refused and 0 missing. A deviation is investigated, never tuned.
+- The drafted `phase-1-report.md` and `eligibility/v1.yaml` are regenerated from the new runs.
 
 **Then: Sol phase-end review** of the phase diff (Tasks 1–11), the Task 12 gate log, the Task
 13–14 logs, the drafted artifact and report, by the loop in `.claude/rules/core/04-agent-stack.md`,
