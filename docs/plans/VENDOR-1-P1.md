@@ -804,6 +804,11 @@ Commands, in order, with the main checkout on the tip Task 12 gated:
    counts per (representation, status) under `v9` equal those under that package's baseline.
 3. `eqos vendor reingest --mapping-set v9 --dictionary v2` for each Apar period end with retained
    vendor financials captures. Allowed: occurrences, interpretations, attempts and version pins.
+   Also allowed: the new interpretations' figures, that is their construction traces
+   (`calculation_traces`, `calculation_trace_operands`) for constructed rules. These are new rows
+   only; every pre-existing row stays unchanged. (Orchestrator ruling, 2026-11-07, stage A
+   rehearsal: a constructed Screener rule writes one trace and its operands per new
+   interpretation. Step 2 already allows figures.)
 
 Verification: the live protocol passes at every step; interpretations under the new versions show
 zero Tijori `INVALID`/`UNIT_MISMATCH` in sections with a rule. A package with no retained manifest
