@@ -57,9 +57,9 @@ HAND = {
     "V1.T9": ("closed", "Citation, retention, report values and labels"),
     "V1.T10": ("closed", "Fallback workflow"),
     "V1.T11": ("closed", "Document amendments"),
-    "V1.T12": ("in_progress", "Pre-live gate (rails fixed, eqos-ju19; rerun pending)"),
-    "V1.T13": ("open", "Live: migrate, re-interpret, re-ingest Apar"),
-    "V1.T14": ("open", "Apar re-measurement"),
+    "V1.T12": ("closed", "Pre-live gate"),
+    "V1.T13": ("closed", "Live: migrate, re-interpret, re-ingest Apar"),
+    "V1.T14": ("in_progress", "Apar re-measurement"),
     # docs/specs/2026-11-06-vendor-first.md §3 and §7–§9.
     "V1.P2": ("closed", "VENDOR-1 Phase 2: vendor text (concall summaries, numeral rule)"),
     "V1.P3": ("in_progress", "VENDOR-1 Phase 3: banks (ICICIBANK)"),
