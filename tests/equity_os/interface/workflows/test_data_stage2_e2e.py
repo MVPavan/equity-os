@@ -5,7 +5,8 @@ each outcome with the frozen Stage 2 manifest. It orchestrates; the task tests o
 The 8 originals are registered once; the Apar Q2 FY26 run reuses A-X2/A-P2 and no vendor value
 capture. Its reports then carry the vendor summary block (VENDOR-1 P2 Task 5): Apar's retained
 concall summary and a synthetic feed page, extracted by a scripted model whose spans are chosen
-by offsets at run time; no vendor text is written here or printed.
+by offsets at run time; no vendor text is written here or printed. A rework after a newer
+extraction, narration and a successor drafted against an earlier source cutoff follow it.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
 
+import narrate_support as ns
 import pytest
 import yaml
 from evidence_support import CONFIG as EVIDENCE_CONFIG
@@ -193,12 +195,24 @@ def pipeline_config(tmp_path: Path, rig: Rig, store: str) -> Path:
     return path
 
 
+def cut_at(config: Path, cutoff: datetime) -> Path:
+    """A copy of ``config`` whose quarter's knowledge (source) cutoff is ``cutoff``."""
+    body = yaml.safe_load(config.read_text(encoding="utf-8"))
+    body["quarter"]["knowledge_cutoff"] = cutoff.isoformat()
+    path = config.parent.parent / "cut" / config.name
+    path.parent.mkdir()
+    path.write_text(yaml.safe_dump(body, allow_unicode=True), encoding="utf-8")
+    return path
+
+
 class VendorText:
     """Apar's and another issuer's vendor text, registered as held by the run's source cutoff
     (the fixture's stand-in for an earlier capture) and extracted by a scripted model. Each span
     is a ``CLAIM`` row chosen by offsets: ``marker`` (Apar's feed item, holding a claim key),
     ``other`` (the other issuer's item); after ``concall``, ``claim`` (numeral-free), ``digit``,
-    ``word`` (a number word) and ``period`` (a date or period label) in the concall summary."""
+    ``word`` (a number word) and ``period`` (a date or period label) in the concall summary;
+    after ``reextract``, ``fresh`` (another numeral-free span) in place of ``claim``; after
+    ``later``, ``later`` (numeral-free) in a second concall summary registered after S."""
 
     def __init__(self, pool: Any, snapshots: Path, entity_id: int) -> None:
         self.store = SnapshotStore(snapshots)
@@ -233,6 +247,7 @@ class VendorText:
             (k, c, r) for k, c, r in retained_texts("concall-summary") if r.text
         )
         ref, text = self._retained(pool, "concall-summary", key, capture), read.text
+        self.text = text
         tokens = list(re.finditer(r"\S+", text))
         self._span("claim", ref, text, *free(text, 0, len(text)))
         period = next(m for m in tokens if PERIOD.search(m.group()))
@@ -247,6 +262,22 @@ class VendorText:
             self._span(role, ref, text, *found.span())
         self._extract(pool, ref, "concall-summary")
 
+    def reextract(self, pool: Any) -> None:
+        """A newer completed extraction of both captures by another model: the same spans, but
+        ``fresh`` in place of ``claim`` in the concall summary."""
+        ref, start, end, _ = self.spans["claim"]
+        self.replies[self.text].remove({"kind": "CLAIM", "start": start, "end": end})
+        self._span("fresh", ref, self.text, *free(self.text, 0, len(self.text), after=end + 1))
+        settings = SETTINGS.model_copy(update={"model_id": "newer"})
+        assert extract_text(pool, self.store, self._model("newer"), settings) == 2
+
+    def later(self, pool: Any, at: datetime) -> None:
+        """Register Apar's second retained concall summary with text at ``at`` and extract it."""
+        _, (key, capture, read), *_ = (t for t in retained_texts("concall-summary") if t[2].text)
+        ref = self._retained(pool, "concall-summary", key, capture, at)
+        self._span("later", ref, read.text, *free(read.text, 0, len(read.text)))
+        self._extract(pool, ref, "concall-summary")
+
     def marker(self, role: str) -> tuple[str, str]:
         """A span's location marker parts."""
         ref, start, end, _ = self.spans[role]
@@ -258,14 +289,18 @@ class VendorText:
         text = " ".join(self.spans[role][3].split())
         return f"{{{{e:inferred}}}} {text} {{{{s:{capture}|{anchor}}}}}"
 
-    def _retained(self, pool: Any, surface: str, key: str, capture: str) -> CaptureReference:
-        """One retained Apar capture copied into the run's store and registered."""
+    def _retained(
+        self, pool: Any, surface: str, key: str, capture: str, at: datetime = SOURCE_CUTOFF
+    ) -> CaptureReference:
+        """One retained Apar capture copied into the run's store and registered at ``at``."""
         record = SnapshotStore(RETAINED.parent).get_capture(SOURCE, f"vs.{surface}", key, capture)
         self.store.put_capture(record, SnapshotStore(RETAINED.parent).read_body(record))
-        return self._register(pool, record, registered_addresses()[key])
+        return self._register(pool, record, registered_addresses()[key], at)
 
-    def _register(self, pool: Any, record: CaptureRecord, url: str) -> CaptureReference:
-        """Register a capture as registered and first seen at the run's source cutoff."""
+    def _register(
+        self, pool: Any, record: CaptureRecord, url: str, at: datetime = SOURCE_CUTOFF
+    ) -> CaptureReference:
+        """Register a capture as registered and first seen at ``at``."""
         assert record.body is not None
         with capture_registration(pool) as registration:
             return registration.insert(
@@ -277,8 +312,8 @@ class VendorText:
                     capture_id=record.capture_id,
                     blob_sha256=record.body.content_sha256,
                     record_sha256=record.record_sha256,
-                    registered_at=SOURCE_CUTOFF,
-                    first_seen_at=SOURCE_CUTOFF,
+                    registered_at=at,
+                    first_seen_at=at,
                 ),
                 url=url,
             )
@@ -292,13 +327,16 @@ class VendorText:
         """``extract_text`` over the one new capture, with the scripted replies."""
         values = VendorValuesStore(pool)
         values.record(ref, outcome(version="kept.v1", surface=surface, values=()), row_count=0)
+        assert extract_text(pool, self.store, self._model(SETTINGS.model_id), SETTINGS) == 1
+
+    def _model(self, model_id: str) -> Mock:
+        """A model answering the scripted replies."""
 
         def complete(system: str, source: str) -> ModelReply:
             reply = json.dumps(self.replies.get(source, []))
             return ModelReply(text=reply, input_tokens=1, output_tokens=1)
 
-        model = Mock(model_id="fake", complete=Mock(side_effect=complete))
-        assert extract_text(pool, self.store, model, SETTINGS) == 1
+        return Mock(model_id=model_id, complete=Mock(side_effect=complete))
 
 
 def vendor_block(pilot: Pilot, version_id: int) -> str | None:
@@ -501,14 +539,14 @@ def test_stage2_end_to_end(
         pilot = Pilot(
             pg_db, tmp_path, monkeypatch, ingest, COMPARATORS, rig=rig, transcripts=("FY26_Q2",)
         )
-    args = ["run", "--issuer", "APARINDS", "--quarter", "Q2-FY26", "--config", str(config)]
+    args = ["run", "--issuer", "APARINDS", "--quarter", "Q2-FY26"]
     args += ["--compare-run", str(pilot.compare_run("FY26_Q2"))]
     args += ["--retrospective", str(APAR_MANIFEST), "--snapshot-root", str(rig.snapshots)]
 
-    def run(name: str) -> int:
-        """The quarter's ``run``, writing its artifacts under ``name``."""
+    def run(name: str, settings: Path = config) -> int:
+        """The quarter's ``run`` on ``settings``, writing its artifacts under ``name``."""
         outs = ["--out-json", str(tmp_path / f"{name}.json"), "--out", str(tmp_path / f"{name}.md")]
-        return main([*args, *outs])
+        return main([*args, "--config", str(settings), *outs])
 
     with pg_db.runtime_pool() as pool:
         vendor = VendorText(pool, rig.snapshots, pilot.entity_id)
@@ -551,7 +589,9 @@ def test_stage2_end_to_end(
     shown = heading in block and vendor.paragraph("claim") in block
     assert shown, "the numeral-free span is not under its heading"  # never printed
     assert LOCATION_MARKER.findall(block) == [vendor.marker("claim")]
-    # Rejecting a results claim reworks it; the block is regenerated, the same, and seals.
+    # Rejecting a results claim reworks it. A newer extraction completed before the rework shows
+    # another span: the regenerated block shows it, not the old one, and seals (R2-01: the
+    # rework never keeps the old block as a scaffold).
     with pg_db.runtime_pool() as runtime:
         lifecycle.submit(runtime, drafted, **pilot.sources())
     with pg_db.owner_pool() as owner:
@@ -563,13 +603,38 @@ def test_stage2_end_to_end(
             ruling=RULING,
             claims=("fact.revenue",),
         )
+    with pg_db.runtime_pool() as pool:
+        vendor.reextract(pool)
     assert run("rework") == 0
     reworked = latest(pilot)
-    same = reworked != drafted and vendor_block(pilot, reworked) == block
-    assert same, "the rework did not regenerate the same vendor section"
+    regenerated = vendor_block(pilot, reworked)
+    assert reworked != drafted and regenerated is not None, "the rework shows no vendor block"
+    changed = (
+        vendor.paragraph("fresh") in regenerated and vendor.paragraph("claim") not in regenerated
+    )
+    assert changed, "the rework did not regenerate the vendor section from the newer extraction"
+    markers = LOCATION_MARKER.findall(regenerated)
+    assert markers == [vendor.marker("fresh")]
     pilot.approve(reworked)
-    sealed = pilot.version(reworked)
-    assert sealed.source_cutoff == SOURCE_CUTOFF
+    # Narration keeps the version's S and its block; the narrated draft checks and seals.
+    narrated = ns.narrate(pilot, reworked, ns.FakeClient(ns.draft(pilot.version(reworked))))
+    sealed = pilot.version(narrated)
+    kept = vendor_block(pilot, narrated) == regenerated
+    assert sealed.source_cutoff == SOURCE_CUTOFF and kept, "narration changed S or the block"
+    ns.decide(pilot, narrated)
+    # A fresh same-period successor drafted against a later S2 stores S2: it shows the summary
+    # registered between S and S2, which S excludes, and it checks and seals against S2.
+    with pg_db.runtime_pool() as pool:
+        vendor.later(pool, SOURCE_CUTOFF + timedelta(seconds=1))
+    later = SOURCE_CUTOFF + timedelta(seconds=2)
+    assert run("later", cut_at(config, later)) == 0
+    successor = latest(pilot)
+    held, shown = pilot.version(successor), vendor_block(pilot, successor) or ""
+    assert (held.predecessor_id, held.source_cutoff) == (narrated, later)
+    present = vendor.paragraph("later") in shown
+    assert present, "S2's summary is not shown"  # never printed
+    assert vendor.marker("later") not in markers
+    pilot.approve(successor)
     # A revision adding the number-word, period or claim-key span, each with its valid marker,
     # fails checking and sealing: the span does not resolve (the vendor citation refusal).
     added = "".join(vendor.paragraph(role) + "\n\n" for role in ("word", "period", "marker"))
@@ -579,7 +644,7 @@ def test_stage2_end_to_end(
     )
     revised = sealed.model_copy(
         update={
-            "predecessor_id": reworked,
+            "predecessor_id": successor,
             "sections": sections,
             "content_hash": content_hash(sections, sealed.claims),
         }
@@ -596,9 +661,10 @@ def test_stage2_end_to_end(
                 snapshots=pilot.snapshots,
                 source_cutoff=sealed.source_cutoff,
             )
-            for role in ("claim", "word", "period", "marker")
+            for role in ("fresh", "claim", "word", "period", "marker")
         }
-    assert resolved == {"claim": True, "word": False, "period": False, "marker": False}
+    # ``claim`` is hidden by the newer extraction.
+    assert resolved == dict.fromkeys(("claim", "word", "period", "marker"), False) | {"fresh": True}
     assert VersionState.UNCITED_PROSE in pilot.validate(revision).version_states
     with pg_db.runtime_pool() as runtime, pytest.raises(DecisionRefusedError, match="UNCITED"):
         lifecycle.submit(runtime, revision, **pilot.sources())

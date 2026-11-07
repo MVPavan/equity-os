@@ -46,9 +46,12 @@ from equity_os.contracts.publication.ledger import (
     CitationKind,
     ClaimState,
     DecisionKind,
+    ReportKind,
     ReportSection,
     RunMode,
+    SubjectKind,
     VersionState,
+    VersionStatus,
 )
 from equity_os.contracts.sourcing.source_catalog import BUILTIN_SOURCES
 from equity_os.extraction.model.vendor_surface_claims import extract_text
@@ -65,6 +68,7 @@ from equity_os.publication.checking.citations import resolve_location
 from equity_os.publication.checking.claim_check import check_claim
 from equity_os.publication.checking.numeral_scan import has_numeral
 from equity_os.publication.drafting.display import content_hash
+from equity_os.publication.drafting.vendor_summary import VENDOR_SUMMARY, vendor_summary_section
 from equity_os.sourcing.surfaces.vendor_surface_fetch import Fetched, Site
 from equity_os.storage.database.settings import PgRole
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
@@ -105,6 +109,16 @@ BINDING = (
     "INSERT INTO eqos.vendor_basis_bindings "
     "(entity_id, basis, screener_company_id, warehouse_id, capture_ref_id, evidence) "
     "VALUES (%s, %s, %s, 1, %s, 'FIRST_CAPTURE')"
+)
+LATE_CLAIM = (
+    "INSERT INTO eqos.vendor_text_claims (capture_ref_id, surface, kind, span_start, span_end, "
+    "text, model_id, prompt_version, epistemic_class) SELECT capture_ref_id, surface, 'CLAIM', "
+    "%s, %s, %s, model_id, prompt_version, epistemic_class FROM eqos.vendor_text_claims "
+    "WHERE capture_ref_id = %s LIMIT 1"
+)
+VERSION_ROWS = (
+    "SELECT (SELECT count(*) FROM eqos.report_versions), "
+    "(SELECT count(*) FROM eqos.import_sources), (SELECT count(*) FROM eqos.version_source_cutoffs)"
 )
 
 
@@ -488,3 +502,102 @@ def test_a_numeric_claim_citing_a_span_is_unresolved_and_passes_with_a_fact_id(
     assert check_claim(revenue, resolved, **check) is ClaimState.MATCH
     witnesses = {row[0] for row in pilot.query(WITNESS_PAIR, version_id, REVENUE, run_id)}
     assert len(witnesses) == 2
+
+
+def test_a_claim_row_recorded_after_k_is_unknown_though_its_extraction_is_known(
+    world: World,
+) -> None:
+    """Reading 7's third clock: a ``CLAIM`` row appended after K to an extraction completed by K
+    is not citable at K; the same row is at a later K."""
+    known = world.clock()
+    _, start, end = world.spans["name"]  # numeral-free; so far held only as a NAME row
+    capture = world.refs["concall"].capture_ref_id
+    with world.pool.connection() as conn:
+        conn.execute(LATE_CLAIM, (start, end, world.concall.text[start:end], capture))
+    now = world.clock()
+    assert not world.resolves("name", cutoff=known, source_cutoff=known)
+    assert world.resolves("name", cutoff=now, source_cutoff=now)
+
+
+def test_an_imported_successor_inheriting_a_later_source_cutoff_is_refused_whole(
+    world: World,
+) -> None:
+    """An imported successor stores no S of its own and inherits its predecessor's; when that S
+    is after its own K the import is refused with no version, import source or cutoff row."""
+    ledger, now = world.ledger, world.now
+    report = ledger.report()
+    head = ledger.imported(report, approve=True, knowledge_cutoff=now, source_cutoff=now)
+    with world.pool.connection() as conn:
+        before = conn.execute(VERSION_ROWS).fetchone()
+    with pytest.raises(psycopg.errors.CheckViolation):
+        ledger.imported(report, head, approve=True, knowledge_cutoff=now - TICK)
+    with world.pool.connection() as conn:
+        assert conn.execute(VERSION_ROWS).fetchone() == before
+    successor = ledger.imported(report, head, approve=True, knowledge_cutoff=now)
+    with world.pool.connection() as conn, conn.cursor() as cursor:
+        assert ledger_store.read_version(cursor, successor).source_cutoff == now  # inherited
+
+
+def test_another_issuers_report_shows_no_vendor_section_and_seals(world: World) -> None:
+    """A third issuer bound to its own company page has no eligible text: Apar's held concall
+    summary never becomes its vendor block. Its report, composed as the run draft composes one,
+    has no vendor section, checks and seals; the same report showing Apar's block cannot."""
+    ledger, pools = world.ledger, world.ledger.pools
+    record = record_of(b"third", SOURCE, "vs.company-page")
+    fetched = Fetched(record=record, url=f"{SCREENER}/company/THIRDCO/", location=None)
+    page = register(world.pool, fetched)
+    with world.pool.connection() as conn:
+        third = entity(conn, "THIRD", ledger.entity_id)
+        conn.execute(BINDING, (third, "CONSOLIDATED", 999_999_998, page.capture_ref_id))
+    ledger.cover(third)
+    now = world.clock()
+    with world.pool.connection() as conn, conn.cursor() as cursor:
+        blocks = {
+            issuer: vendor_summary_section(
+                cursor,
+                entity_id=issuer,
+                source_cutoff=now,
+                knowledge_cutoff=now,
+                snapshots=world.store,
+            )
+            for issuer in (ledger.entity_id, third)
+        }
+        borrowed, own = (
+            ledger_store.create_report(
+                cursor, entity_id=third, period=period, kind=ReportKind.EARNINGS_UPDATE
+            )
+            for period in ("FY27_Q1", "FY27_Q2")
+        )
+    apar = blocks[ledger.entity_id]
+    absent = blocks[third] is None
+    assert absent, "the third issuer has a vendor block"  # never printed
+    assert apar is not None
+    key, body = apar
+    assert key == VENDOR_SUMMARY
+    sources = {"catalog": BUILTIN_SOURCES, "snapshots": world.store}
+    runtime = pools[PgRole.RUNTIME]
+    fields = {"knowledge_cutoff": now, "source_cutoff": now, "claims": ()}
+    heading = ReportSection(ordinal=0, section_key="heading", body="# FY27 update\n\n")
+    shown = (heading, ReportSection(ordinal=1, section_key=key, body=body))
+    shown_id = ledger.draft(
+        borrowed, sections=shown, content_hash=content_hash(shown, ()), **fields
+    )
+    checked = lifecycle.validate(runtime, shown_id, mode=RunMode.AS_KNOWN, **sources)
+    assert checked.version_states == (VersionState.UNCITED_PROSE,)
+    with pytest.raises(DecisionRefusedError, match="UNCITED_PROSE"):
+        lifecycle.submit(runtime, shown_id, **sources)
+    own_id = ledger.draft(
+        own, sections=(heading,), content_hash=content_hash((heading,), ()), **fields
+    )
+    lifecycle.submit(runtime, own_id, **sources)
+    lifecycle.decide(
+        pools[PgRole.OWNER],
+        subject_kind=SubjectKind.REPORT_VERSION,
+        subject_id=own_id,
+        kind=DecisionKind.APPROVE,
+        ruling="TEST: seal the other issuer's report",
+        **sources,
+    )
+    with runtime.connection() as conn, conn.cursor() as cursor:
+        assert lifecycle.version_status(cursor, own_id) is VersionStatus.APPROVED
+        assert ledger_store.read_version(cursor, own_id).source_cutoff == now
