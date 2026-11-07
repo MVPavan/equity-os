@@ -500,10 +500,12 @@ def test_each_canary_check_rejects_bad_status_and_incomplete_body(canary_opener)
         record = record_of(raw).model_copy(update={"http_status": status})
         location = canary_opener.locations.get(canary.name)
         fetched = Fetched(record=record, url=canary.url, location=location)
-        assert not canary.check(fetched, raw), canary.name
+        accepted = not canary.check(fetched, raw)
+        assert accepted, canary.name
         for bad in ({"http_status": 404}, {"body_completeness": BodyCompleteness.PARTIAL}):
             rejected = fetched.model_copy(update={"record": record.model_copy(update=bad)})
-            assert canary.check(rejected, raw), canary.name
+            refused = bool(canary.check(rejected, raw))
+            assert refused, canary.name
 
 
 @pytest.mark.parametrize(

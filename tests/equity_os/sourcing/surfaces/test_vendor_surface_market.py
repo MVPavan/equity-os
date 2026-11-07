@@ -230,7 +230,8 @@ def test_timeline_uses_retained_cursor_until_exhausted(market_rig):
     body = Body(raw=Path(row["path"]).read_bytes())
     cursor = body.tree().xpath('//tr[contains(@class,"d-none")]/td')[0].text_content().strip()
     terminal = body.raw.replace(b"True</td>", b"False</td>")
-    assert terminal != body.raw
+    changed = terminal != body.raw
+    assert changed, "terminal marker not found in body"
     next_url = market.query_url(row["url"], timestamp=cursor)
     opener.overrides[next_url] = terminal, 200
     report = run((), requests=(request,))

@@ -305,6 +305,8 @@ def dispatch_vendor_command(
             (limit is not None or frozen_file)
             and args.market
             or (frozen_file and any(s.site is Site.TIJORI for s in selected))
+            or (frozen_file and any(s.id == "schedules-api" for s in selected))
+            or (limit is not None and limit < 0)
         ):
             sys.stderr.write("--frozen/--budget are not honoured on this capture path\n")
             return 2

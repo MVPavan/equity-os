@@ -61,7 +61,8 @@ def test_series_capture_keeps_points_or_records_failed(pg_db, tmp_path, row, tru
     """Wrong counts, numeric readings, positional collisions or partial writes must fail."""
     assert (Site.TIJORI, row["id"]) in PARSERS
     raw = Path(row["path"]).read_bytes()
-    assert hashlib.sha256(raw).hexdigest() == row["sha256"]
+    digest_ok = hashlib.sha256(raw).hexdigest() == row["sha256"]
+    assert digest_ok, "retained body digest mismatch"
     store = SnapshotStore(tmp_path / "captures")
     spec = SurfaceSpec(
         site=Site.TIJORI,
@@ -178,7 +179,8 @@ def test_market_series_capture_preserves_cells_or_fails(pg_db, tmp_path, row, tr
     site = Site.SCREENER if row["site"] == "screener" else Site.TIJORI
     assert (site, row["id"]) in PARSERS
     raw = Path(row["path"]).read_bytes()
-    assert hashlib.sha256(raw).hexdigest() == row["sha256"]
+    digest_ok = hashlib.sha256(raw).hexdigest() == row["sha256"]
+    assert digest_ok, "retained body digest mismatch"
     store = SnapshotStore(tmp_path / "captures")
     spec = SurfaceSpec(
         site=site,

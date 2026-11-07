@@ -202,7 +202,8 @@ def test_tijori_page_readers(surface, symbol):
 def test_tijori_api_readers(surface):
     body, context = retained("tijori", surface)
     context = context.model_copy(update={"parent": {"metric_id": 126}, "basis": None})
-    assert parse("tijori", surface, body, context)
+    parsed = parse("tijori", surface, body, context)
+    assert len(parsed) > 0, "reader returned no values"
 
 
 def record(pg_db, tmp_path, site, surface, body, context, status=200):
@@ -375,7 +376,8 @@ def test_reader_logs_exclude_vendor_text():
         raw=body.raw.replace(b'"company_id":', b'"vendor-private-sentinel":1,"company_id":')
     )
     with structlog.testing.capture_logs() as logs:
-        assert parse("tijori", "company-overview", body, context)
+        parsed = parse("tijori", "company-overview", body, context)
+    assert len(parsed) > 0, "reader returned no values"
     assert logs
     assert "vendor-private-sentinel" not in str(logs)
     assert all(set(event) <= {"event", "site", "surface", "log_level"} for event in logs)
@@ -530,16 +532,18 @@ def test_retained_event_measurements_are_ok(pg_db, tmp_path, surface):
         PARSERS[Site.TIJORI, surface].version
         == f"tijori:{surface}.reader.v{5 if surface == 'quarterly-results' else 7}"
     )
-    assert record(pg_db, tmp_path, Site.TIJORI, surface, body, context)[0][0] == "OK"
+    recorded = record(pg_db, tmp_path, Site.TIJORI, surface, body, context)[0][0]
+    assert recorded == "OK", "recorded outcome is not OK"
     positions = {(v.table_key, v.row_index, v.column_index): v for v in values}
     for table, row, column, raw, value, unit, numeric in EVENT_CELLS[surface]:
         cell = positions[table, row, column]
-        assert (cell.raw_text, cell.value, cell.unit, cell.expected_numeric) == (
+        matches = (cell.raw_text, cell.value, cell.unit, cell.expected_numeric) == (
             raw,
             value,
             unit,
             numeric,
         )
+        assert matches, f"cell {(table, row, column)} differs from the expected reading"
 
 
 @pytest.mark.pg
@@ -552,12 +556,14 @@ def test_unreadable_event_measurement_stays_partial(pg_db, tmp_path, surface):
         for v in parse("tijori", surface, body, context)
         if v.expected_numeric and v.raw_text.endswith("%")
     )
-    assert original.encode() in body.raw
+    present = original.encode() in body.raw
+    assert present, "original reading absent from body"
     body = Body(raw=body.raw.replace(original.encode(), b"12?3%", 1))
     values = parse("tijori", surface, body, context)
     (cell,) = [v for v in values if v.raw_text == "12?3%"]
     assert cell.value is None and cell.expected_numeric
-    assert record(pg_db, tmp_path, Site.TIJORI, surface, body, context)[0][0] == "PARTIAL"
+    partial = record(pg_db, tmp_path, Site.TIJORI, surface, body, context)[0][0] == "PARTIAL"
+    assert partial, "recorded outcome is not PARTIAL"
 
 
 @pytest.mark.pg
@@ -651,7 +657,8 @@ def test_g0_series_preserves_source_timestamp_label(pg_db, tmp_path):
             ).fetchall()
     assert len(values) == len(document.points)
     for index, (point, cell) in enumerate(zip(document.points, values, strict=True)):
-        assert cell["row_label"] == point.timestamp_raw_text
+        label_ok = cell["row_label"] == point.timestamp_raw_text
+        assert label_ok, f"row label {index} differs from the document point"
         assert cell["locator"] == document.series_provenance.context_ref + f"/{index}/1"
 
 
@@ -665,12 +672,14 @@ def test_timeline_collapses_a_verbatim_repeated_event_row():
     end = body.raw.index(b"<tr data-id=", start + 1)
     row = body.raw[start:end]
     repeated = Body(raw=body.raw[:end] + row + body.raw[end:])
-    assert parse("tijori", "company-timeline-api", repeated, context) == parse(
+    echo_ignored = parse("tijori", "company-timeline-api", repeated, context) == parse(
         "tijori", "company-timeline-api", body, context
     )
+    assert echo_ignored, "a rendering echo changed the parsed values"
     # A repeat that differs is two claims on one source row, not a rendering echo.
     changed = row.replace(b'data-name="Uncategorised"', b'data-name="Changed"')
-    assert changed != row
+    differs = changed != row
+    assert differs, "the differing repeat is identical to the row"
     with pytest.raises(TijoriEventsSchemaError):
         parse(
             "tijori",

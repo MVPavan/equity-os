@@ -106,7 +106,8 @@ class DueOpener(OpenerDirector):
         raw, status = b"unretained", 404
         if row and row.get("path"):
             raw, status = Path(row["path"]).read_bytes(), row.get("status", 200)
-            assert hashlib.sha256(raw).hexdigest() == row["sha256"]
+            digest_ok = hashlib.sha256(raw).hexdigest() == row["sha256"]
+            assert digest_ok, "retained body digest mismatch"
         key = urlsplit(request.full_url).path if FEED in request.full_url else request.full_url
         raw, status = self.overrides.get(key, (raw, status))
         return HTTPError(request.full_url, status, "fixture", {}, io.BytesIO(raw))
@@ -812,7 +813,8 @@ def test_retained_tree_expands_a_traversal_first_page(due_rig):
             ("market-level", "https://www.screener.in/market/IN10/"),
         )
     )
-    assert b"IN1098" not in Path(rig.opener.rows[overview.url]["path"]).read_bytes()
+    leaked = b"IN1098" in Path(rig.opener.rows[overview.url]["path"]).read_bytes()
+    assert not leaked, "identifier present in overview body"
     table = (
         '<table class="data-table"><thead><tr><th>Name</th></tr></thead>'
         "<tbody><tr><td>{}</td></tr></tbody></table>"

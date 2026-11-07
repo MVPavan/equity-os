@@ -1030,7 +1030,8 @@ def test_concall_summary_spec_loads_and_expands_one_request_per_notes_button():
     # The same routes outside a concalls row's Notes button are not advertised summaries.
     for marker in (b"documents concalls flex-column", b"plausible-event-name=Concall+Notes"):
         moved = type(body)(raw=body.raw.replace(marker, b"documents other"))
-        assert not EXPANSIONS["screener_concall_summaries"](moved, context)
+        advertised = len(EXPANSIONS["screener_concall_summaries"](moved, context))
+        assert advertised == 0, "routes outside a Notes button were advertised"
 
 
 @pytest.fixture
@@ -1116,6 +1117,8 @@ def test_frozen_set_stops_without_children_or_for_unlisted_parents(summary_cli):
         (True, "screener:concall-summary", {"https://www.screener.in/x/"}, None),
         (True, "screener:concall-summary", None, 5),
         (False, "tijori:company-financials", {"https://www.screener.in/x/"}, None),
+        (False, "screener:schedules-api", {"https://www.screener.in/x/"}, None),
+        (False, "screener:concall-summary", None, -1),
     ],
 )
 def test_capture_rejects_restrictions_a_path_cannot_honour(
