@@ -335,7 +335,7 @@ def test_default_gate_command_registry_and_bounded_output_are_preserved(gate) ->
         "pytest",
         "tests/equity_os",
         "-n",
-        "24",
+        "8",
         "--dist",
         "loadfile",
         "-q",
