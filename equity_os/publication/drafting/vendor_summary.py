@@ -6,6 +6,7 @@ The section is regenerated on every run, so a rework neither carries nor preserv
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -18,6 +19,7 @@ from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 VENDOR_SUMMARY = "vendor_summary"
 _HEADING = "### {vendor} — {surface}, captured {day} — vendor summary — guidance, not evidence"
 _PARAGRAPH = "{{{{e:inferred}}}} {text} {{{{s:{capture}|vt:{start}-{end}:{sha256}}}}}"
+_BREAK = re.compile(r"\n\s*\n")
 
 
 def vendor_summary_section(
@@ -57,3 +59,31 @@ def vendor_summary_section(
             for span in held
         )
     return VENDOR_SUMMARY, body
+
+
+def vendor_section_holds(
+    cursor: Cursor[Any],
+    body: str,
+    *,
+    entity_id: int,
+    source_cutoff: datetime | None,
+    knowledge_cutoff: datetime,
+    snapshots: SnapshotStore,
+) -> bool:
+    """Whether ``body`` is the block drafting renders at these cutoffs, each paragraph's
+    whitespace collapsed: no changed, added or unmarked text, no other heading or placeholder."""
+    if source_cutoff is None:
+        return False
+    rendered = vendor_summary_section(
+        cursor,
+        entity_id=entity_id,
+        source_cutoff=source_cutoff,
+        knowledge_cutoff=knowledge_cutoff,
+        snapshots=snapshots,
+    )
+    return rendered is not None and _paragraphs(rendered[1]) == _paragraphs(body)
+
+
+def _paragraphs(text: str) -> list[str]:
+    """``text``'s paragraphs, each with its whitespace one space."""
+    return [" ".join(p.split()) for p in _BREAK.split(text.strip())]

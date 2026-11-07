@@ -57,7 +57,6 @@ JOIN eqos.capture_addresses a ON a.capture_ref_id = l.id
 WHERE t.kind = 'CLAIM' AND t.text IS NOT NULL AND t.recorded_at <= %(knowledge_cutoff)s
     AND eqos.capture_state(l.id) IN ('RETAINED', 'RESTORED')
     AND NOT EXISTS (SELECT 1 FROM eqos.licence_ends x WHERE x.source_id = l.source_id)
-    AND (%(capture)s::bigint IS NULL OR l.id = %(capture)s)
 ORDER BY l.id, t.span_start, t.span_end"""
 
 
@@ -103,7 +102,8 @@ def eligible_spans(
     snapshots: SnapshotStore,
     capture_ref_id: int | None = None,
 ) -> tuple[IssuerSpan, ...]:
-    """The issuer's usable spans, equal texts once at their lowest (capture, start).
+    """The issuer's usable spans, equal texts once at their lowest (capture, start); then, with
+    ``capture_ref_id``, those of that capture, so a discarded duplicate never resolves.
 
     A retained body whose bytes do not match its blob hash raises ``IntegrityError``.
     """
@@ -119,7 +119,6 @@ def eligible_spans(
         "surfaces": ["vs." + surface for _, surface in READERS],
         "source_cutoff": source_cutoff,
         "knowledge_cutoff": knowledge_cutoff,
-        "capture": capture_ref_id,
     }
     with cursor.connection.cursor(row_factory=dict_row) as own:
         rows = own.execute(_SPANS, params).fetchall()
@@ -160,7 +159,7 @@ def eligible_spans(
                     text=text,
                 )
             )
-    return tuple(kept)
+    return tuple(span for span in kept if capture_ref_id in (None, span.capture_ref_id))
 
 
 def vendor_location(
