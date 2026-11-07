@@ -152,6 +152,20 @@ def test_unknown_numeric_issuer_and_row_ids_still_stop(gate, template) -> None:
     assert "real captured identifier" in result.stdout
 
 
+def test_digit_run_inside_a_digest_is_not_an_identifier(gate) -> None:
+    """A sha256 digest can hold a captured id's digits by chance; it names content, not issuers."""
+    root, _ = gate
+    token = str(900_000 + 73)
+    digest = "a" * 29 + token + "b" * 29
+    (root / "tests/equity_os/test_synthetic.py").write_text(f'EXPECTED = "{digest}"\n')
+    _capture(root, f'<tr data-row-company-id="{token}">')
+
+    result = _run(gate)
+
+    assert result.returncode != 3, result.stdout
+    assert "real captured identifier" not in result.stdout
+
+
 def test_identifier_rail_ignores_bare_four_digit_values_and_reports_every_match(gate) -> None:
     """Bare four digits look like a year or round amount; a truncated report hides leaks."""
     root, _ = gate
