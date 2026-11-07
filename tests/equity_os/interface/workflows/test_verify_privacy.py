@@ -28,7 +28,7 @@ def gate(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     shutil.copy2(REPO_ROOT / "scripts/verify.sh", scripts / "verify.sh")
     (tmp_path / "tests/equity_os").mkdir(parents=True)
     (tmp_path / "scratchpad/gate").mkdir(parents=True)
-    (tmp_path / ".gitignore").write_text("scratchpad/\nbin/\n")
+    (tmp_path / ".gitignore").write_text("scratchpad/\nbin/\ndata/\n")
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "config", "user.name", "Privacy gate test")
     _git(tmp_path, "config", "user.email", "privacy@example.invalid")
@@ -214,6 +214,62 @@ def test_real_long_pasted_body_still_stops_after_trimming(gate, indent) -> None:
     result = _run(gate)
 
     assert result.returncode == 3
+    assert "fixture text matches private capture" in result.stdout
+
+
+DIGEST = "ab" * 32
+NSE_CAPTURE = "data/raw/snapshots/v1/nse/announcement.html"
+VENDOR_CAPTURE = "data/raw/snapshots/v1/vendor/page.html"
+EVIDENCE = "docs/evidence/quote.md"
+TEST_FILE = "tests/equity_os/test_synthetic.py"
+QUOTE = "Synthetic exchange filing sentence quoted as evidence for a reviewed figure."
+
+
+def _write(root: Path, path: str, text: str) -> None:
+    (root / path).parent.mkdir(parents=True, exist_ok=True)
+    (root / path).write_text(text)
+
+
+@pytest.mark.parametrize(
+    ("added_path", "added", "capture", "stops"),
+    [
+        # A lone quoted digest names a capture by hash; it is not its text.
+        (TEST_FILE, f'    "{DIGEST}",\n', VENDOR_CAPTURE, False),
+        # Only the lone digest is exempt: a longer line carrying one is still checked.
+        (TEST_FILE, f'sha = "{DIGEST}"\n', VENDOR_CAPTURE, True),
+        # Evidence may quote public NSE/BSE filings ...
+        (EVIDENCE, QUOTE + "\n", NSE_CAPTURE, False),
+        # ... but never any other capture,
+        (EVIDENCE, QUOTE + "\n", VENDOR_CAPTURE, True),
+        # and the exchange exception belongs to evidence files alone.
+        (TEST_FILE, QUOTE + "\n", NSE_CAPTURE, True),
+    ],
+)
+def test_pasted_capture_owner_exceptions(gate, added_path, added, capture, stops) -> None:
+    root, _ = gate
+    _write(root, added_path, added)
+    _write(root, capture, f"<p>{added.strip()}</p>")
+
+    result = _run(gate)
+
+    assert (result.returncode == 3) is stops, result.stdout
+    assert ("fixture text matches private capture" in result.stdout) is stops
+
+
+def test_pasted_capture_rail_checks_every_candidate_line(gate) -> None:
+    """A pasted line sorting after the 500th candidate still stops: no cap hides it."""
+    root, _ = gate
+    copied = "zz synthetic pasted capture line sorting after every other candidate"
+    filler = [
+        f"aa synthetic candidate line number {n:04d} written by hand for padding"
+        for n in range(600)
+    ]
+    _write(root, TEST_FILE, "\n".join([*filler, copied]) + "\n")
+    _capture(root, copied)
+
+    result = _run(gate)
+
+    assert result.returncode == 3, result.stdout
     assert "fixture text matches private capture" in result.stdout
 
 

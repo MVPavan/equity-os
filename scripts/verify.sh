@@ -49,7 +49,6 @@ readonly BASELINE_SKIPS="${VERIFY_BASELINE_SKIPS:-9}"
 # A verbatim run of this many characters shared between a fixture and a real
 # captured page means the capture was pasted in rather than synthesised.
 readonly PASTE_MIN_LEN=60
-readonly PASTE_MAX_PATTERNS=500
 
 readonly REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly GATE_DIR="${REPO_ROOT}/scratchpad/gate"
@@ -63,6 +62,26 @@ capture_dirs() {
   if [ -d "${REPO_ROOT}/data/raw/snapshots" ]; then
     find "${REPO_ROOT}/data/raw/snapshots" -mindepth 1 -maxdepth 1 -type d 2>/dev/null
   fi
+}
+
+# Capture files, one per line, sharing a pasted-capture pattern with the added
+# lines in $1: lines of at least PASTE_MIN_LEN characters, bar a lone quoted
+# sha256 digest. A grep error prints a reason line instead, which must stop
+# the gate rather than read as no match.
+paste_hits() {
+  local pat hits rc=0
+  pat="$(mktemp)"
+  sed 's/^[[:space:]]*//' "$1" | grep -IE ".{${PASTE_MIN_LEN},}" \
+    | grep -vxE "[\"']?[0-9a-f]{64}[\"']?,?" | sort -u >"${pat}"
+  if [ -s "${pat}" ]; then
+    hits="$(grep -rlFf "${pat}" "${@:2}" 2>&1)" || rc=$?
+    if [ "${rc}" -eq 2 ]; then
+      echo "pasted-capture grep failed: $(head -1 <<<"${hits}")"
+    elif [ "${rc}" -eq 0 ]; then
+      printf '%s\n' "${hits}"
+    fi
+  fi
+  rm -f "${pat}"
 }
 
 # Authoritative commands: .claude/project/verification.md. Keep them identical
@@ -428,8 +447,8 @@ PYEOF
     grep -qxF "rename from ${old}" <<<"${diff}" && grep -qxF "rename to ${new}" <<<"${diff}" || return 1
     printf '%s' "${old}"
   }
-  local added added_tests
-  added="$(mktemp)"; added_tests="$(mktemp)"
+  local added added_tests added_evidence
+  added="$(mktemp)"; added_tests="$(mktemp)"; added_evidence="$(mktemp)"
   if [ -n "${changed_files}" ]; then
     local f lines old_path
     while IFS= read -r f; do
@@ -443,7 +462,8 @@ PYEOF
         lines="$(grep -Ih '' "${f}" 2>/dev/null)"
       fi
       [ -n "${lines}" ] || continue
-      printf '%s\n' "${lines}" >>"${added}"
+      case "${f}" in docs/evidence/*) printf '%s\n' "${lines}" >>"${added_evidence}" ;;
+        *) printf '%s\n' "${lines}" >>"${added}" ;; esac
       case "${f}" in tests/*) printf '%s\n' "${lines}" >>"${added_tests}" ;; esac
     done <<<"${changed_files}"
   fi
@@ -724,20 +744,26 @@ PYEOF
 
     # Verbatim runs shared with a real captured page mean a capture was pasted
     # into a fixture instead of a synthetic value being written. Added lines
-    # only, for the same reason as the identifier rail above.
+    # only, for the same reason as the identifier rail above. Every candidate
+    # line is checked: a cap once let ~7,900 lines through as 500 and printed OK.
+    # Owner exceptions (2026-11-07, eqos-ju19):
+    # - a line that is only a quoted sha256 digest is a content hash naming a
+    #   capture, not its text; a longer line containing one is still checked;
+    # - a docs/evidence/ line may quote a retained NSE/BSE capture, since those
+    #   filings are public; it still stops on any other capture dir.
     if [ "${#caps[@]}" -gt 0 ]; then
-      local pat pasted
-      pat="$(mktemp)"
-      sed 's/^[[:space:]]*//' "${added}" \
-        | grep -IE ".{${PASTE_MIN_LEN},}" | sort -u | head -"${PASTE_MAX_PATTERNS}" >"${pat}"
-      if [ -s "${pat}" ]; then
-        pasted="$(grep -rlFf "${pat}" "${caps[@]}" 2>/dev/null | head -2 | paste -sd, -)"
-        [ -n "${pasted}" ] && rails="${rails}${rails:+; }fixture text matches private capture: ${pasted}"
-      fi
-      rm -f "${pat}"
+      local pasted
+      pasted="$(paste_hits "${added}" "${caps[@]}")"
+      [ -z "${pasted}" ] && pasted="$(paste_hits "${added_evidence}" "${caps[@]}" \
+        | grep -vE "^${REPO_ROOT}/data/raw/snapshots/(.+/)?(nse|bse)/")"
+      case "${pasted}" in
+        "") ;;
+        "pasted-capture grep failed"*) rails="${rails}${rails:+; }${pasted}" ;;
+        *) rails="${rails}${rails:+; }fixture text matches private capture: $(head -2 <<<"${pasted}" | paste -sd, -)" ;;
+      esac
     fi
   fi
-  rm -f "${added}" "${added_tests}"
+  rm -f "${added}" "${added_tests}" "${added_evidence}"
 
   if [ -n "${rails}" ]; then
     l_rails="rails            STOP  ${rails}"
