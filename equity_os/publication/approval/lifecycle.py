@@ -46,8 +46,13 @@ from equity_os.publication.checking.citations import (
 )
 from equity_os.publication.checking.claim_check import check_claim
 from equity_os.publication.checking.numeral_scan import scan_section
+from equity_os.publication.checking.vendor_text import VT_ANCHOR
 from equity_os.publication.drafting.display import content_hash
-from equity_os.publication.drafting.vendor_summary import VENDOR_SUMMARY, vendor_section_holds
+from equity_os.publication.drafting.vendor_summary import (
+    VENDOR_SUMMARY,
+    vendor_section_holds,
+    vendor_summary_section,
+)
 from equity_os.publication.revision.import_mapping import UPDATE_FILES, ledger_contracts
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records import store
@@ -170,8 +175,9 @@ def section_states(
     snapshots: SnapshotStore,
 ) -> set[VersionState]:
     """The version-level states the draft's sections raise. The vendor summary must be the block
-    drafting renders at the version's cutoffs (VENDOR-1 §7), else its prose is uncited; that
-    rendering is itself scan-clean, so the vendor block skips the scan."""
+    drafting renders at the version's cutoffs (VENDOR-1 §7), present whenever that rendering is,
+    and vendor text is cited nowhere else; else the prose is uncited. That rendering is itself
+    scan-clean, so the vendor block skips the scan."""
     resolves = partial(
         resolve_location,
         cursor,
@@ -185,6 +191,8 @@ def section_states(
     for section in draft.sections:
         if section.section_key != VENDOR_SUMMARY:
             found.update(scan_section(section.body, resolves=resolves))
+            if VT_ANCHOR.search(section.body):
+                found.add(VersionState.UNCITED_PROSE)
         elif not vendor_section_holds(
             cursor,
             section.body,
@@ -194,6 +202,20 @@ def section_states(
             snapshots=snapshots,
         ):
             found.add(VersionState.UNCITED_PROSE)
+    keys = {section.section_key for section in draft.sections}
+    if (
+        VENDOR_SUMMARY not in keys
+        and draft.source_cutoff is not None
+        and vendor_summary_section(
+            cursor,
+            entity_id=entity_id,
+            source_cutoff=draft.source_cutoff,
+            knowledge_cutoff=draft.knowledge_cutoff,
+            snapshots=snapshots,
+        )
+        is not None
+    ):
+        found.add(VersionState.UNCITED_PROSE)
     return found
 
 

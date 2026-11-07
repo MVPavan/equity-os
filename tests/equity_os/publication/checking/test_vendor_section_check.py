@@ -1,5 +1,7 @@
-"""VENDOR-1 Phase 2 phase-review findings 1 and 5: checking and sealing hold the vendor summary to
-the block drafting renders, and a duplicate span drafting discards never resolves.
+"""VENDOR-1 Phase 2 phase-review findings 1 and 5 and closing-review findings 2, 4 and 5: checking
+and sealing hold the vendor summary to the block drafting renders, vendor text is cited nowhere
+else, a duplicate span drafting discards never resolves, and a capture whose reader loses its
+issuer reference or that expires before its bytes are read shows nothing while others still do.
 
 Reuses the extracted ``World`` of ``test_vendor_text_citation``. Revisions edit the rendered block
 by marker and synthetic words only; no vendor text is written here or printed.
@@ -22,16 +24,21 @@ from test_vendor_text_citation import SETTINGS, SOURCE, World, world
 from test_vendor_values_store import outcome
 
 from equity_os.contracts.publication.ledger import ReportSection, RunMode, VersionState
+from equity_os.contracts.sourcing.snapshot import IntegrityError
 from equity_os.contracts.sourcing.source_catalog import BUILTIN_SOURCES
+from equity_os.contracts.storage.retention import OriginalExpiredError
 from equity_os.extraction.model.vendor_surface_claims import extract_text
 from equity_os.extraction.model.vendor_surface_model import ModelReply
+from equity_os.extraction.surfaces import vendor_text_readers
+from equity_os.extraction.surfaces.vendor_text_readers import WRONG_ADDRESS, ReaderText
 from equity_os.publication.approval import lifecycle
 from equity_os.publication.approval.lifecycle import DecisionRefusedError
+from equity_os.publication.checking import vendor_text
 from equity_os.publication.checking.citations import resolve_location
 from equity_os.publication.checking.numeral_scan import LOCATION_MARKER, scan_section
 from equity_os.publication.drafting.display import content_hash
 from equity_os.publication.drafting.vendor_summary import VENDOR_SUMMARY, vendor_summary_section
-from equity_os.sourcing.surfaces.vendor_surface_fetch import Fetched
+from equity_os.sourcing.surfaces.vendor_surface_fetch import Fetched, Site
 from equity_os.storage.database.settings import PgRole
 from equity_os.storage.raw_files.snapshot_store import SnapshotStore
 from equity_os.storage.records.vendor_values_store import VendorValuesStore, register
@@ -109,6 +116,7 @@ def test_checking_and_sealing_hold_the_vendor_block_to_its_rendering(world: Worl
     key = claim(world.ledger.trace_id).claim_key
     # The block's one paragraph is its last; replace it whole, keeping heading and title.
     head = body.rstrip().rsplit("\n\n", 1)[0]
+    observed = body.rstrip().rsplit("\n\n", 1)[1].replace("{{e:inferred}}", "{{e:observed}}")
     revisions = {
         "changed text": f"{head}\n\n{{{{e:inferred}}}} Plant opens {marker}\n",
         "anchor removed": body.replace(marker, ""),
@@ -120,13 +128,23 @@ def test_checking_and_sealing_hold_the_vendor_block_to_its_rendering(world: Worl
     }
     distinct = len(set(revisions.values()) | {body}) == len(revisions) + 1
     assert distinct, "a revision repeats another or the block"
+    # Revisions that leave the vendor section: renamed, its paragraph moved into an ordinary
+    # observed section, or deleted while the rendering at the version's cutoffs is not empty.
+    elsewhere = {
+        "renamed": body,
+        "moved as observed": f"## notes\n\n{observed}\n",
+        "deleted": "## notes\n",
+    }
     valid = lifecycle_states(world, body, now)
     assert valid == ((), True)
     results = {
         name: (scan_clean(world, b, now), *lifecycle_states(world, b, now))
         for name, b in revisions.items()
+    } | {
+        name: (scan_clean(world, b, now), *lifecycle_states(world, b, now, key="notes"))
+        for name, b in elsewhere.items()
     }
-    expected = dict.fromkeys(revisions, (True, (VersionState.UNCITED_PROSE,), False))
+    expected = dict.fromkeys(revisions | elsewhere, (True, (VersionState.UNCITED_PROSE,), False))
     assert results == expected
 
 
@@ -184,20 +202,68 @@ def test_a_discarded_duplicate_is_neither_drafted_nor_resolved(world: World) -> 
         }
     assert resolved == {"canonical": True, "duplicate": False}
 
-    def cited(where: tuple[str, str]) -> str:
-        return f"{{{{e:inferred}}}} {{{{s:{where[0]}|{where[1]}}}}}"
-
     swapped = body.replace(f"s:{canonical[0]}|{canonical[1]}", f"s:{duplicate[0]}|{duplicate[1]}")
     results = {
         "block": lifecycle_states(world, body, now),
         "swapped block": lifecycle_states(world, swapped, now),
-        "canonical": lifecycle_states(world, cited(canonical), now, key="notes"),
-        "duplicate": lifecycle_states(world, cited(duplicate), now, key="notes"),
     }
-    refused = ((VersionState.UNCITED_PROSE,), False)
-    assert results == {
-        "block": ((), True),
-        "swapped block": refused,
-        "canonical": ((), True),
-        "duplicate": refused,
-    }
+    assert results == {"block": ((), True), "swapped block": ((VersionState.UNCITED_PROSE,), False)}
+
+
+def test_a_capture_whose_reader_loses_its_issuer_reference_shows_nothing(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A completed concall extraction whose reader now finds no or two breadcrumb company links
+    refuses that capture's location and block; another issuer's span still resolves, and any
+    other reader refusal still raises."""
+    now = world.now
+    body = rendered(world, now)
+    results = {}
+    for name, xpath in (("missing", "//nothing/@href"), ("ambiguous", "//a/@href")):
+        monkeypatch.setattr(vendor_text_readers, "SUMMARY_COMPANY_XPATH", xpath)
+        results[name] = (
+            world.resolves("claim"),
+            world.resolves("other_item", entity=world.other),
+            lifecycle_states(world, body, now),
+        )
+    refused = (False, True, ((VersionState.UNCITED_PROSE,), False))
+    assert results == {"missing": refused, "ambiguous": refused}
+
+    def broken(body: bytes, url: str) -> ReaderText:
+        raise ValueError(WRONG_ADDRESS)
+
+    monkeypatch.setitem(vendor_text_readers.READERS, (Site.SCREENER, "concall-summary"), broken)
+    with pytest.raises(ValueError, match=WRONG_ADDRESS):
+        world.resolves("claim")
+
+
+def test_a_capture_expiring_before_its_bytes_are_read_is_unresolved(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Purge can expire a capture between the retention predicate and the byte read: that
+    capture's location is unresolved and its block uncited, others still resolve; a retained
+    capture missing its body still raises."""
+    now = world.now
+    body = rendered(world, now)
+    concall = world.refs["concall"].capture_ref_id
+    real = vendor_text.retained_capture
+
+    def expiring(conn: Any, store: Any, ref: Any) -> Any:
+        if ref.capture_ref_id == concall:
+            raise OriginalExpiredError(f"ORIGINAL_EXPIRED: capture {concall} is EXPIRED")
+        return real(conn, store, ref)
+
+    monkeypatch.setattr(vendor_text, "retained_capture", expiring)
+    results = (
+        world.resolves("claim"),
+        world.resolves("other_item", entity=world.other),
+        lifecycle_states(world, body, now),
+    )
+    assert results == (False, True, ((VersionState.UNCITED_PROSE,), False))
+
+    def lost(conn: Any, store: Any, ref: Any) -> Any:
+        raise IntegrityError("retained capture lost its body")
+
+    monkeypatch.setattr(vendor_text, "retained_capture", lost)
+    with pytest.raises(IntegrityError):
+        world.resolves("claim")

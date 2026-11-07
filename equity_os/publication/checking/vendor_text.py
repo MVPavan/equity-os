@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict
 
 from equity_os.contracts.companies.entity_identity import IdentifierNamespace
 from equity_os.contracts.sourcing.snapshot import IntegrityError
+from equity_os.contracts.storage.retention import OriginalExpiredError
 from equity_os.extraction.surfaces.vendor_text_readers import READERS, CompanyRef, read_text
 from equity_os.publication.checking.numeral_scan import has_numeral
 from equity_os.sourcing.surfaces.vendor_surface_fetch import Site
@@ -30,11 +31,14 @@ from equity_os.storage.records.repository_rows import capture_of
 VT_ANCHOR = re.compile(r"vt:([0-9]+)-([0-9]+):([0-9a-f]{64})")
 _COMPANY_PATH = re.compile(r"/company/([^/]+)/(?:consolidated/)?")
 _BODY_MISMATCH = "capture {capture_ref_id} body does not match its blob hash"
+# What a reader's one-element destructuring raises for a missing or ambiguous item reference.
+_UNBOUND = ("not enough values to unpack", "too many values to unpack")
 _IDS: LiteralString = """SELECT b.screener_company_id, a.url FROM eqos.vendor_basis_bindings b
 LEFT JOIN eqos.capture_addresses a ON a.capture_ref_id = b.capture_ref_id
 WHERE b.entity_id = %s AND b.recorded_at <= %s"""
 # Reading 7: the latest capture per request registered by S, its latest completed extraction
-# recorded by K, and that extraction's CLAIM rows recorded by K; earlier ones never revive.
+# recorded by K, and, unless it is EMPTY or has no rows, that extraction's CLAIM rows recorded
+# by K; earlier ones never revive.
 _SPANS: LiteralString = """WITH latest AS (
     SELECT DISTINCT ON (c.source_id, c.surface, c.request_key) c.*
     FROM eqos.capture_refs c
@@ -43,7 +47,8 @@ _SPANS: LiteralString = """WITH latest AS (
         AND c.registered_at <= %(source_cutoff)s
     ORDER BY c.source_id, c.surface, c.request_key, c.registered_at DESC, c.id DESC
 ), extraction AS (
-    SELECT DISTINCT ON (o.capture_ref_id) o.capture_ref_id, o.surface, o.parser_version
+    SELECT DISTINCT ON (o.capture_ref_id)
+        o.capture_ref_id, o.surface, o.parser_version, o.status, o.row_count
     FROM eqos.vendor_outcomes o JOIN latest l ON l.id = o.capture_ref_id
     WHERE o.surface = substring(l.surface from 4) AND starts_with(o.parser_version, 'claims:')
         AND o.status IN ('OK', 'PARTIAL', 'EMPTY') AND o.recorded_at <= %(knowledge_cutoff)s
@@ -54,7 +59,8 @@ JOIN extraction e ON e.capture_ref_id = l.id
 JOIN eqos.vendor_text_claims t ON t.capture_ref_id = l.id AND t.surface = e.surface
     AND e.parser_version = 'claims:' || t.model_id || ':' || t.prompt_version
 JOIN eqos.capture_addresses a ON a.capture_ref_id = l.id
-WHERE t.kind = 'CLAIM' AND t.text IS NOT NULL AND t.recorded_at <= %(knowledge_cutoff)s
+WHERE e.status <> 'EMPTY' AND e.row_count > 0
+    AND t.kind = 'CLAIM' AND t.text IS NOT NULL AND t.recorded_at <= %(knowledge_cutoff)s
     AND eqos.capture_state(l.id) IN ('RETAINED', 'RESTORED')
     AND NOT EXISTS (SELECT 1 FROM eqos.licence_ends x WHERE x.source_id = l.source_id)
 ORDER BY l.id, t.span_start, t.span_end"""
@@ -105,7 +111,9 @@ def eligible_spans(
     """The issuer's usable spans, equal texts once at their lowest (capture, start); then, with
     ``capture_ref_id``, those of that capture, so a discarded duplicate never resolves.
 
-    A retained body whose bytes do not match its blob hash raises ``IntegrityError``.
+    A capture that expires before its bytes are read, or whose reader finds its item reference
+    missing or ambiguous, yields no spans; a retained body whose bytes do not match its blob hash
+    raises ``IntegrityError``.
     """
     ids = vendor_ids(cursor, entity_id=entity_id, known_by=knowledge_cutoff)
     if ids is None:
@@ -127,11 +135,19 @@ def eligible_spans(
     for _, group in groupby(rows, key=lambda row: row["id"]):
         claims = list(group)
         capture = claims[0]
-        _, body = retained_capture(cursor.connection, snapshots, capture_of(capture))
+        try:
+            _, body = retained_capture(cursor.connection, snapshots, capture_of(capture))
+        except OriginalExpiredError:
+            continue
         if hashlib.sha256(body).hexdigest() != capture["blob_sha256"]:
             raise IntegrityError(_BODY_MISMATCH.format(capture_ref_id=capture["id"]))
         site, surface = Site(capture["source_id"]), capture["surface"].removeprefix("vs.")
-        read = read_text(site, surface, body, capture["url"])
+        try:
+            read = read_text(site, surface, body, capture["url"])
+        except ValueError as error:
+            if not str(error).startswith(_UNBOUND):
+                raise
+            continue
         for claim in claims:
             start, end, text = claim["span_start"], claim["span_end"], claim["text"]
             if (

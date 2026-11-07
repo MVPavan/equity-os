@@ -1,6 +1,7 @@
 """VENDOR-1 Phase 2 Task 4: a vendor text span is citable only when bound to the report's issuer,
-registered by the source cutoff S, extracted and bound by the knowledge cutoff K, present in the
-retained bytes and numeral-free (readings 3, 4, 5 and 7). Vendor text is never a number source.
+registered by the source cutoff S, extracted and bound by the knowledge cutoff K by a latest
+extraction that is neither ``EMPTY`` nor zero-row, present in the retained bytes and numeral-free
+(readings 3, 4, 5 and 7). Vendor text is never a number source.
 
 The world is Apar's retained concall summary and one retained announcements feed page, copied
 into a test store and extracted by a scripted model. Spans are chosen by offsets at run time;
@@ -115,6 +116,11 @@ LATE_CLAIM = (
     "text, model_id, prompt_version, epistemic_class) SELECT capture_ref_id, surface, 'CLAIM', "
     "%s, %s, %s, model_id, prompt_version, epistemic_class FROM eqos.vendor_text_claims "
     "WHERE capture_ref_id = %s LIMIT 1"
+)
+SAME_IDENTITY_CLAIM = (
+    "INSERT INTO eqos.vendor_text_claims (capture_ref_id, surface, kind, span_start, span_end, "
+    "text, model_id, prompt_version, epistemic_class) "
+    "VALUES (%s, 'concall-summary', 'CLAIM', %s, %s, %s, 'fake', %s, 'inferred')"
 )
 VERSION_ROWS = (
     "SELECT (SELECT count(*) FROM eqos.report_versions), "
@@ -389,18 +395,47 @@ def test_newer_empty_extraction_licence_end_and_moved_reader_hide_spans(
     assert not world.resolves("other_item", entity=world.other)
 
 
-def _section(world: World, role: str) -> ReportSection:
-    """An ordinary section citing one scripted span by its location marker (the vendor block
-    itself must equal its rendering, which a bare anchor is not)."""
-    capture, anchor = world.anchor(role)
-    body = f"{{{{e:inferred}}}} {{{{s:{capture}|{anchor}}}}}"
-    return ReportSection(ordinal=0, section_key="notes", body=body)
+def test_claims_appended_after_a_latest_empty_or_zero_row_extraction_stay_absent(
+    world: World,
+) -> None:
+    """Reading 7: the latest completed extraction governs. When it is ``EMPTY`` or has no rows,
+    ``CLAIM`` rows later appended under its own model and prompt show nothing, and the earlier
+    extraction's rows never revive."""
+    ref = world.refs["concall"]
+    _, start, end = world.spans["claim"]
+    shown = {}
+    for prompt, status in (("spans.v8", OutcomeStatus.EMPTY), ("spans.v9", OutcomeStatus.OK)):
+        empty = outcome(
+            version=f"claims:fake:{prompt}", surface="concall-summary", values=(), status=status
+        )
+        VendorValuesStore(world.pool).record(ref, empty, row_count=0)
+        with world.pool.connection() as conn:
+            row = (ref.capture_ref_id, start, end, world.concall.text[start:end], prompt)
+            conn.execute(SAME_IDENTITY_CLAIM, row)
+        now = world.clock()
+        shown[status] = world.resolves("claim", cutoff=now, source_cutoff=now)
+    assert shown == {OutcomeStatus.EMPTY: False, OutcomeStatus.OK: False}
+
+
+def _section(world: World, source_cutoff: datetime) -> ReportSection:
+    """The vendor block drafting renders at ``source_cutoff`` and the world's K (vendor text is
+    cited from that block only)."""
+    with world.pool.connection() as conn, conn.cursor() as cursor:
+        block = vendor_summary_section(
+            cursor,
+            entity_id=world.ledger.entity_id,
+            source_cutoff=source_cutoff,
+            knowledge_cutoff=world.now,
+            snapshots=world.store,
+        )
+    assert block is not None
+    return ReportSection(ordinal=0, section_key=block[0], body=block[1])
 
 
 def test_the_versions_own_source_cutoff_governs_checking_and_sealing(world: World) -> None:
     ledger, pools = world.ledger, world.ledger.pools
     registered = world.refs["concall"].registered_at
-    section = _section(world, "claim")
+    section = _section(world, registered)  # no rendering at an earlier S2 shows it
     fields = {
         "knowledge_cutoff": world.now,
         "sections": (section,),
