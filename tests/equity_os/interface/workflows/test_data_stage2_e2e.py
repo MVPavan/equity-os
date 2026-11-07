@@ -2,16 +2,21 @@
 
 One test runs the D2 operations in their legal order on one ``eqos_test_*`` database and compares
 each outcome with the frozen Stage 2 manifest. It orchestrates; the task tests own the internals.
-The 8 originals are registered once; the Apar Q2 FY26 run reuses A-X2/A-P2 and no vendor capture.
+The 8 originals are registered once; the Apar Q2 FY26 run reuses A-X2/A-P2 and no vendor value
+capture. Its reports then carry the vendor summary block (VENDOR-1 P2 Task 5): Apar's retained
+concall summary and a synthetic feed page, extracted by a scripted model whose spans are chosen
+by offsets at run time; no vendor text is written here or printed.
 """
 
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 import yaml
@@ -24,22 +29,41 @@ from ledger_support import (
     LEDGER_TABLES,
     MEMORY_TABLES,
     REVIEW_TABLES,
+    RULING,
     VENDOR_FIRST_TABLES,
 )
 from legacy_support import LEGACY_PATH, LEGACY_SHA256, baseline_rows, file_sha256, second_store
 from pg_support import PgTestDatabase, drop_database, mint_name
 from prep2b_support import XBRLS, Pilot
 from retained_support import APAR_ISSUER_CONFIG, APAR_MANIFEST
-from retention_support import RETENTION_TABLES, restore_args
+from retention_support import RETENTION_TABLES, record_of, restore_args
 from stage1_e2e_support import CONFIG, RUNS, Stage, row_key
 from temporal_fixture_support import install_trusted_fixture_cli
 from test_cutover_rollback import Window
 from test_frozen_manifests import REPO, load
 from test_legacy_import import Rig
 from test_store import _fact
+from test_vendor_surface_claims import (
+    RETAINED,
+    SCREENER,
+    registered_addresses,
+    retained_bodies,
+    retained_texts,
+)
+from test_vendor_text_citation import BINDING, SETTINGS, SOURCE, entity, free
+from test_vendor_values_store import outcome
 
 import equity_os.storage.facts.cutover as cutover
-from equity_os.contracts.measurement.evidence import RunMode
+from equity_os.contracts.measurement.evidence import CaptureReference, RunMode
+from equity_os.contracts.publication.ledger import DecisionKind, SubjectKind, VersionState
+from equity_os.contracts.sourcing.snapshot import CaptureRecord
+from equity_os.extraction.model.vendor_surface_claims import extract_text
+from equity_os.extraction.model.vendor_surface_model import ModelReply
+from equity_os.extraction.surfaces.vendor_text_readers import read_text
+from equity_os.extraction.vendors.screener.screener_session_page import (
+    parse_document,
+    read_identity,
+)
 from equity_os.interface.entry.cli import main
 from equity_os.normalisation.dictionary.dictionary import CanonicalDictionary, load_dictionary
 from equity_os.normalisation.mapping.mapping import (
@@ -47,14 +71,24 @@ from equity_os.normalisation.mapping.mapping import (
     NormalisationPolicy,
     load_mapping_set,
 )
+from equity_os.publication.approval import lifecycle
+from equity_os.publication.approval.lifecycle import DecisionRefusedError
+from equity_os.publication.checking.citations import resolve_location
+from equity_os.publication.checking.numeral_scan import LOCATION_MARKER, has_numeral
+from equity_os.publication.drafting.display import content_hash
 from equity_os.publication.drafting.run_draft import RUN_AUTHOR
+from equity_os.publication.drafting.vendor_summary import VENDOR_SUMMARY, vendor_summary_section
+from equity_os.sourcing.surfaces.vendor_surface_fetch import Site
 from equity_os.storage.backup.backup import restore_backup, verify_set, write_backup
 from equity_os.storage.database.approvals import GatedOperation
 from equity_os.storage.facts.cutover import FactStoreState, store_status
 from equity_os.storage.facts.fact_store import FactStore
 from equity_os.storage.facts.pg_fact_store import FactStoreFrozenError, PgFactStore
+from equity_os.storage.raw_files.capture_retention import capture_registration
+from equity_os.storage.raw_files.snapshot_store import SnapshotStore
+from equity_os.storage.records import store as ledger_store
 from equity_os.storage.records.repository import EvidenceRepository
-from equity_os.storage.records.vendor_values_store import VENDOR_TABLES
+from equity_os.storage.records.vendor_values_store import VENDOR_TABLES, VendorValuesStore
 from equity_os.verification.admission.admission import (
     AdmissionRefusal,
     admit_run,
@@ -102,6 +136,19 @@ EVENTS = (
     "SELECT state, last_row_handle, last_selection_handle FROM eqos.fact_store_events "
     "WHERE store_id = %s ORDER BY id"
 )
+LATEST = "SELECT max(id) FROM eqos.report_versions WHERE author = %s"
+_RUN = yaml.safe_load(APAR_ISSUER_CONFIG.read_text(encoding="utf-8"))
+SOURCE_CUTOFF = datetime.fromisoformat(_RUN["quarter"]["knowledge_cutoff"])
+# Apar's feed item shows a valid claim key (so it is never eligible); the other issuer's does not.
+FEED = (
+    '<div class="announcement-item"><a href="/company/APARINDS/">A</a>'
+    '<a href="/doc">Order {{c:fact.revenue|}} won</a></div>'
+    '<div class="announcement-item"><a href="/company/OTHERCO/">B</a>'
+    '<a href="/doc">Plant opens</a></div>'
+)
+FEED_URL = SCREENER + "/announcements/"
+PERIOD = re.compile(r"\b\d{4}-\d{2}-\d{2}|\bFY\d{2,4}|\b[QH][1-4]\b")
+HEADING = "### Screener — concall-summary, captured {day} — vendor summary — guidance, not evidence"
 
 
 @pytest.fixture(scope="module")
@@ -144,6 +191,126 @@ def pipeline_config(tmp_path: Path, rig: Rig, store: str) -> Path:
     path.parent.mkdir()
     path.write_text(yaml.safe_dump(body, allow_unicode=True), encoding="utf-8")
     return path
+
+
+class VendorText:
+    """Apar's and another issuer's vendor text, registered as held by the run's source cutoff
+    (the fixture's stand-in for an earlier capture) and extracted by a scripted model. Each span
+    is a ``CLAIM`` row chosen by offsets: ``marker`` (Apar's feed item, holding a claim key),
+    ``other`` (the other issuer's item); after ``concall``, ``claim`` (numeral-free), ``digit``,
+    ``word`` (a number word) and ``period`` (a date or period label) in the concall summary."""
+
+    def __init__(self, pool: Any, snapshots: Path, entity_id: int) -> None:
+        self.store = SnapshotStore(snapshots)
+        self.spans: dict[str, tuple[CaptureReference, int, int, str]] = {}
+        self.replies: dict[str, list[dict[str, Any]]] = {}
+        *_, (key, capture, page) = retained_bodies("company-page")
+        company_id, _ = read_identity(parse_document(page.decode()))
+        page_ref = self._retained(pool, "company-page", key, capture)
+        body = FEED.encode()
+        record = record_of(body, SOURCE, "vs.announcements-feed")
+        self.store.put_capture(record, body)
+        feed = self._register(pool, record, FEED_URL)
+        read = read_text(Site.SCREENER, "announcements-feed", body, FEED_URL)
+        apar, other = read.items
+        words = [m.span() for m in re.finditer(r"\S+", read.text) if m.end() <= apar.end]
+        self._span("marker", feed, read.text, words[0][0], words[-1][1])
+        self._span("other", feed, read.text, *free(read.text, other.start, other.end))
+        assert "{{c:" in self.spans["marker"][3]
+        stub = record_of(b"other", SOURCE, "vs.company-page")
+        stub_ref = self._register(pool, stub, f"{SCREENER}/company/OTHERCO/")
+        with pool.connection() as conn:
+            self.other = entity(conn, "OTHER", entity_id)
+            conn.execute(BINDING, (entity_id, "CONSOLIDATED", company_id, page_ref.capture_ref_id))
+            conn.execute(
+                BINDING, (self.other, "CONSOLIDATED", 999_999_999, stub_ref.capture_ref_id)
+            )
+        self._extract(pool, feed, "announcements-feed")
+
+    def concall(self, pool: Any) -> None:
+        """Register and extract Apar's first retained concall summary with text."""
+        key, capture, read = next(
+            (k, c, r) for k, c, r in retained_texts("concall-summary") if r.text
+        )
+        ref, text = self._retained(pool, "concall-summary", key, capture), read.text
+        tokens = list(re.finditer(r"\S+", text))
+        self._span("claim", ref, text, *free(text, 0, len(text)))
+        period = next(m for m in tokens if PERIOD.search(m.group()))
+        digits = (m for m in tokens if m is not period and not PERIOD.search(m.group()))
+        digit = next(m for m in digits if any(c.isnumeric() for c in m.group()))
+        word = next(
+            m
+            for m in tokens
+            if has_numeral(m.group()) and not any(c.isnumeric() for c in m.group())
+        )
+        for role, found in (("period", period), ("digit", digit), ("word", word)):
+            self._span(role, ref, text, *found.span())
+        self._extract(pool, ref, "concall-summary")
+
+    def marker(self, role: str) -> tuple[str, str]:
+        """A span's location marker parts."""
+        ref, start, end, _ = self.spans[role]
+        return str(ref.capture_ref_id), f"vt:{start}-{end}:{ref.blob_sha256}"
+
+    def paragraph(self, role: str) -> str:
+        """A span's paragraph as the block shows it."""
+        capture, anchor = self.marker(role)
+        text = " ".join(self.spans[role][3].split())
+        return f"{{{{e:inferred}}}} {text} {{{{s:{capture}|{anchor}}}}}"
+
+    def _retained(self, pool: Any, surface: str, key: str, capture: str) -> CaptureReference:
+        """One retained Apar capture copied into the run's store and registered."""
+        record = SnapshotStore(RETAINED.parent).get_capture(SOURCE, f"vs.{surface}", key, capture)
+        self.store.put_capture(record, SnapshotStore(RETAINED.parent).read_body(record))
+        return self._register(pool, record, registered_addresses()[key])
+
+    def _register(self, pool: Any, record: CaptureRecord, url: str) -> CaptureReference:
+        """Register a capture as registered and first seen at the run's source cutoff."""
+        assert record.body is not None
+        with capture_registration(pool) as registration:
+            return registration.insert(
+                CaptureReference(
+                    capture_ref_id=None,
+                    source_id=record.request.source_id,
+                    surface=record.request.surface,
+                    request_key=record.request.request_key,
+                    capture_id=record.capture_id,
+                    blob_sha256=record.body.content_sha256,
+                    record_sha256=record.record_sha256,
+                    registered_at=SOURCE_CUTOFF,
+                    first_seen_at=SOURCE_CUTOFF,
+                ),
+                url=url,
+            )
+
+    def _span(self, role: str, ref: CaptureReference, text: str, start: int, end: int) -> None:
+        """Script one ``CLAIM`` selection."""
+        self.spans[role] = (ref, start, end, text[start:end])
+        self.replies.setdefault(text, []).append({"kind": "CLAIM", "start": start, "end": end})
+
+    def _extract(self, pool: Any, ref: CaptureReference, surface: str) -> None:
+        """``extract_text`` over the one new capture, with the scripted replies."""
+        values = VendorValuesStore(pool)
+        values.record(ref, outcome(version="kept.v1", surface=surface, values=()), row_count=0)
+
+        def complete(system: str, source: str) -> ModelReply:
+            reply = json.dumps(self.replies.get(source, []))
+            return ModelReply(text=reply, input_tokens=1, output_tokens=1)
+
+        model = Mock(model_id="fake", complete=Mock(side_effect=complete))
+        assert extract_text(pool, self.store, model, SETTINGS) == 1
+
+
+def vendor_block(pilot: Pilot, version_id: int) -> str | None:
+    """The version's vendor summary body, if it has one."""
+    bodies = {s.section_key: s.body for s in pilot.version(version_id).sections}
+    return bodies.get(VENDOR_SUMMARY)
+
+
+def latest(pilot: Pilot) -> int:
+    """The latest run draft."""
+    ((version_id,),) = pilot.query(LATEST, RUN_AUTHOR)
+    return int(version_id)
 
 
 def test_stage2_end_to_end(
@@ -334,10 +501,18 @@ def test_stage2_end_to_end(
         pilot = Pilot(
             pg_db, tmp_path, monkeypatch, ingest, COMPARATORS, rig=rig, transcripts=("FY26_Q2",)
         )
-    args = ["--config", str(config), "--out-json", str(out), "--out", str(tmp_path / "run.md")]
+    args = ["run", "--issuer", "APARINDS", "--quarter", "Q2-FY26", "--config", str(config)]
     args += ["--compare-run", str(pilot.compare_run("FY26_Q2"))]
     args += ["--retrospective", str(APAR_MANIFEST), "--snapshot-root", str(rig.snapshots)]
-    assert main(["run", "--issuer", "APARINDS", "--quarter", "Q2-FY26", *args]) == 0
+
+    def run(name: str) -> int:
+        """The quarter's ``run``, writing its artifacts under ``name``."""
+        outs = ["--out-json", str(tmp_path / f"{name}.json"), "--out", str(tmp_path / f"{name}.md")]
+        return main([*args, *outs])
+
+    with pg_db.runtime_pool() as pool:
+        vendor = VendorText(pool, rig.snapshots, pilot.entity_id)
+    assert run("run") == 0
     (version,) = rig.query("SELECT id FROM eqos.report_versions WHERE author = %s", RUN_AUTHOR)
     assert version
     calculations = {
@@ -350,6 +525,83 @@ def test_stage2_end_to_end(
             assert calculations[line["line"]] == line.get("rendered", line.get("v"))
         else:
             assert f"| {line['line']} | {line['v']} |" in markdown
+
+    # 10. The vendor summary block (VENDOR-1 P2 Task 5). Another issuer's span exists, and Apar's
+    # only span shows a claim key, so Apar's report has no vendor section; it seals.
+    (version_id,) = version
+    assert vendor_block(pilot, version_id) is None
+    with pg_db.runtime_pool() as pool, pool.connection() as conn, conn.cursor() as cursor:
+        assert vendor_summary_section(
+            cursor,
+            entity_id=vendor.other,
+            source_cutoff=SOURCE_CUTOFF,
+            knowledge_cutoff=EvidenceRepository(pool).store_clock(),
+            snapshots=pilot.snapshots,
+        )
+    pilot.approve(version_id)
+    # With the concall summary, the next run shows only its numeral-free span, under its heading.
+    with pg_db.runtime_pool() as pool:
+        vendor.concall(pool)
+    assert run("vendor") == 0
+    drafted = latest(pilot)
+    block = vendor_block(pilot, drafted)
+    assert block is not None
+    assert pilot.validate(drafted).version_states == ()  # the draft validates AS_KNOWN
+    heading = HEADING.format(day=SOURCE_CUTOFF.date())
+    shown = heading in block and vendor.paragraph("claim") in block
+    assert shown, "the numeral-free span is not under its heading"  # never printed
+    assert LOCATION_MARKER.findall(block) == [vendor.marker("claim")]
+    # Rejecting a results claim reworks it; the block is regenerated, the same, and seals.
+    with pg_db.runtime_pool() as runtime:
+        lifecycle.submit(runtime, drafted, **pilot.sources())
+    with pg_db.owner_pool() as owner:
+        lifecycle.decide(
+            owner,
+            subject_kind=SubjectKind.REPORT_VERSION,
+            subject_id=drafted,
+            kind=DecisionKind.REQUEST_CHANGES,
+            ruling=RULING,
+            claims=("fact.revenue",),
+        )
+    assert run("rework") == 0
+    reworked = latest(pilot)
+    same = reworked != drafted and vendor_block(pilot, reworked) == block
+    assert same, "the rework did not regenerate the same vendor section"
+    pilot.approve(reworked)
+    sealed = pilot.version(reworked)
+    assert sealed.source_cutoff == SOURCE_CUTOFF
+    # A revision adding the number-word, period or claim-key span, each with its valid marker,
+    # fails checking and sealing: the span does not resolve (the vendor citation refusal).
+    added = "".join(vendor.paragraph(role) + "\n\n" for role in ("word", "period", "marker"))
+    sections = tuple(
+        s.model_copy(update={"body": s.body + added}) if s.section_key == VENDOR_SUMMARY else s
+        for s in sealed.sections
+    )
+    revised = sealed.model_copy(
+        update={
+            "predecessor_id": reworked,
+            "sections": sections,
+            "content_hash": content_hash(sections, sealed.claims),
+        }
+    )
+    with pg_db.runtime_pool() as pool, pool.connection() as conn, conn.cursor() as cursor:
+        revision = ledger_store.create_version(cursor, revised)
+        resolved = {
+            role: resolve_location(
+                cursor,
+                *vendor.marker(role),
+                entity_id=pilot.entity_id,
+                cutoff=sealed.knowledge_cutoff,
+                catalog=pilot.catalog,
+                snapshots=pilot.snapshots,
+                source_cutoff=sealed.source_cutoff,
+            )
+            for role in ("claim", "word", "period", "marker")
+        }
+    assert resolved == {"claim": True, "word": False, "period": False, "marker": False}
+    assert VersionState.UNCITED_PROSE in pilot.validate(revision).version_states
+    with pg_db.runtime_pool() as runtime, pytest.raises(DecisionRefusedError, match="UNCITED"):
+        lifecycle.submit(runtime, revision, **pilot.sources())
 
     assert file_sha256(LEGACY_PATH) == LEGACY_SHA256
 

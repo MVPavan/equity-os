@@ -96,6 +96,7 @@ from equity_os.publication.drafting.guidance_lines import (
     _quote,
     _specified,
 )
+from equity_os.publication.drafting.vendor_summary import vendor_summary_section
 from equity_os.publication.revision.import_mapping import (
     _slot,
     _valued,
@@ -414,7 +415,16 @@ def write_run_draft(
         rows = () if bound is None else evaluate(bound, by_key, run.lines, run.probe.stale_keys)
         falsifiers, thresholds = derived(bound, rows)
         _check_sources(cursor, claims, run, prior, catalog)
-        derived_sections = (*falsifiers, probe_section(run.probe, rows), (CREDIBILITY, built.body))
+        derived_sections = [*falsifiers, probe_section(run.probe, rows), (CREDIBILITY, built.body)]
+        assert update.source_cutoff is not None
+        vendor = vendor_summary_section(
+            cursor,
+            entity_id=entity_id,
+            source_cutoff=update.source_cutoff,
+            knowledge_cutoff=update.derivation_cutoff,
+            snapshots=snapshots,
+        )
+        derived_sections += [vendor] if vendor else []
         sections = _sections(run, prior, body.lines, derived_sections)
         claims += thresholds
         kind = ReportKind.EARNINGS_UPDATE
@@ -431,6 +441,7 @@ def write_run_draft(
                 predecessor_id=current,
                 author=RUN_AUTHOR,
                 knowledge_cutoff=update.derivation_cutoff,
+                source_cutoff=update.source_cutoff,
                 content_hash=content_hash(sections, claims),
                 sections=sections,
                 claims=claims,

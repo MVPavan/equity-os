@@ -19,8 +19,9 @@ them, refuses (plan RESEARCH-1 D7): a threshold's route is superseding the thesi
 or calculation's is diagnosis, then ``--full-successor``, and a credibility claim's is diagnosis, a
 mapping correction if the mapping is wrong, then ``--full-successor``. The disclosed open-questions
 and not-performed sections are likewise regenerated from the run's guidance on every write, outside
-the rework contract. A narrative section owns no claim and is dropped: a reworked successor is
-narrated again once approved (RESEARCH-3 S3).
+the rework contract, as is the vendor summary from the eligible vendor spans (VENDOR-1 R2-01).
+A narrative section owns no claim and is dropped: a reworked successor is narrated again once
+approved (RESEARCH-3 S3).
 """
 
 from __future__ import annotations
@@ -48,6 +49,7 @@ from equity_os.contracts.publication.ledger import (
 )
 from equity_os.contracts.verification.vendor_first import AdmissionLabel
 from equity_os.publication.drafting.display import FILED, PLACEHOLDER, DisplayError, render_section
+from equity_os.publication.drafting.vendor_summary import VENDOR_SUMMARY
 from equity_os.storage.records import store
 from equity_os.storage.records.repository import EvidenceRepository
 from equity_os.storage.records.repository_calc import StoredTrace
@@ -255,7 +257,8 @@ def plan(cursor: Cursor[Any], repository: EvidenceRepository, head: int) -> Rewo
             f"{', '.join(derived)} is re-derived from the approved thesis; supersede the thesis "
             "instead"
         )
-    sections = [s for s in version.sections if s.section_key not in DERIVED | DISCLOSED | NARRATIVE]
+    regenerated = DERIVED | DISCLOSED | NARRATIVE | {VENDOR_SUMMARY}
+    sections = [s for s in version.sections if s.section_key not in regenerated]
     cited = [claim.citation for claim in claims.values()]
     trace_ids = [c.calculation_trace_id for c in cited if c.calculation_trace_id is not None]
     traces = {t.trace_id: t for t in repository.get_calculation_traces(trace_ids)}
