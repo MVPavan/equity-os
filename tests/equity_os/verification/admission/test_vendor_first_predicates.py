@@ -205,7 +205,7 @@ def test_vendor_first_pins_round_trip(pg_db: Any, tmp_path: Path) -> None:
     root = tmp_path / "config"
     shutil.copytree(CONFIG, root)
     eligibility = root / "verification/vendor_first/eligibility/v1.yaml"
-    eligibility.parent.mkdir(parents=True)
+    eligibility.parent.mkdir(parents=True, exist_ok=True)  # the committed artifact may exist
     eligibility.write_text(_ELIGIBILITY_FIXTURE, encoding="utf-8")
     versions = ConfigVersions(dictionary="v2", mapping_set="v9", eligibility="v1")
     config = load_run_config(root, versions)
