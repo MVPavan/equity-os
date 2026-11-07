@@ -259,7 +259,11 @@ def screener_concall_summaries(body: Body, context: ParseContext) -> tuple[Reque
     """Follow the Notes button of each concalls row in the verified page's documents section."""
     assert context.parent is not None
     spec = SurfaceSpec.model_validate(context.parent["spec"])
-    urls = body.tree().xpath('//*[@id="documents"]//*/@data-url')
+    urls = body.tree().xpath(
+        '//*[@id="documents"]//div[contains(concat(" ",normalize-space(@class)," ")," concalls ")]'
+        '//li/button[contains(concat(" ",normalize-space(@class)," "),'
+        '" plausible-event-name=Concall+Notes ")]/@data-url'
+    )
     ids = dict.fromkeys(
         m[1] for u in urls if (m := re.fullmatch(r"/concalls/summary/([0-9]+)/", u))
     )

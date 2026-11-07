@@ -1027,6 +1027,10 @@ def test_concall_summary_spec_loads_and_expands_one_request_per_notes_button():
     urls = [r.url for r in EXPANSIONS["screener_concall_summaries"](body, context)]
     assert notes and len(urls) == len(notes)
     assert {u.removeprefix("https://www.screener.in").encode() for u in urls} == notes
+    # The same routes outside a concalls row's Notes button are not advertised summaries.
+    for marker in (b"documents concalls flex-column", b"plausible-event-name=Concall+Notes"):
+        moved = type(body)(raw=body.raw.replace(marker, b"documents other"))
+        assert not EXPANSIONS["screener_concall_summaries"](moved, context)
 
 
 @pytest.fixture
@@ -1040,7 +1044,7 @@ def summary_cli(company_rig, pg_db, tmp_path, monkeypatch, capsys):
     monkeypatch.setattr("equity_os.sourcing.transport.http_session.time.sleep", lambda _: None)
     opener, ids = company_rig("APARINDS")
 
-    def run(frozen=None, budget=None):
+    def run(frozen=None, budget=None, market=False, surface="screener:concall-summary"):
         opener.calls.clear()
         file = None
         if frozen is not None:
@@ -1049,11 +1053,11 @@ def summary_cli(company_rig, pg_db, tmp_path, monkeypatch, capsys):
         args = Namespace(
             command="vendor",
             vendor_command="capture",
-            symbol=ids.nse_symbol,
-            surface=["screener:concall-summary"],
+            symbol=None if market else ids.nse_symbol,
+            surface=[surface],
             snapshot_root=tmp_path / "cli",
             tijori_slug=None,
-            market=False,
+            market=market,
             frozen=file,
             budget=budget,
         )
@@ -1069,6 +1073,7 @@ def summary_cli(company_rig, pg_db, tmp_path, monkeypatch, capsys):
         capsys.readouterr()
         return code, set(opener.calls)
 
+    run.opener = opener
     return run
 
 
@@ -1088,3 +1093,32 @@ def test_frozen_set_and_budget_through_the_public_cli(summary_cli):
     # A budget below the set stops at the budget and never leaves the frozen set.
     code, calls = summary_cli(frozen=everything, budget=len(parents) + 2)
     assert code != 0 and len(calls) == len(parents) + 2 and calls <= everything
+
+
+def test_frozen_set_stops_without_children_or_for_unlisted_parents(summary_cli):
+    _, everything = summary_cli()
+    summaries = {u for u in everything if "/concalls/summary/" in u}
+    parents = everything - summaries
+    # Every advertised summary vanishing still stops nonzero once the parents are read.
+    for url in parents:
+        body = Path(summary_cli.opener.rows[url]["path"]).read_bytes()
+        summary_cli.opener.overrides[url] = body.replace(b"Concall+Notes", b"gone"), 200
+    assert summary_cli(frozen=everything) == (1, parents)
+    summary_cli.opener.overrides.clear()
+    # A parent missing from the set, or an empty set, stops before any request.
+    for frozen in (everything - {min(parents)}, set()):
+        assert summary_cli(frozen=frozen) == (1, set())
+
+
+@pytest.mark.parametrize(
+    ("market", "surface", "frozen", "budget"),
+    [
+        (True, "screener:concall-summary", {"https://www.screener.in/x/"}, None),
+        (True, "screener:concall-summary", None, 5),
+        (False, "tijori:company-financials", {"https://www.screener.in/x/"}, None),
+    ],
+)
+def test_capture_rejects_restrictions_a_path_cannot_honour(
+    summary_cli, market, surface, frozen, budget
+):
+    assert summary_cli(frozen=frozen, budget=budget, market=market, surface=surface) == (2, set())

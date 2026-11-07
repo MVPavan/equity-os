@@ -543,8 +543,8 @@ def capture_company(
 ) -> RunReport:
     """Capture company obligations, or a scheduled subset, through the site gates.
 
-    With `frozen`, a request outside it is refused before fetching, and before the first advertised
-    child is fetched the requested-or-pending set must equal it, else the run stops there.
+    With `frozen`, the run stops nonzero before fetching any request outside it, and the requested
+    set must equal it: checked before the first advertised child, or at the end if none appears.
 
     A scheduled subset captures only its requests (plus those a newly verified slug or company id
     makes possible); advertised children wait for the scheduler's next round.
@@ -595,24 +595,20 @@ def capture_company(
     )
     seen: set[str] = set()
     initial = {r.url for r in pending}
-    frozen_stop = False
-    while pending:
+    differing: set[str] = set() if frozen is None else initial - frozen
+    checked = False
+    while pending and not differing:
         request = pending.pop(0).model_copy(update={"ids": ids})
         if request.url in seen:
             expected -= 1
             continue
         if frozen is not None:
-            if request.url not in initial and not frozen_stop:
-                known_urls = seen | {r.url for r in pending} | {request.url}
-                differing = sorted(request_key(u) for u in known_urls.symmetric_difference(frozen))
-                if differing:
-                    incomplete.extend(f"frozen set differs: {key}" for key in differing)
-                    frozen_stop = True
-                    break
-            if request.url not in frozen:
-                seen.add(request.url)
-                refused.append(request.report_key)
-                continue
+            if request.url not in initial and not checked:
+                checked = True
+                differing = (seen | {r.url for r in pending} | {request.url}) ^ frozen
+            differing |= {request.url} - frozen
+            if differing:
+                break
         if request.spec.site in blocked:
             seen.add(request.url)
             if request.url not in cached:
@@ -735,6 +731,9 @@ def capture_company(
         if requests is None:
             expected += len(children)
             pending.extend(children)
+    if frozen is not None and not checked and not differing:
+        differing = initial ^ frozen
+    incomplete.extend(f"frozen set differs: {key}" for key in sorted(map(request_key, differing)))
     for ref, body, request in cached.values():
         record = store.get_capture(ref.source_id, ref.surface, ref.request_key, ref.capture_id)
         parse_and_record(store, values, ref, record, request, body, "company identity unverified")
@@ -745,5 +744,5 @@ def capture_company(
         refused=tuple(refused),
         incomplete=tuple(incomplete),
         stopped_sites=tuple(dict.fromkeys(stopped)),
-        frozen_stop=frozen_stop,
+        frozen_stop=bool(differing),
     )

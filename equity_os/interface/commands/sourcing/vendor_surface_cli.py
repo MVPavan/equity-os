@@ -299,6 +299,15 @@ def dispatch_vendor_command(
             for s in specs
             if (s.site, s.id) in needed or s.site in sites and s.id in IDENTITY_PAGES
         ]
+        limit, frozen_file = getattr(args, "budget", None), getattr(args, "frozen", None)
+        # Market capture, Tijori slug discovery and nested timelines cannot honour these.
+        if (
+            (limit is not None or frozen_file)
+            and args.market
+            or (frozen_file and any(s.site is Site.TIJORI for s in selected))
+        ):
+            sys.stderr.write("--frozen/--budget are not honoured on this capture path\n")
+            return 2
     resolved_sessions: Mapping[Site, SiteSession] = {}
     if args.vendor_command == "capture":
         required = {spec.site for spec in selected}
@@ -340,7 +349,6 @@ def dispatch_vendor_command(
         if args.tijori_slug:
             ids = ids.model_copy(update={"tijori_slug": args.tijori_slug})
         locks = PgSiteLock(pool)
-        limit, frozen_file = getattr(args, "budget", None), getattr(args, "frozen", None)
         budget = {} if limit is None else {"site_budget": limit}
         fetcher = VendorFetcher(
             store, resolved_sessions, opener_factory(), STOP_DIR, locks, **budget
