@@ -126,7 +126,8 @@ def test_checking_and_sealing_hold_the_vendor_block_to_its_rendering(world: Worl
         name: (scan_clean(world, b, now), *lifecycle_states(world, b, now))
         for name, b in revisions.items()
     }
-    assert results == dict.fromkeys(revisions, (True, (VersionState.UNCITED_PROSE,), False))
+    expected = dict.fromkeys(revisions, (True, (VersionState.UNCITED_PROSE,), False))
+    assert results == expected
 
 
 def duplicate_capture(world: World) -> tuple[str, str]:
