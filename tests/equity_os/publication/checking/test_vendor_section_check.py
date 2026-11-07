@@ -118,8 +118,10 @@ def test_checking_and_sealing_hold_the_vendor_block_to_its_rendering(world: Worl
         "extra prose": body + "\n{{e:inferred}} Plant opens\n",
         "heading": body.replace(GUIDANCE, "outlook"),
     }
-    assert len(set(revisions.values()) | {body}) == len(revisions) + 1
-    assert lifecycle_states(world, body, now) == ((), True)
+    distinct = len(set(revisions.values()) | {body}) == len(revisions) + 1
+    assert distinct, "a revision repeats another or the block"
+    valid = lifecycle_states(world, body, now)
+    assert valid == ((), True)
     results = {
         name: (scan_clean(world, b, now), *lifecycle_states(world, b, now))
         for name, b in revisions.items()
@@ -148,7 +150,8 @@ def duplicate_capture(world: World) -> tuple[str, str]:
         model_id="fake",
         complete=Mock(return_value=ModelReply(text=reply, input_tokens=1, output_tokens=1)),
     )
-    assert read.text == world.concall.text, "the duplicate is not the same retained text"
+    same = read.text == world.concall.text
+    assert same, "the duplicate is not the same retained text"
     assert extract_text(world.pool, world.store, model, SETTINGS) == 1
     assert (
         ref.capture_ref_id is not None and ref.capture_ref_id > world.refs["concall"].capture_ref_id
@@ -163,7 +166,8 @@ def test_a_discarded_duplicate_is_neither_drafted_nor_resolved(world: World) -> 
     now = world.clock()
     canonical = world.anchor("claim")
     body = rendered(world, now)
-    assert LOCATION_MARKER.findall(body) == [canonical]  # drafting keeps the canonical only
+    markers = LOCATION_MARKER.findall(body)
+    assert markers == [canonical]  # drafting keeps the canonical only
     with world.pool.connection() as conn, conn.cursor() as cursor:
         resolved = {
             name: resolve_location(

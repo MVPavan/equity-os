@@ -420,7 +420,8 @@ def test_existing_readers_text_is_unchanged_on_retained_captures(surface):
 @pytest.mark.retained
 def test_retained_concall_summaries_are_one_item_bound_to_the_breadcrumb_company():
     reads = [read for *_, read in retained_texts("concall-summary")]
-    assert len(reads) == 56
+    count = len(reads)
+    assert count == 56
     # One page shows a notice and has no summary region: it reads as nothing (Task 2 record).
     assert sum(not read.text and not read.items for read in reads) == 1
     for read in filter(lambda read: read.text, reads):

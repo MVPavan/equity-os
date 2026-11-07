@@ -567,7 +567,8 @@ def test_stage2_end_to_end(
     # 10. The vendor summary block (VENDOR-1 P2 Task 5). Another issuer's span exists, and Apar's
     # only span shows a claim key, so Apar's report has no vendor section; it seals.
     (version_id,) = version
-    assert vendor_block(pilot, version_id) is None
+    absent = vendor_block(pilot, version_id) is None
+    assert absent, "Apar's first report has a vendor block"
     with pg_db.runtime_pool() as pool, pool.connection() as conn, conn.cursor() as cursor:
         assert vendor_summary_section(
             cursor,
@@ -588,7 +589,8 @@ def test_stage2_end_to_end(
     heading = HEADING.format(day=SOURCE_CUTOFF.date())
     shown = heading in block and vendor.paragraph("claim") in block
     assert shown, "the numeral-free span is not under its heading"  # never printed
-    assert LOCATION_MARKER.findall(block) == [vendor.marker("claim")]
+    markers = LOCATION_MARKER.findall(block)
+    assert markers == [vendor.marker("claim")]
     # Rejecting a results claim reworks it. A newer extraction completed before the rework shows
     # another span: the regenerated block shows it, not the old one, and seals (R2-01: the
     # rework never keeps the old block as a scaffold).
@@ -620,7 +622,8 @@ def test_stage2_end_to_end(
     narrated = ns.narrate(pilot, reworked, ns.FakeClient(ns.draft(pilot.version(reworked))))
     sealed = pilot.version(narrated)
     kept = vendor_block(pilot, narrated) == regenerated
-    assert sealed.source_cutoff == SOURCE_CUTOFF and kept, "narration changed S or the block"
+    narrated_cutoff = sealed.source_cutoff
+    assert narrated_cutoff == SOURCE_CUTOFF and kept, "narration changed S or the block"
     ns.decide(pilot, narrated)
     # A fresh same-period successor drafted against a later S2 stores S2: it shows the summary
     # registered between S and S2, which S excludes, and it checks and seals against S2.

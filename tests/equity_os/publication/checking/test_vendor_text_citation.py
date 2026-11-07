@@ -495,9 +495,8 @@ def test_a_numeric_claim_citing_a_span_is_unresolved_and_passes_with_a_fact_id(
         }
     )
     check = {"mode": RunMode.AS_KNOWN, "cutoff": draft.knowledge_cutoff, "imported": False}
-    assert check_claim(quoted, _resolve(pilot, version_id, quoted), **check) is (
-        ClaimState.UNRESOLVED
-    )
+    state = check_claim(quoted, _resolve(pilot, version_id, quoted), **check)
+    assert state is ClaimState.UNRESOLVED
     resolved = _resolve(pilot, version_id, revenue)
     assert resolved is not None and resolved.admission_label is UNCHECKED
     assert check_claim(revenue, resolved, **check) is ClaimState.MATCH
