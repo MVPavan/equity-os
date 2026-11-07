@@ -1,14 +1,18 @@
 {
   "now": {
     "title": "VENDOR-1 Phase 1 live: Apar re-measurement (Task 14)",
-    "detail": "Task 13 is done on live: migrations 0047-0052 applied and Apar's filings and vendor captures re-interpreted under mapping set v9, each live change equal to its rehearsal. Task 14 (fresh compare runs and the vendor measure) is being rehearsed on a test copy before any live run. Phase 2 is done; the LEGACY-1 retirement plan waits for the five-company test."
+    "detail": "The Task 14 rehearsal showed that 7 of 8 Apar quarters had no vendor sides: each vendor page is one capture filed under the latest quarter. Task 5b, Sol-approved and now on main, lets a capture serve every period it evidences; computed coverage rises from 5 to 64 three-way key-periods. The Task 12 gate passed on the new tip (Stage 4 protected tests only, after a test-order fix to the pilot). Task 14 is being rehearsed again before the live run."
   },
   "next": [
-    "VENDOR-1 P1 Task 14 live, then Sol's phase-end review of Phase 1",
+    "VENDOR-1 P1 Task 14 rehearsal and twin, then live, then Sol's phase-end review of Phase 1 (including eqos-5g1e)",
     "Then the PDF fixes and version bump, Phase 3 Tasks 4-11, FIVE-1 Task 4, the five-company test",
     "Owner: committed tests held literal vendor values, public since 2026-10-28 (eqos-tlpf); history decision"
   ],
   "log": [
+    {
+      "date": "2026-11-07",
+      "text": "VENDOR-1 P1 Task 5b landed: vendor captures serve every period they evidence (Sol plan APPROVE, re-review 2). The expiry guard stays fail-closed; the multi-end over-refusal is deferred as eqos-t9m5. Gate at e8ccafde: Stage 4 protected tests plus the pilot e2e, whose ingest order 5b outdated; it was fixed in the test, 533543ed. Gate workers set to 8 (records of earlier gates corrected). New question for the phase review: retrospective drafts can cite vendor captures registered after their cutoff (eqos-5g1e)."
+    },
     {
       "date": "2026-11-07",
       "text": "VENDOR-1 Phase 1 Task 13 done on live: migrations 0047, 0048, 0049, 0051 and 0052 applied; 8 Apar filing packages re-interpreted under v9 (counts equal to their v6 baselines) and the vendor captures re-ingested (Tijori: no INVALID or UNIT_MISMATCH rows, down from 10). Rehearsed twice first; the first rehearsal stopped on construction-trace rows the plan had not listed, which were then allowed."
