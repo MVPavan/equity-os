@@ -76,7 +76,7 @@ TIJORI = "tijori/financials"
 SCREENER = "screener-subscriber/SCREENER_FINANCIALS"
 _RESULTS = FilingFamily.FINANCIAL_RESULTS
 LATER = date(2025, 9, 30)
-# SHA-256 of str(1415 crore), the vendors' revenue for Q3 FY25 (module docstring).
+# SHA-256 of str() of the vendors' Q3 FY25 revenue, kept out of the source (learnings 2026-11-07).
 REVENUE_SHA256 = "bdd855706df3885dd73e09aa7eeb27af3b1e94950f4ac5603a729b59bc4dd560"
 
 
