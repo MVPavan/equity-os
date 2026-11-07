@@ -430,7 +430,11 @@ Format per entry:
 - Why it matters: a worker that starts editing at once mixes foreign edits into its commit.
 - Apply: worker briefs say: make no edit until the branch is renamed from `t3/<id>` or four
   minutes have passed, check `git status` is clean before the first edit, and stop and report on
-  any edit the worker did not make.
+  any edit the worker did not make. It recurred on 2026-11-07 (all four of a worker's files
+  edited while it read). Avoiding it: the orchestrator creates the worktree itself under
+  `scratchpad/` (`git worktree add`, a `data/` copy without the restricted directories, `.env`,
+  `uv sync --frozen --all-groups`) and dispatches with `isolation: "shared"`, telling the worker
+  to work only there. T3 names branches only for its own worktrees, so nothing else edits it.
 
 ## Directory-scoped test runs miss importers in other directories  (2026-11-06)
 - Observed: two VENDOR-1 P1 fix rounds changed a function signature and the claim-label rule;
