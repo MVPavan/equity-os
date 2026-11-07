@@ -1,4 +1,7 @@
-"""Yield drift compares only like versions and reports every orphaned capture."""
+"""Yield drift compares only like versions and reports every orphaned capture.
+
+PYTEST_DONT_REWRITE: failing assertions must not print licensed vendor data.
+"""
 
 import copy
 import hashlib

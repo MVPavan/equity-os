@@ -1,4 +1,7 @@
-"""Raw-first market traversal and durable pagination over retained responses."""
+"""Raw-first market traversal and durable pagination over retained responses.
+
+PYTEST_DONT_REWRITE: failing assertions must not print licensed vendor data.
+"""
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path

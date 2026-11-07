@@ -1,4 +1,7 @@
-"""Cadence over the covered universe: only stored outcomes decide what is due."""
+"""Cadence over the covered universe: only stored outcomes decide what is due.
+
+PYTEST_DONT_REWRITE: failing assertions must not print licensed vendor data.
+"""
 
 import argparse
 import hashlib

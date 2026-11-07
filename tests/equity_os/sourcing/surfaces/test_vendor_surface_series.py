@@ -1,4 +1,7 @@
-"""G1 company series retain all cells and fail closed on broken reference bodies."""
+"""G1 company series retain all cells and fail closed on broken reference bodies.
+
+PYTEST_DONT_REWRITE: failing assertions must not print licensed vendor data.
+"""
 
 import hashlib
 import json

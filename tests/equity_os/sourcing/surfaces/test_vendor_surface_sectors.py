@@ -1,4 +1,7 @@
-"""Tijori sector pages and their charts are fetched only for covered companies' sectors."""
+"""Tijori sector pages and their charts are fetched only for covered companies' sectors.
+
+PYTEST_DONT_REWRITE: failing assertions must not print licensed vendor data.
+"""
 
 from pathlib import Path
 

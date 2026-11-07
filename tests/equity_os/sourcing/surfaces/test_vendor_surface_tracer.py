@@ -1,4 +1,7 @@
-"""The tracer keeps raw evidence, parses stored bytes, and reports every requested set."""
+"""The tracer keeps raw evidence, parses stored bytes, and reports every requested set.
+
+PYTEST_DONT_REWRITE: failing assertions must not print licensed vendor data.
+"""
 
 import json
 from decimal import Decimal

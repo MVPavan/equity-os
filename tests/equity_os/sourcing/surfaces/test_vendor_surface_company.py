@@ -1,4 +1,7 @@
-"""Company breadth over retained bodies, with HTTP as the only fake boundary."""
+"""Company breadth over retained bodies, with HTTP as the only fake boundary.
+
+PYTEST_DONT_REWRITE: failing assertions must not print licensed vendor data.
+"""
 
 import hashlib
 import json

@@ -1,4 +1,7 @@
-"""G0 adapters exercised through the registry on retained subscriber responses."""
+"""G0 adapters exercised through the registry on retained subscriber responses.
+
+PYTEST_DONT_REWRITE: failing assertions must not print licensed vendor data.
+"""
 
 import json
 from decimal import Decimal
