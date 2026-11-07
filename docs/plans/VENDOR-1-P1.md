@@ -23,6 +23,10 @@ transcript; see Task 9).
 - Live writes are permanent. Tasks 13 and 14 follow the live protocol below.
 - No vendor body, vendor value or embedded mapping example in committed text, logs or reports;
   the eligibility artifact and phase report hold counts and ids only.
+  **Exception (owner, 2026-11-07; phase-review finding 16):** one vendor reading entered history
+  in commit `39ffae57` (a test docstring) and was removed from the tree by `b129905c`. The owner
+  chose to keep that history rather than rewrite the unpushed commits; the current tree holds no
+  vendor value. The rule stands for all new text.
 - Never open `stage4_holdout.yaml`, `stage4_manifest.yaml`, `data/holdout/` or
   `data/raw/onboarding/`.
 - Files stay under 800 lines. `engine.py` is at 800, `onboard_cli.py` at 785 and
