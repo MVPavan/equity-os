@@ -45,7 +45,7 @@ PREP = [
 HAND = {
     "built": ("closed", "Pre-roadmap foundation (Phase 0A / 0.5), working before D1a"),
     # VENDOR-1 (epic eqos-awnc) tracks tasks in docs/plans/VENDOR-1-P1.md, not as beads. States
-    # as of 2026-11-06 per the orchestrator and git log (code approved by Sol at 87be969e).
+    # as of 2026-11-07 per the orchestrator and git log (code approved by Sol at 87be969e).
     "V1.T1": ("closed", "Migration 0047 and the vendor-first contracts"),
     "V1.T2": ("closed", "Tijori display rules, shared fixture, vendor reingest"),
     "V1.T3": ("closed", "Mapping set v9: inventory and standalone entries"),
@@ -57,7 +57,7 @@ HAND = {
     "V1.T9": ("closed", "Citation, retention, report values and labels"),
     "V1.T10": ("closed", "Fallback workflow"),
     "V1.T11": ("closed", "Document amendments"),
-    "V1.T12": ("in_progress", "Pre-live gate (rails exception awaits the owner)"),
+    "V1.T12": ("in_progress", "Pre-live gate (rails fixed, eqos-ju19; rerun pending)"),
     "V1.T13": ("open", "Live: migrate, re-interpret, re-ingest Apar"),
     "V1.T14": ("open", "Apar re-measurement"),
     # docs/specs/2026-11-06-vendor-first.md §3 and §7–§9.

@@ -1,14 +1,18 @@
 {
   "now": {
-    "title": "VENDOR-1 Phase 1: Screener and Tijori as main sources, filings as fallback",
-    "detail": "Tasks 1-11 are on main and Sol approved the Phase 1 code after three phase-review rounds and a closing review (all findings fixed, 87be969e). The integrated gate is running at that revision; its rails check stops on one quoted hash line until the owner rules on a narrow exception, and an unpushed commit holding a vendor reading awaits the owner's history decision. Phase 2 Task 5 (the vendor summary block) is being built."
+    "title": "VENDOR-1 Phase 2: Screener concall summaries as guidance text",
+    "detail": "Phase 1 code is approved and main is pushed to GitHub (a2b8bd8c). Phase 2 fix round 1 landed; Sol's round 2 resolved findings 1-8 and 10 and left one test-only finding (assertions that could print vendor text on failure), now fixed and in Sol's round-3 check. The gate's pasted-capture rail now checks every added line, with the owner's two exceptions (eqos-ju19)."
   },
   "next": [
-    "Owner: rail exception for quoted 64-hex digests; history of unpushed commit 39ffae57",
+    "VENDOR-1 P2: Sol round 3, Phase 2 gate at the new tip, fresh closing review",
     "VENDOR-1 P1 live: migrate, re-interpret and re-ingest Apar (Task 13), re-measure (Task 14)",
-    "VENDOR-1 P2: Task 5 lands, gate (Task 6), Sol phase review"
+    "Plan the retirement of the legacy lanes (legacy SQLite, standalone Screener/Tijori commands, Lane B)"
   ],
   "log": [
+    {
+      "date": "2026-11-07",
+      "text": "Owner decisions applied: lines that are only a quoted digest, and docs/evidence quotes of public NSE/BSE filings, are exempt from the pasted-capture rail, whose 500-line cap was removed (eqos-ju19); the history of 39ffae57 is kept; legacy lanes will be retired; main pushed. VENDOR-1 Phase 2 fix round 1 landed and Sol's round 2 left one finding, fixed. 81 clean worktrees removed."
+    },
     {
       "date": "2026-11-06",
       "text": "VENDOR-1 Phase 1 code approved by Sol: phase-review rounds 1-3 and a fresh closing review found 23 issues in all (labels, witnesses in retention, coverage, display-rule pinning, predecessor priors, filing selection, vendor-only applicability); all fixed on main. Stage 4 protected tests 65 passed, leak check PASS."
