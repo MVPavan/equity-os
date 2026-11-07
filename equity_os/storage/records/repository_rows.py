@@ -271,6 +271,10 @@ ATTEMPTS_BY_ID: LiteralString = ATTEMPT_COLUMNS + "WHERE a.id = ANY(%s) ORDER BY
 ATTEMPTS_FOR_PERIOD: LiteralString = (
     ATTEMPT_COLUMNS + "WHERE a.entity_id = %s AND a.period_end = %s ORDER BY a.id"
 )
+ATTEMPTS_EVIDENCING: LiteralString = (
+    ATTEMPT_COLUMNS + "WHERE a.entity_id = %s AND EXISTS (SELECT 1 FROM eqos.occurrences o "
+    "WHERE o.capture_ref_id = a.capture_ref_id AND o.valid_time = %s) ORDER BY a.id"
+)
 GENERATION_ATTEMPTS: LiteralString = (
     ATTEMPT_COLUMNS + "WHERE a.stage = 'EXTRACTION' AND a.capture_ref_id = %s "
     "AND a.extractor_version = %s AND a.entity_id = %s AND a.period_end = %s AND a.basis = %s "

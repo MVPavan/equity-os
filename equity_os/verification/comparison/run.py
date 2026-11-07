@@ -154,7 +154,7 @@ def execute_run(
         config=config,
         definition_set_id=definition_set_id,
     )
-    inputs = _retained(inputs, request.cutoff, pool)
+    inputs = _retained(inputs, request, pool)
     manifest = RunManifest(
         scope=request.scope,
         cutoff=request.cutoff,
@@ -290,20 +290,29 @@ def _expired(pool: ConnectionPool, inputs: tuple[RunInput, ...]) -> set[int]:
     return set(found[0] if found else ())
 
 
-def _retained(inputs: ResolvedInputs, cutoff: datetime, pool: ConnectionPool) -> ResolvedInputs:
+def _retained(inputs: ResolvedInputs, request: RunRequest, pool: ConnectionPool) -> ResolvedInputs:
     """Inputs without the vendor attempts and captures whose originals expired, refused when
-    the latest applicable attempt of a key (as ``vendor_sides`` picks it) reads one (R13)."""
+    the latest applicable attempt of a key (as ``vendor_sides`` picks it) may read one (R13).
+    An expired capture's occurrences are withheld, so it counts at every scope end."""
     if not (expired := _expired(pool, inputs.inputs)):
         return inputs
+    ends = request.scope.period_ends
+    evidenced = {(item.capture.capture_ref_id, item.valid_time) for item in inputs.occurrences}
     latest = {}
     drop: set[tuple[RunInputKind, int | None]] = {(RunInputKind.CAPTURE_REF, c) for c in expired}
     for attempt in sorted(inputs.attempts, key=lambda item: (item.attempted_at, item.attempt_id)):
         capture = attempt.capture and attempt.capture.capture_ref_id
         if capture in expired:
             drop.add((RunInputKind.ATTEMPT, attempt.attempt_id))
-        if attempt.capture is None or attempt.capture.registered_at <= cutoff:
-            key = (attempt.source_id, attempt.surface, attempt.entity_id, attempt.period_end)
-            latest[(*key, attempt.basis)] = capture
+        if attempt.capture is None or attempt.capture.registered_at <= request.cutoff:
+            served = (
+                ends
+                if capture in expired
+                else (attempt.period_end, *(end for end in ends if (capture, end) in evidenced))
+            )
+            for end in served:
+                key = (attempt.source_id, attempt.surface, attempt.entity_id, end, attempt.basis)
+                latest[key] = capture
     if read := sorted(expired.intersection(latest.values())):
         raise OriginalExpiredError(_EXPIRED.format(what="the latest attempt", captures=read))
     kept = tuple(item for item in inputs.inputs if (item.kind, item.ref_id) not in drop)

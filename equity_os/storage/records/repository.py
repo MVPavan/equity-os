@@ -513,10 +513,12 @@ class EvidenceRepository:
         found = self._fetch(rows_sql.INTERPRETATIONS_OF_CAPTURE, (capture_ref_id,))
         return tuple(rows_sql.interpretation_of(row) for row in found)
 
-    def list_attempts(self, entity_id: int, period_end: date) -> tuple[AcquisitionAttempt, ...]:
-        """Every attempt for one entity and period end."""
-        found = self._fetch(rows_sql.ATTEMPTS_FOR_PERIOD, (entity_id, period_end))
-        return tuple(rows_sql.attempt_of(row) for row in found)
+    def list_attempts(
+        self, entity_id: int, period_end: date, *, evidenced: bool = False
+    ) -> tuple[AcquisitionAttempt, ...]:
+        """An entity's attempts filed under a period end, or (``evidenced``) evidencing it."""
+        sql = rows_sql.ATTEMPTS_EVIDENCING if evidenced else rows_sql.ATTEMPTS_FOR_PERIOD
+        return tuple(rows_sql.attempt_of(row) for row in self._fetch(sql, (entity_id, period_end)))
 
     def list_generation_attempts(
         self,

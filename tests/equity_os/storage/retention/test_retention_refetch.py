@@ -1,6 +1,8 @@
 """D9 Task 6: re-fetch, ``REFETCH_MISMATCH`` and ``ORIGINAL_EXPIRED`` replay (plan D9 R9, R10,
 R13; cases F1-F13).
 
+PYTEST_DONT_REWRITE: failing assertions must not print licensed vendor data.
+
 Captures are SYNTHETIC bytes expired by a real purge unless a case names the Apar fixtures
 (copied into ``tmp_path``). Fetches are fakes. F9-F11 SEED a vendor capture's ``EXPIRED`` state
 directly: two Screener captures of the one retained page share a blob, which a purge expires
@@ -15,6 +17,7 @@ import urllib.error
 import urllib.request
 import uuid
 from collections.abc import Callable, Iterator
+from datetime import date
 from email.message import Message
 from pathlib import Path
 from typing import Any
@@ -27,6 +30,7 @@ from retention_support import package, retention_cli, verify
 from stage1_e2e_support import RUNS, SCREENER, Stage
 from test_retention_protocol import CLOSE_RUN, in_thread, locks, purge_run
 
+from equity_os.companies.identity.identity_seed import SettingKey
 from equity_os.contracts.measurement.canonical import Basis, Representation
 from equity_os.contracts.measurement.evidence import CaptureReference
 from equity_os.contracts.measurement.observation import AccountingFramework
@@ -595,3 +599,46 @@ def test_an_expired_latest_attempt_refuses_the_run_without_fallback(
         assert conn.execute(RUNS_COUNT).fetchall() == before
     with pytest.raises(OriginalExpiredError, match="ORIGINAL_EXPIRED"):
         replay_run(run.run_id, pool=stage.pool, config_root=stage.config_root)
+
+
+@pytest.mark.retained
+def test_an_expired_capture_serving_another_period_refuses_the_run(
+    pg_db: PgTestDatabase, tmp_path: Path
+) -> None:
+    """R13 under Task 5b: Tijori capture X, filed under ``F`` (2025-12-31; the Apar Screener
+    and Tijori captures both evidence it), also evidences the run's end, where no other Tijori
+    attempt exists; a newer failed acquisition is ``F``'s latest. With X expired, a scope over
+    both ends refuses naming X and stores no run: X is the end's latest candidate, though not
+    ``F``'s."""
+    late = date(2025, 12, 31)
+    with pg_db.runtime_pool() as pool:
+        stage = Stage(pg_db, pool, tmp_path, APAR)
+        stage.first_party()
+        repository = stage.repository
+        month = repository.settings_as_of(
+            stage.entity_id, SettingKey.FISCAL_YEAR_END_MONTH, repository.store_clock()
+        )
+        assert month is not None  # ``F`` has no package: its framework comes from settings
+        repository.put_settings_record(
+            stage.entity_id, SettingKey.REPORTING_FRAMEWORK, "IND_AS", month.evidence_input_id
+        )
+        stage.vendor(SCREENER_FLAG, "A-SCR", end=late)
+        expired = stage.vendor("tijori/financials", "A-TIJ", end=late).attempt
+        failed = stage.vendor(
+            "tijori/financials", "A-TIJ", "20260905T000000.000000Z-000000000000", end=late
+        ).attempt
+        assert failed.capture is None and failed.attempted_at > expired.attempted_at
+        capture = expired.capture.capture_ref_id
+        seed_expired(pg_db, capture)
+        request = stage.request()
+        scope = request.scope.model_copy(update={"period_ends": (stage.end, late)})
+        with pg_db.migrator_connection() as conn:
+            before = conn.execute(RUNS_COUNT).fetchall()
+        with pytest.raises(OriginalExpiredError, match=rf"captures \[{capture}\]"):
+            compare_run.execute_run(
+                request.model_copy(update={"scope": scope}),
+                pool=pool,
+                config_root=stage.config_root,
+            )
+        with pg_db.migrator_connection() as conn:
+            assert conn.execute(RUNS_COUNT).fetchall() == before

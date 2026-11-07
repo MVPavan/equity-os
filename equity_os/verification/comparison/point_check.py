@@ -46,6 +46,7 @@ from equity_os.verification.comparison.run_models import (
     RunInputKind,
     RunRequest,
 )
+from equity_os.verification.comparison.selection import period_end
 from equity_os.verification.comparison.vendor_sides import VendorSides
 
 CATEGORY_AXIS = "shareholding_category"
@@ -107,6 +108,7 @@ def point_checks(
         for item in inputs.interpretations
         if sources.get(item.capture_ref_id) in request.scope.vendors
         and item.key is not None
+        and period_end(item.key.period) in request.scope.period_ends  # captures span periods
         and _basket(config, item.key)[1]
     }
     stored = {

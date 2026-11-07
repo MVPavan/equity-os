@@ -1,7 +1,8 @@
 """Vendor sides of one result row: selection, pairs and within-vendor conflicts (D1b.2).
 
-Data spec §2, §4, §5. Per requested ``(source, surface)`` the latest available attempt of the
-row's period end decides, with no fallback to an older capture: none recorded or any outcome
+Data spec §2, §4, §5. Per requested ``(source, surface)`` the latest available attempt filed
+under the row's period end, or whose capture a loaded occurrence shows evidences it (VENDOR-1
+spec §6.3), decides, with no fallback to an older capture: none recorded or any outcome
 but ``COMPLETE`` / ``NOT_PUBLISHED`` is ``UNAVAILABLE``, ``NOT_PUBLISHED`` is ``NO_VALUE``. A
 complete capture's one current interpretation under the pins decides the cell; a refused one
 is ``INVALID``, a capture with nothing interpreted under the pins ``UNAVAILABLE``. Each
@@ -126,6 +127,8 @@ class VendorSides:
         self._triple = request.pinned.triple()
         self._vendors = frozenset(request.scope.vendors)
         self._occurrences = {item.occurrence_id: item for item in inputs.occurrences}
+        # (capture, period end) pairs a loaded occurrence evidences
+        self._evidenced = {(o.capture.capture_ref_id, o.valid_time) for o in inputs.occurrences}
         self._by_capture: dict[int, list[Interpretation]] = defaultdict(list)
         for item in inputs.interpretations:
             self._by_capture[item.capture_ref_id].append(item)
@@ -347,7 +350,8 @@ class VendorSides:
         self, entity_id: int, basis: Basis, end: date
     ) -> list[Interpretation]:
         """Current interpretations under the pins of each requested surface's latest complete
-        capture for one (entity, basis, period end): what a vendor-only group reads."""
+        capture filed under or evidencing one (entity, basis, period end): what a vendor-only
+        group reads."""
         found: list[Interpretation] = []
         for source_id, surface in sorted(self._vendors):
             attempt = self._latest(source_id, surface, entity_id, basis, end)
@@ -360,7 +364,8 @@ class VendorSides:
     def _latest(
         self, source_id: str, surface: str, entity_id: int, basis: Basis, end: date
     ) -> AcquisitionAttempt | None:
-        """The group's latest attempt whose capture (if any) is registered by the cutoff.
+        """The group's latest attempt filed under ``end`` or whose capture evidences it, its
+        capture (if any) registered by the cutoff.
 
         One capture read section by section (Screener) records an attempt per section; the
         capture's outcome is then the first non-``COMPLETE`` one among each section's latest
@@ -373,7 +378,10 @@ class VendorSides:
                 if (attempt.source_id, attempt.surface) == (source_id, surface)
                 and attempt.entity_id == entity_id
                 and attempt.basis is basis
-                and attempt.period_end == end
+                and (
+                    attempt.period_end == end
+                    or (attempt.capture and attempt.capture.capture_ref_id, end) in self._evidenced
+                )
                 and (
                     attempt.capture is None or attempt.capture.registered_at <= self._request.cutoff
                 )

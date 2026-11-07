@@ -7,7 +7,8 @@ package when a ``YEAR`` package is present), their member captures' interpretati
 pinned triple, the witness and selected occurrences, and the available attempts; and finally
 every eligible comparative of the selected keys. Only members and attempts on the scope's
 requested sources (first-party surfaces) are read, plus the requested vendor surfaces'
-attempts of the scope's period end and their captures' interpretations.
+attempts filed under the scope's period end or whose capture evidences it (spec §6.3), their
+captures' interpretations and, for a capture filed elsewhere, one witness occurrence at the end.
 """
 
 from __future__ import annotations
@@ -172,7 +173,12 @@ class RunLoader:
     ) -> None:
         """Attempts of one period end available under the cutoff, mode and pinned extractor;
         with ``vendors``, the requested vendor surfaces' too, with their captures' evidence."""
-        for attempt in self._repository.list_attempts(entity_id, period_end):
+        attempts = {a.attempt_id: a for a in self._repository.list_attempts(entity_id, period_end)}
+        if vendors:  # a vendor capture serves every period it evidences (spec §6.3)
+            for other in self._repository.list_attempts(entity_id, period_end, evidenced=True):
+                if (other.source_id, other.surface) in self._vendors:
+                    attempts.setdefault(other.attempt_id, other)
+        for attempt in attempts.values():
             vendor = vendors and (attempt.source_id, attempt.surface) in self._vendors
             prerequisite = (
                 attempt.surface in self._prerequisites and attempt.stage is AttemptStage.ACQUISITION
@@ -206,6 +212,25 @@ class RunLoader:
                         ):
                             if self._known(item):
                                 self._add_interpretation(item)
+                    if vendor and attempt.period_end != period_end:
+                        self._witness(capture.capture_ref_id, period_end)
+
+    def _witness(self, capture_ref_id: int, period_end: date) -> None:
+        """The capture's first occurrence at the period end, unless one is already loaded:
+        what tells the engine, and replay, that the capture evidences it."""
+        pair = (capture_ref_id, period_end)
+        if any(
+            (o.capture.capture_ref_id, o.valid_time) == pair for o in self._occurrences.values()
+        ):
+            return
+        found = [
+            o
+            for o in self._repository.list_capture_occurrences(capture_ref_id)
+            if o.valid_time == period_end
+        ]
+        if found:
+            witness = min(found, key=lambda item: item.occurrence_id or 0)
+            self._occurrences[witness.occurrence_id or 0] = witness
 
     def _fiscal_month(self, entity_id: int, period_end: date) -> int | None:
         """Load the fiscal-year-end row governing the period by the cutoff; its month, if any."""
