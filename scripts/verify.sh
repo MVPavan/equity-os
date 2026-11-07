@@ -96,7 +96,7 @@ readonly COV_SCOPE="equity_os"
 # approved-config loader refuses when an ancestor's ctime moves mid-read
 # (api/source_intake.py), /tmp's moves many times a minute, and a sandbox repo
 # under a checkout would pick up that checkout's pytest config.
-readonly PYTEST_WORKERS=24  # owner 2026-11-05: use the CPUs; 8 stays free for PostgreSQL
+readonly PYTEST_WORKERS=8  # owner 2026-11-06: 8 workers for gates (was 24, owner 2026-11-05)
 readonly PYTEST_TEMPROOT="${XDG_CACHE_HOME:-${HOME}/.cache}/equity-os/pytest-tmp"
 suite_pytest() {
   mkdir -p "${PYTEST_TEMPROOT}"
