@@ -3,6 +3,7 @@
 PYTEST_DONT_REWRITE: failing assertions must not print licensed vendor data.
 """
 
+import hashlib
 import json
 from decimal import Decimal
 
@@ -15,6 +16,10 @@ from equity_os.sourcing.surfaces.vendor_surface_fetch import request_key
 
 __all__ = ["rig"]
 pytestmark = [pytest.mark.pg, pytest.mark.retained]
+
+
+def _digest(value):
+    return hashlib.sha256(str(value).encode()).hexdigest()
 
 
 def run_capture(root):
@@ -38,7 +43,7 @@ def run_capture(root):
         (None, None),
         ('{"datasets": {"label": "Price", "values": []}}', []),
         ('{"datasets": ["invalid"]}', []),
-        ('{"datasets": [{"label": "Price", "values": {"2026-10-28": 9107.50}}]}', []),
+        ('{"datasets": [{"label": "Price", "values": {"2026-10-28": 1234.56}}]}', []),
         ('{"datasets": [{"label": "Price", "values": ["123"]}]}', []),
         ('{"datasets": [{"label": "Price", "values": [["2026-10-28", 1, 2]]}]}', []),
         ('{"datasets": [{"label": "Price", "values": [[123, 1]]}]}', []),
@@ -54,9 +59,9 @@ def run_capture(root):
             [],
         ),
         (
-            '{"datasets": [{"label": "Price", "values": [["2026-10-28", "9107.50", '
+            '{"datasets": [{"label": "Price", "values": [["2026-10-28", "1234.56", '
             '{"delivery": "-45.00"}]]}]}',
-            [("9107.50", Decimal("9107.50"))],
+            [("1234.56", Decimal("1234.56"))],
         ),
         (
             '{"datasets": [{"label": "Price", "values": [["2026-10-28", 1e-8], '
@@ -125,14 +130,30 @@ def test_tracer_cli_retained_chart(rig, pg_db, capsys, monkeypatch, chart, expec
                 == expected_values
             )
             return
-        assert conn.execute(
+        rows = conn.execute(
             "SELECT column_label, count(*) FROM eqos.vendor_values "
             "GROUP BY column_label ORDER BY column_label"
-        ).fetchall() == [("200 DMA", 248), ("50 DMA", 248), ("Price on NSE", 248), ("Volume", 248)]
-        assert conn.execute(
+        ).fetchall()
+        assert [(_digest(label), value) for label, value in rows] == [
+            ("47c0a35f0a79fc75359c6cfafb884190854ca286a1fa8a007be5bedf4790d1c3", 248),
+            ("6bcf1deaa1461c51a257a4704b97dff32fade57f81b0ad610c95e030e723a35b", 248),
+            ("ace6e3406b78316af71312d362a7343743e0b5b56f88dc875293d8cc00a7d74b", 248),
+            ("b10fb966d72063f534774c7c6b404f4decca76ac283093ae65fef78d07c1b75e", 248),
+        ]
+        rows = conn.execute(
             "SELECT raw_text,value FROM eqos.vendor_values WHERE row_index=0 "
             "AND column_index IN (0,3) ORDER BY column_index"
-        ).fetchall() == [("9107.50", Decimal("9107.50")), ("168786", Decimal("168786"))]
+        ).fetchall()
+        assert [(_digest(label), _digest(value)) for label, value in rows] == [
+            (
+                "119395b60bd86c27742149a8ee682ae690c07a1876493ad7b761ef22c0b4daca",
+                "119395b60bd86c27742149a8ee682ae690c07a1876493ad7b761ef22c0b4daca",
+            ),
+            (
+                "e36a8db22093ae93dce4cacea76c883a87956522fd3258dc7f42708a9b60358a",
+                "e36a8db22093ae93dce4cacea76c883a87956522fd3258dc7f42708a9b60358a",
+            ),
+        ]
         assert conn.execute("SELECT count(*) FROM eqos.capture_refs").fetchone() == (8,)
         assert conn.execute("SELECT count(*) FROM eqos.vendor_outcomes").fetchone() == (8,)
 

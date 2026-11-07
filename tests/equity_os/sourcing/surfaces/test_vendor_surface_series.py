@@ -30,19 +30,71 @@ CONTEXT = ParseContext(
 )
 
 EXPECTED = {
-    "85ca8991672c": (4124, "27.02", "27.05"),
-    "f5697fbd70c1": (4133, "2.9", "2.89"),
-    "5cc959d74055": (42, "4210", "-21280"),
-    "f7f7413feb1e": (900, "1063934.3234", "1244540.6906"),
-    "4d8c7bb555a4": (79, "48.16", "46.92"),
-    "a906f20883b0": (4133, "2.18", "2.18"),
-    "bf7df2db9bca": (28, "49596", "59478"),
-    "1f74eb477db2": (106, "5936.0", "12551.0"),
-    "b96ddae02840": (9, "null", "21.5"),
-    "ce2a1c735d60": (900, "1103186.1695", "1292805.7065"),
-    "8af35915e9c8": (7783, "4.555", "4.525"),
-    "e7283ebbfa86": (4133, "14.92", "14.87"),
-    "7808286e39e1": (30, "0.0", "0.0"),
+    "85ca8991672c": (
+        4124,
+        "952cc81fd8998a668271de513515e5660058a5ee83e9e5ef8088c2e350328f18",
+        "5cd727242e802d8811fae4d1af1147e0249f3cad239ddcd68282091eeed399b1",
+    ),
+    "f5697fbd70c1": (
+        4133,
+        "f491e65f8d4b8dbec7621fcedaf1b7a4b21bf6cfe8070f407548a6334dc55ccd",
+        "df67abc82f091e1efd1c9891462b5f2cf2c69c2455a13fcc636a1ea7b15f8fa3",
+    ),
+    "5cc959d74055": (
+        42,
+        "0c4d6bf3265be8b2d1fb8b985782b838fb5485844ca52fed0d80464be4328ce2",
+        "b7987fe3c78b6e2e5519764776165296e76aa026caefe72d718e6dfe611c863e",
+    ),
+    "f7f7413feb1e": (
+        900,
+        "e96780e7e153822e0bc1a575430d8c9625be5810f09fa98d9ab29990ae34fb1b",
+        "4db73a2bc33dcc571d5683ae1f73603fc5f8f5e57d970497cfe13fc594e4c652",
+    ),
+    "4d8c7bb555a4": (
+        79,
+        "328c0dce07d6faafcd4c69a53a5b918a77fc939e47aa107dc10a3274c3ca3a1d",
+        "d5fa68c45477eb86a4af95b61b277357947500c6a1b8fd5d7a2e22338fc33085",
+    ),
+    "a906f20883b0": (
+        4133,
+        "6168a49582bc6332dac01fad591381aceb1b63036ce799ba373cdaba11b2ef6f",
+        "6168a49582bc6332dac01fad591381aceb1b63036ce799ba373cdaba11b2ef6f",
+    ),
+    "bf7df2db9bca": (
+        28,
+        "cdc3323aafd9bd83a983ce86e10b64dbc9205f55aecb15c772f963995cb23ee0",
+        "145c0f8f5a3776370e37317ec597a1f49b5e38d10b377d8f1ac06caa64d8d227",
+    ),
+    "1f74eb477db2": (
+        106,
+        "2b211a9f4078ff662f4dd6e28884472718c9c3f426cfc111754149f0cd3067b8",
+        "34fa5b6ecb1f31b47a7d09ead6c374397812e37c86e2b8189642dcdd02dcff08",
+    ),
+    "b96ddae02840": (
+        9,
+        "74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+        "a20fa123d4d8977782c80981ddbe6177a8d5ba294eaffd08a88669e246c37110",
+    ),
+    "ce2a1c735d60": (
+        900,
+        "782c1f646c74f0476b719d7a42e1027cfc38f33652ff074f448ba77bfaf25d6e",
+        "1dc2a37c16a83c280083c60a46aaeaa9719544eba6f7336fcad2687d3c2fa6b5",
+    ),
+    "8af35915e9c8": (
+        7783,
+        "11df90ee562d5b2de95edd61ec5c160cfdbb819fdb7ada24c95ab9bee54bc68a",
+        "d269a230c448b72e723e6c8f449e59f9f85dfcfa48f20500800f84fe8a3e0d87",
+    ),
+    "e7283ebbfa86": (
+        4133,
+        "4829efbfa8d976f1410ea1544dd0c48339d0d9e9c20fd2ac6a740ded4e6a4cd1",
+        "1f035024bf808b39348eee0bb0924c2a411d0b1a58ef3dcd8792b118efa07f36",
+    ),
+    "7808286e39e1": (
+        30,
+        "8aed642bf5118b9d3c859bd4be35ecac75b6e873cce34e7b6f554b06f75550d7",
+        "8aed642bf5118b9d3c859bd4be35ecac75b6e873cce34e7b6f554b06f75550d7",
+    ),
 }
 REFERENCES = list(
     {
@@ -54,6 +106,10 @@ REFERENCES = list(
         if row["site"] == "tijori" and row["sha256"][:12] in EXPECTED and row["status"] == 200
     }.values()
 )
+
+
+def _digest(value):
+    return hashlib.sha256(str(value).encode()).hexdigest()
 
 
 @pytest.mark.pg
@@ -117,9 +173,9 @@ def test_series_capture_keeps_points_or_records_failed(pg_db, tmp_path, row, tru
             elif row["url"].rstrip("/").endswith("/median-pe"):
                 locators = ["/data/1d", "/data/1m"]
             by_locator = {locator: (text, value) for locator, text, value in cells}
-            assert [by_locator[locator] for locator in locators] == [
-                (text, None if text == "null" else Decimal(text)) for text in (first, second)
-            ]
+            got = [by_locator[locator] for locator in locators]
+            assert [_digest(text) for text, _ in got] == [first, second]
+            assert all(value == (None if text == "null" else Decimal(text)) for text, value in got)
 
 
 def test_valuation_rejects_unrelated_numeric_object():
@@ -158,13 +214,55 @@ def test_string_envelope_keeps_lexemes_nulls_and_duplicate_series_names():
 
 
 MARKET_EXPECTED = {
-    "fii-api": (242, "/values/0", "615.99", "/values/1", "10047.07"),
-    "hs-data-api": (720, "/0/import_value", "20", "/0/export_value", "569"),
-    "macro-chart-api": (106, "/0/1", "11.38", "/1/1", "5.38"),
-    "sector-ms-chart-api": (1611, "/0/data/0/1", "51.43", "/0/data/1/1", "52.35"),
-    "sector-company-opm-api": (2389, "/0/data/0/1", "11.0", "/0/data/1/1", "11.2"),
-    "index-data-api": (2620, "/0/1", "100.0", "/1/1", "100.213"),
-    "index-metric-data-api": (3564, "/0/1", "38.42", "/1/1", "38.42"),
+    "fii-api": (
+        242,
+        "/values/0",
+        "d2c0352a5c8b1a98661d86e87111c102e04bf6fa506fccf8952fb6b6343718e1",
+        "/values/1",
+        "1a4fa86d38bee14996552ff3e6295be6bfac2685781e3f798d04354c6b04270e",
+    ),
+    "hs-data-api": (
+        720,
+        "/0/import_value",
+        "f5ca38f748a1d6eaf726b8a42fb575c3c71f1864a8143301782de13da2d9202b",
+        "/0/export_value",
+        "c7ce483fd1cc5fd498e7e2a09851c65f89a33a6837f66d9fbb36e5e5f70b41a2",
+    ),
+    "macro-chart-api": (
+        106,
+        "/0/1",
+        "62609ee6a8d2c894b76b6e899196e3f729dcfe76d8c3fc61eb5262f1c5f1a9b3",
+        "/1/1",
+        "676bb5c3aaa5adca1410698d951f0092620f978a7c42003b9943bb46c18f3ff0",
+    ),
+    "sector-ms-chart-api": (
+        1611,
+        "/0/data/0/1",
+        "96512ba2bdf381315e2c7b95c9be91f8479202615eb12d5c28b14a27d02c1808",
+        "/0/data/1/1",
+        "651eeefbde20002e635b888c31377f8557ba96512ff2d8f3bede03c32a1cf5ac",
+    ),
+    "sector-company-opm-api": (
+        2389,
+        "/0/data/0/1",
+        "56824d16dcb61c982fc31a731cf6f20594c0a3f1da2aff349ee804bf1c4544d1",
+        "/0/data/1/1",
+        "038c616c58034ec577ee376a5ebf31164c4250b057c13acd5fc197711266e488",
+    ),
+    "index-data-api": (
+        2620,
+        "/0/1",
+        "43b87f618caab482ebe4976c92bcd6ad308b48055f1c27b4c574f3e31d7683e0",
+        "/1/1",
+        "8270fdd45ffeb8d4a3cd34d0c7498f148b264d5865f957f5d53ef1fd5fc98670",
+    ),
+    "index-metric-data-api": (
+        3564,
+        "/0/1",
+        "dfbd52ee3c6339ae33822b73797ac9717d792d0fbb3d70a0f17709514c86dd7a",
+        "/1/1",
+        "dfbd52ee3c6339ae33822b73797ac9717d792d0fbb3d70a0f17709514c86dd7a",
+    ),
 }
 MARKET_REFERENCES = [
     row
@@ -220,9 +318,9 @@ def test_market_series_capture_preserves_cells_or_fails(pg_db, tmp_path, row, tr
             assert status in ("OK", "PARTIAL") and count == len(cells) == expected
             assert len({tuple(cell[3:]) for cell in cells}) == count
             by_locator = {cell[0]: cell[1:3] for cell in cells}
-            assert [by_locator[path] for path in (first_path, second_path)] == [
-                (text, Decimal(text)) for text in (first, second)
-            ]
+            got = [by_locator[path] for path in (first_path, second_path)]
+            assert [_digest(text) for text, _ in got] == [first, second]
+            assert all(value == Decimal(text) for text, value in got)
             if row["id"] == "hs-data-api":
                 assert {cell[3] for cell in cells} == {"74031100"}
 

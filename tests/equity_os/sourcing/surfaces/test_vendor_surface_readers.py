@@ -3,8 +3,8 @@
 PYTEST_DONT_REWRITE: failing assertions must not print licensed vendor data.
 """
 
+import hashlib
 import json
-from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -27,6 +27,10 @@ SPECS = load_specs(
     Path("config/sourcing/vendor_surface/surfaces.yaml"),
     Path("docs/research/vendor-surface/catalog.yaml"),
 )
+
+
+def _digest(value):
+    return hashlib.sha256(str(value).encode()).hexdigest()
 
 
 def parse(site, surface, body, context):
@@ -54,8 +58,14 @@ def test_statement_readers(surface, symbol):
     assert all(cell.basis == "standalone" for cell in values)
     assert len({(v.table_key, v.row_index, v.column_index) for v in values}) == len(values)
     if symbol == "APARINDS" and surface == "section-quarters":
-        assert values[0].value == Decimal("3500")
-        assert values[1].value == Decimal("3644")
+        assert (
+            _digest(values[0].value)
+            == "889e2fc00981675edd472d82d3a581b0156216501cfcdba3f1dfc87223be85e7"
+        )
+        assert (
+            _digest(values[1].value)
+            == "487e4a2ed2f8e9b2ef2445df65f01cf4012d1dfd759eabcd19ddc70760a5a707"
+        )
 
 
 @pytest.mark.parametrize(
@@ -90,9 +100,33 @@ def test_fragment_readers(surface, pg_db, tmp_path):
     assert len({(v.table_key, v.row_index, v.column_index) for v in values}) == len(values)
 
     checked = {
-        "schedules-api": ("reader/sub_rows", 0, (0, 1), (Decimal("171"), Decimal("287"))),
-        "investors-api": ("reader/holders", 0, (0, 1), (Decimal("11.20"), Decimal("11.20"))),
-        "segments-api": ("reader/lines/0", 1, (5, 6), (Decimal("451355"), Decimal("320008"))),
+        "schedules-api": (
+            "reader/sub_rows",
+            0,
+            (0, 1),
+            (
+                "284de502c9847342318c17d474733ef468fbdbe252cddf6e4b4be0676706d9d0",
+                "d7cdaa5ca0582076c8e772cce739e32c5077cfd24f2ea33f04bb754594989a56",
+            ),
+        ),
+        "investors-api": (
+            "reader/holders",
+            0,
+            (0, 1),
+            (
+                "dad20ee131924febc99e46db87fbabdf1dd4549f3895dd5e430d6bae54529704",
+                "dad20ee131924febc99e46db87fbabdf1dd4549f3895dd5e430d6bae54529704",
+            ),
+        ),
+        "segments-api": (
+            "reader/lines/0",
+            1,
+            (5, 6),
+            (
+                "af92ac6ee2bec6bc238207dd18b1d7559f50ba9dd9d353adcb8156eb0012a2ff",
+                "ccfbfc0cd6e0c694a3c6c5195539f61846d0e82852ef90f7bb9a26873e3ae96e",
+            ),
+        ),
     }
     if surface in checked:
         from equity_os.sourcing.surfaces.vendor_surface_capture import Request
@@ -127,7 +161,7 @@ def test_fragment_readers(surface, pg_db, tmp_path):
                     ),
                     (ref.capture_ref_id, key, row, list(columns)),
                 ).fetchall()
-                assert actual == [(value,) for value in expected]
+                assert [_digest(value) for (value,) in actual] == list(expected)
 
 
 @pytest.mark.parametrize("symbol", ["APARINDS", "ANONDITA"])
@@ -510,16 +544,80 @@ def test_absent_forensic_count_keeps_positions():
 # Exact positional cells read by code from the retained event bodies.
 EVENT_CELLS = {
     "quarterly-results": [
-        ("reader/items/0/metrics", 0, 0, "₹30.00 Cr.", Decimal("30.00"), "₹ Cr.", True),
-        ("reader/items/0/rows", 1, 0, "24.27%", Decimal("24.27"), "%", True),
-        ("reader/items/1/rows", 4, 0, "-135 bps", Decimal("-135"), "bps", True),
-        ("reader/items/0/rows", 0, 0, "-", None, None, False),
+        (
+            "reader/items/0/metrics",
+            0,
+            0,
+            "fb0287f50fba0cc048cf04038bafdd63cb1608d6427f52f6038961fa9abfa689",
+            "8ff79d510e90a5e4e2fa5ca3430d0cec2c6d64bd53d29ac5e46cb15d7cc43120",
+            "₹ Cr.",
+            True,
+        ),
+        (
+            "reader/items/0/rows",
+            1,
+            0,
+            "544397874b5876548c9e32d6592c86b8036dcb93419f9115d1f967b1f1c9004b",
+            "9481b1d9693069ec2c15c35c56544f258a252fd2408551acb7595688752cfa0d",
+            "%",
+            True,
+        ),
+        (
+            "reader/items/1/rows",
+            4,
+            0,
+            "231b085aa88c0330a4449b6ec30e93f2e31ac125a1abde209f63bf05f90e6bd3",
+            "3eb6fbb31ef44c8bcabe87dcba46aa4743534cc2fc364eebcc1f250b6a8205c1",
+            "bps",
+            True,
+        ),
+        (
+            "reader/items/0/rows",
+            0,
+            0,
+            "3973e022e93220f9212c18d0d0c543ae7c309e46640da93a4a0314de999f5112",
+            None,
+            None,
+            False,
+        ),
     ],
     "company-timeline-api": [
-        ("reader/events/10/tables/0", 0, 1, "9.35%", Decimal("9.35"), "%", True),
-        ("reader/events/10/tables/0", 0, 3, "95131", Decimal("95131"), None, True),
-        ("reader/events/17/tables/0", 0, 1, "-", None, None, False),
-        ("reader/events/10/tables/0", 0, 0, "Sales", None, None, False),
+        (
+            "reader/events/10/tables/0",
+            0,
+            1,
+            "17e1d5063409e3a1eb4c1e0e5afba3eb1a17837fbf0c090a48fb86addf37510d",
+            "8da0df69dc34b53367cd22d14bdb3b705486b204b9d3360ab963b6fcaa21aa9b",
+            "%",
+            True,
+        ),
+        (
+            "reader/events/10/tables/0",
+            0,
+            3,
+            "5015134da0add323dcd6a90de9d9eed8ec507aeeb3b12d0ff172010b52d5fa0b",
+            "5015134da0add323dcd6a90de9d9eed8ec507aeeb3b12d0ff172010b52d5fa0b",
+            None,
+            True,
+        ),
+        (
+            "reader/events/17/tables/0",
+            0,
+            1,
+            "3973e022e93220f9212c18d0d0c543ae7c309e46640da93a4a0314de999f5112",
+            None,
+            None,
+            False,
+        ),
+        (
+            "reader/events/10/tables/0",
+            0,
+            0,
+            "8de4e0ea7370e4e60a521379c9edf3253afcba7660e647f3aa788e49e8993d1a",
+            None,
+            None,
+            False,
+        ),
     ],
 }
 
@@ -540,7 +638,12 @@ def test_retained_event_measurements_are_ok(pg_db, tmp_path, surface):
     positions = {(v.table_key, v.row_index, v.column_index): v for v in values}
     for table, row, column, raw, value, unit, numeric in EVENT_CELLS[surface]:
         cell = positions[table, row, column]
-        matches = (cell.raw_text, cell.value, cell.unit, cell.expected_numeric) == (
+        matches = (
+            _digest(cell.raw_text),
+            None if cell.value is None else _digest(cell.value),
+            cell.unit,
+            cell.expected_numeric,
+        ) == (
             raw,
             value,
             unit,
