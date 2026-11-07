@@ -136,8 +136,9 @@ def test_retained_aparinds_about_is_selected_without_other_page_sections():
     source = read_text(Site.SCREENER, "company-page", raw, SCREENER + "/company/APARINDS/").text
     tree = parse_document(raw.decode())
     about = tree.xpath('//div[contains(concat(" ",@class," ")," about ")]')[0]
-    assert source.startswith(" ".join(about.text_content().split()))
-    assert len(source) > len(" ".join(about.text_content().split()))
+    about_text = " ".join(about.text_content().split())
+    selected = source.startswith(about_text) and len(source) > len(about_text)
+    assert selected, "the About text is not the start of a longer reader text"
 
 
 @pytest.mark.pg
@@ -424,22 +425,20 @@ def test_retained_concall_summaries_are_one_item_bound_to_the_breadcrumb_company
     assert sum(not read.text and not read.items for read in reads) == 1
     for read in filter(lambda read: read.text, reads):
         [item] = read.items
-        assert (item.start, item.end) == (0, len(read.text))
+        whole = (item.start, item.end) == (0, len(read.text))
+        assert whole, "a concall summary item does not span the whole text"
         assert (item.company.namespace, item.company.value) == ("SCREENER_SLUG", "APARINDS")
 
 
 @pytest.mark.retained
 def test_print_item_and_numeral_free_item_counts_per_surface():
-    import re
+    from equity_os.publication.checking.numeral_scan import has_numeral
 
-    from equity_os.publication.checking.numeral_scan import NUMBER_WORDS
-
-    numeral = re.compile(rf"\b(?:{'|'.join(NUMBER_WORDS)})\b", re.IGNORECASE)
     for surface in (*TEXT_DIGESTS, "concall-summary"):
         items = [
             read.text[i.start : i.end] for *_, read in retained_texts(surface) for i in read.items
         ]
-        free = sum(not any(c.isnumeric() for c in t) and not numeral.search(t) for t in items)
+        free = sum(not has_numeral(t) for t in items)
         print(f"{surface}: items={len(items)} numeral_free={free}")  # counts only, never text
         assert items
 
@@ -506,7 +505,8 @@ def test_concall_spans_upgrade_from_v2_without_touching_earlier_rows_or_numbers(
         with pool.connection() as conn:
             for table, rows in before.items():
                 after = conn.execute(f"SELECT * FROM eqos.{table}").fetchall()
-                assert set(rows) <= set(after), f"{table}: an earlier row changed"
+                kept = set(rows) <= set(after)
+                assert kept, f"{table}: an earlier row changed"
             assert conn.execute(
                 "SELECT capture_ref_id,status FROM eqos.vendor_outcomes "
                 "WHERE parser_version='claims:fake:spans.v3' ORDER BY capture_ref_id"
@@ -517,7 +517,9 @@ def test_concall_spans_upgrade_from_v2_without_touching_earlier_rows_or_numbers(
                 "SELECT capture_ref_id,span_start,span_end,text FROM eqos.vendor_text_claims "
                 "WHERE prompt_version='spans.v3'"
             ).fetchall()
-            assert stored == [(ref.capture_ref_id, 0, 10, texts[summary].text[:10])]
+            expected = [(ref.capture_ref_id, 0, 10, texts[summary].text[:10])]
+            matches = stored == expected
+            assert matches, "the stored v3 claim rows differ from the expected rows"
             assert conn.execute(
                 "SELECT count(*) FROM eqos.interpretations WHERE capture_ref_id IN "
                 "(SELECT capture_ref_id FROM eqos.vendor_text_claims)"
