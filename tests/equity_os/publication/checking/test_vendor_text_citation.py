@@ -390,10 +390,11 @@ def test_newer_empty_extraction_licence_end_and_moved_reader_hide_spans(
 
 
 def _section(world: World, role: str) -> ReportSection:
-    """A section citing one scripted span by its location marker."""
+    """An ordinary section citing one scripted span by its location marker (the vendor block
+    itself must equal its rendering, which a bare anchor is not)."""
     capture, anchor = world.anchor(role)
     body = f"{{{{e:inferred}}}} {{{{s:{capture}|{anchor}}}}}"
-    return ReportSection(ordinal=0, section_key="vendor_summary", body=body)
+    return ReportSection(ordinal=0, section_key="notes", body=body)
 
 
 def test_the_versions_own_source_cutoff_governs_checking_and_sealing(world: World) -> None:
