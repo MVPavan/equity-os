@@ -643,6 +643,10 @@ def test_pilot_end_to_end(
     and PILOT-9's vacuity (``docs/plans/PILOT-E2E.md``)."""
     pilot = _pilot3(pg_db, tmp_path, monkeypatch, ingest)
     _ticking(monkeypatch, T0)
+    # Each quarter's admission run precedes every vendor capture: since VENDOR-1 Task 5b a capture
+    # serves every period it evidences, and this first-party pilot pins citations to its package.
+    for quarter in QUARTERS:
+        pilot.registered(quarter)
     captures = vendor_captures(pilot)
     final: dict[str, int] = {}
     runs: list[int] = []
